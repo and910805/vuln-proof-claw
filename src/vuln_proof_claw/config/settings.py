@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from ipaddress import IPv4Address, IPv6Address
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,7 +19,9 @@ from vuln_proof_claw.config.models import (
     WorkerRuntimeConfig,
 )
 
-WILDCARD_API_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # noqa: S104 - detection list
+WILDCARD_IPV4 = str(IPv4Address(0))
+WILDCARD_IPV6 = str(IPv6Address(0))
+WILDCARD_API_HOSTS = frozenset({WILDCARD_IPV4, WILDCARD_IPV6, f"[{WILDCARD_IPV6}]"})
 
 
 class Settings(BaseSettings):

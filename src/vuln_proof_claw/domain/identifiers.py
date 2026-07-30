@@ -6,7 +6,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from threading import Lock
-from typing import Final
+from typing import Final, NewType
 from uuid import UUID
 
 _MAX_TIMESTAMP_MS: Final = (1 << 48) - 1
@@ -46,6 +46,16 @@ class _Uuid7Generator:
 
 _generator = _Uuid7Generator()
 
+ProjectId = NewType("ProjectId", str)
+EngagementId = NewType("EngagementId", str)
+FlowId = NewType("FlowId", str)
+TaskId = NewType("TaskId", str)
+ActionId = NewType("ActionId", str)
+EvidenceId = NewType("EvidenceId", str)
+ArtifactId = NewType("ArtifactId", str)
+ApprovalId = NewType("ApprovalId", str)
+FindingId = NewType("FindingId", str)
+
 
 def uuid7(*, timestamp_ms: int | None = None) -> UUID:
     """Generate an RFC 9562 UUIDv7 with monotonic ordering in this process."""
@@ -70,6 +80,42 @@ def uuid7(*, timestamp_ms: int | None = None) -> UUID:
 def new_identifier() -> str:
     """Return an opaque identifier suitable for persistence and log context."""
     return str(uuid7())
+
+
+def new_project_id() -> ProjectId:
+    return ProjectId(new_identifier())
+
+
+def new_engagement_id() -> EngagementId:
+    return EngagementId(new_identifier())
+
+
+def new_flow_id() -> FlowId:
+    return FlowId(new_identifier())
+
+
+def new_task_id() -> TaskId:
+    return TaskId(new_identifier())
+
+
+def new_action_id() -> ActionId:
+    return ActionId(new_identifier())
+
+
+def new_evidence_id() -> EvidenceId:
+    return EvidenceId(new_identifier())
+
+
+def new_artifact_id() -> ArtifactId:
+    return ArtifactId(new_identifier())
+
+
+def new_approval_id() -> ApprovalId:
+    return ApprovalId(new_identifier())
+
+
+def new_finding_id() -> FindingId:
+    return FindingId(new_identifier())
 
 
 @dataclass(frozen=True, slots=True)
