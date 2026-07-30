@@ -206,21 +206,36 @@ class ApprovalRepository:
         row = self._session.get(ApprovalRecord, approval_id)
         if row is None:
             return None
-        return Stored(
-            Approval(
-                id=ApprovalId(row.id),
-                engagement_id=EngagementId(row.engagement_id),
-                action_type=row.action_type,
-                normalized_target=row.normalized_target,
-                parameter_digest=row.parameter_digest,
-                risk_level=RiskLevel(row.risk_level),
-                expires_at=_utc(row.expires_at),
-                permitted_executions=row.permitted_executions,
-                approver=row.approver,
-                approved_at=_utc(row.approved_at),
-                consumed_executions=row.consumed_executions,
-            ),
-            row.version,
+        return Stored(self._domain_from_record(row), row.version)
+
+    def save(self, approval: Approval, *, expected_version: int) -> Stored[Approval]:
+        """Persist approval consumption with optimistic concurrency control."""
+        row = self._session.scalar(
+            select(ApprovalRecord).where(
+                ApprovalRecord.id == approval.id,
+                ApprovalRecord.version == expected_version,
+            )
+        )
+        if row is None:
+            raise ConcurrentUpdateError
+        row.consumed_executions = approval.consumed_executions
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    @staticmethod
+    def _domain_from_record(row: ApprovalRecord) -> Approval:
+        return Approval(
+            id=ApprovalId(row.id),
+            engagement_id=EngagementId(row.engagement_id),
+            action_type=row.action_type,
+            normalized_target=row.normalized_target,
+            parameter_digest=row.parameter_digest,
+            risk_level=RiskLevel(row.risk_level),
+            expires_at=_utc(row.expires_at),
+            permitted_executions=row.permitted_executions,
+            approver=row.approver,
+            approved_at=_utc(row.approved_at),
+            consumed_executions=row.consumed_executions,
         )
 
 

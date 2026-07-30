@@ -37,6 +37,7 @@ from vuln_proof_claw.persistence.repositories import (
     TaskRepository,
 )
 from vuln_proof_claw.persistence.session import create_engine, create_session_factory
+from vuln_proof_claw.policy.approval import consume_approval
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 DIGEST = "a" * 64
@@ -205,3 +206,43 @@ def test_approval_evidence_artifact_and_finding_round_trip(engine: Engine) -> No
         assert stored_artifact == artifact
         assert stored_finding is not None
         assert stored_finding.entity == finding
+
+
+def test_approval_consumption_uses_optimistic_version(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as setup:
+        engagement, task = add_hierarchy(setup)
+        action = make_action(engagement, task)
+        approval = Approval(
+            engagement_id=engagement.id,
+            action_type=action.action_type,
+            normalized_target=action.normalized_target,
+            parameter_digest=action.parameter_digest,
+            risk_level=action.risk_level,
+            expires_at=NOW + timedelta(hours=1),
+            permitted_executions=1,
+            approver="security-lead@example.test",
+            approved_at=NOW,
+        )
+        ApprovalRepository(setup).add(approval)
+
+    first = session_factory()
+    second = session_factory()
+    try:
+        first_copy = ApprovalRepository(first).get(approval.id)
+        second_copy = ApprovalRepository(second).get(approval.id)
+        assert first_copy is not None
+        assert second_copy is not None
+        consumed = consume_approval(first_copy.entity, action, at=NOW)
+        result = ApprovalRepository(first).save(consumed, expected_version=first_copy.version)
+        first.commit()
+        assert result.version == 2
+
+        with pytest.raises(ConcurrentUpdateError):
+            ApprovalRepository(second).save(
+                second_copy.entity,
+                expected_version=second_copy.version,
+            )
+    finally:
+        first.close()
+        second.close()
