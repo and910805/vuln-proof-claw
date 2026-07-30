@@ -27,9 +27,9 @@ dist/
 
 # Runtime data
 .vuln-proof-claw/
-artifacts/
-evidence/
-reports/
+/artifacts/
+/evidence/
+/reports/
 
 # Editors and operating systems
 .DS_Store
