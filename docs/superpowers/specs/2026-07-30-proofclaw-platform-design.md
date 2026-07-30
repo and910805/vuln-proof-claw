@@ -1,4 +1,4 @@
-# ProofClaw Platform Design
+# vuln-proof-claw Platform Design
 
 **Status:** Approved  
 **Date:** 2026-07-30  
@@ -7,7 +7,7 @@
 
 ## 1. Executive summary
 
-ProofClaw is an evidence-driven autonomous Web and API security testing platform for authorized enterprise, red-team, penetration-testing, and vulnerability-research workflows.
+vuln-proof-claw is an evidence-driven autonomous Web and API security testing platform for authorized enterprise, red-team, penetration-testing, and vulnerability-research workflows.
 
 The project will be implemented independently. It may adopt architectural ideas from VulnClaw and PentAGI, but it will not be a fork of either project. Any reused MIT-licensed code must retain the applicable copyright and license notices.
 
@@ -16,6 +16,14 @@ The approved delivery strategy is:
 > Docker Compose as the core deployment model, a local CLI as the first user interface, and a React Web UI after the core workflow is stable.
 
 The first product phase focuses on Web/API security testing and basic network reconnaissance. Later phases may add internal networks, Active Directory, cloud, mobile, distributed workers, and multi-user collaboration.
+
+### 1.1 Naming conventions
+
+- Repository and distribution name: `vuln-proof-claw`
+- CLI command: `vuln-proof-claw`
+- Python import package: `vuln_proof_claw`
+- Docker image prefix: `vuln-proof-claw`
+- Environment variable prefix: `VULN_PROOF_CLAW_`
 
 ## 2. Product positioning
 
@@ -27,7 +35,7 @@ The first product phase focuses on Web/API security testing and basic network re
 
 ### 2.2 Core value proposition
 
-ProofClaw is not primarily a tool for producing a large number of speculative findings. Its core value is producing findings that can be traced to real actions and evidence:
+vuln-proof-claw is not primarily a tool for producing a large number of speculative findings. Its core value is producing findings that can be traced to real actions and evidence:
 
 - Every verified finding references persisted evidence.
 - Every action is evaluated against an explicit engagement scope.
@@ -86,7 +94,7 @@ Phase 1 covers:
 
 ## 4. Architecture
 
-ProofClaw uses a Python modular monolith for the control plane and disposable Docker containers for the execution plane.
+vuln-proof-claw uses a Python modular monolith for the control plane and disposable Docker containers for the execution plane.
 
 ```text
 ┌───────────────────────────────────────────────┐
@@ -95,7 +103,7 @@ ProofClaw uses a Python modular monolith for the control plane and disposable Do
 └───────────────────────┬───────────────────────┘
                         │
 ┌───────────────────────▼───────────────────────┐
-│              ProofClaw Control Plane          │
+│              vuln-proof-claw Control Plane          │
 │                                               │
 │ Project & Scope    Flow / Task / Action        │
 │ Approval Policy    Agent Orchestrator          │
@@ -479,7 +487,7 @@ Each tool declares:
 ### 9.2 Plugin contract
 
 ```python
-class ProofClawTool:
+class vuln-proof-clawTool:
     manifest: ToolManifest
 
     async def validate(self, action, scope): ...
@@ -530,9 +538,9 @@ PDF output is deferred to the Web UI phase and generated from the HTML represent
 
 ## 11. VulnClaw Phase 1 comparison
 
-ProofClaw Phase 1 must reach VulnClaw's practical Web/API baseline while improving isolation, policy enforcement, evidence integrity, independent verification, and report formats.
+vuln-proof-claw Phase 1 must reach VulnClaw's practical Web/API baseline while improving isolation, policy enforcement, evidence integrity, independent verification, and report formats.
 
-| Capability | VulnClaw baseline | ProofClaw Phase 1 target |
+| Capability | VulnClaw baseline | vuln-proof-claw Phase 1 target |
 |---|---|---|
 | Autonomous workflow | Model-led solve loop | Planner, Operator, Verifier |
 | CLI | CLI, REPL, TUI | CLI first; REPL considered for v0.3 |
@@ -703,7 +711,7 @@ The project uses the MIT License. VulnClaw and PentAGI will be acknowledged as i
 - Web/API playbooks.
 - HTML, SARIF, and bug bounty reports.
 
-At v0.3, ProofClaw must meet the selected VulnClaw Web/API baseline and demonstrate improvements in isolation, policy enforcement, evidence integrity, verification, and reporting.
+At v0.3, vuln-proof-claw must meet the selected VulnClaw Web/API baseline and demonstrate improvements in isolation, policy enforcement, evidence integrity, verification, and reporting.
 
 ### v0.4 — Web Experience
 
@@ -727,7 +735,7 @@ At v0.3, ProofClaw must meet the selected VulnClaw Web/API baseline and demonstr
 
 Phase 1 is complete when:
 
-1. A user can start ProofClaw with Docker Compose and operate it through the CLI.
+1. A user can start vuln-proof-claw with Docker Compose and operate it through the CLI.
 2. An engagement cannot begin without an explicit scope.
 3. Target-facing actions run in disposable workers.
 4. Out-of-scope DNS, redirect, browser, and HTTP traffic is blocked at execution time.
@@ -750,4 +758,3 @@ Phase 1 is complete when:
 - Maximizing agent count as a product feature.
 - Allowing untrusted target content to grant capabilities.
 - Automatically retrying high-risk actions.
-
