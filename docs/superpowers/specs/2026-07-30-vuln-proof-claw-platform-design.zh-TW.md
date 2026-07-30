@@ -14,7 +14,7 @@
 
 vuln-proof-claw 是一套以證據為核心的自主式 Web 與 API 安全測試平台，服務對象包括已取得授權的企業資安團隊、紅隊、滲透測試人員與漏洞研究人員。
 
-本專案採獨立實作，可吸收 VulnClaw 與 PentAGI 的架構思想，但不會成為任一專案的 fork。若重用任何 MIT 授權程式碼，必須保留適用的著作權與授權聲明。
+本專案採完全獨立的設計與實作。架構、領域模型、Policy 系統、Evidence 模型、Agent 工作流程與產品文件都針對 vuln-proof-claw 自行開發。
 
 已核准的交付路線為：
 
@@ -541,29 +541,30 @@ Playbook 是參考資料，不能授予 capability 或繞過 Policy。
 
 PDF 延後至 Web UI 階段，並由 HTML representation 產生。
 
-## 11. 與 VulnClaw 第一階段比較
+## 11. 第一階段能力基準
 
-vuln-proof-claw 第一階段必須達到 VulnClaw 的實用 Web/API 基準，並提升隔離、Policy enforcement、Evidence integrity、獨立驗證與報告格式。
+第一階段必須提供實用且端到端的 Web/API 安全工作流程，而不是彼此斷裂的工具集合。
 
-| 能力 | VulnClaw 基準 | vuln-proof-claw 第一階段目標 |
-|---|---|---|
-| 自主工作流程 | 模型主導 solve loop | Planner、Operator、Verifier |
-| CLI | CLI、REPL、TUI | CLI 優先；v0.3 評估 REPL |
-| Web UI | 已提供 | 延後至 v0.4 |
-| 部署 | 主要為單一應用容器 | 控制面、PostgreSQL、拋棄式 Worker |
-| Provider | 多種 preset | 原生 Provider family 與 compatible preset |
-| HTTP 與 batch probing | 已提供 | 結構化 request、batch、evidence、replay |
-| Traffic evidence | 原始流量檔案與索引 | 持久化 Evidence 與 hash chain |
-| Reconnaissance | 目錄、JS、nmap、auth check | 對等的 Web/API 結構化工具 |
-| Browser | 外部 Chrome MCP | 隔離 Playwright；MCP 可選 |
-| Shell 與 Python | 內建實驗性能力 | 隔離且依 capability 控制 |
-| Skill | 廣泛安全與 CTF 集合 | 第一階段精選 Web/API Playbook |
-| 反幻覺 | Evidence completion gate | 獨立 Verifier 與 finding lifecycle |
-| Scope | Host/path/port 與 action check | 具 scope awareness 的 network execution boundary |
-| Approval | Task constraint | 綁定 Action 的 L0-L4 Approval |
-| Reporting | Markdown 與 PoC | Markdown、JSON、HTML、SARIF、bug bounty |
+| 能力領域 | 第一階段要求 |
+|---|---|
+| 自主工作流程 | Planner、Operator 與獨立 Verifier |
+| 使用者介面 | CLI 與 REST API；Web UI 延後至 v0.4 |
+| 部署 | Docker Compose 控制面、PostgreSQL 與拋棄式 Worker |
+| Provider | 原生 Provider family 與 OpenAI-compatible preset |
+| HTTP 測試 | 結構化 request、batch comparison、持久化 Evidence 與 replay |
+| Traffic 分析 | List、search、view、sitemap 與 Request/Response correlation |
+| Discovery | Crawl、directory enumeration、JavaScript、OpenAPI 與 GraphQL analysis |
+| Authentication | Session analysis 與已登入／未登入 differential testing |
+| Browser | 隔離 Playwright，並保存 screenshot 與 HAR artifact |
+| 網路偵察 | 受 scope 控制的 DNS 與基礎 nmap 整合 |
+| 本機工具 | Encoding、decoding、hashing、source extraction 與 Evidence search |
+| Shell 與 Python | 隔離且依 capability 控制的執行 |
+| 知識 | 不能授予權限的精選 Web/API Playbook |
+| 驗證 | Evidence-backed finding lifecycle 與獨立驗證 |
+| Scope 與 Approval | 執行邊界 scope check 與 L0-L4 Approval |
+| Reporting | Markdown、JSON、HTML、SARIF、Evidence Manifest 與 bug bounty format |
 
-第一階段刻意延後不符合 Web/API 定位的廣度，包括 TUI、內網知識包、Android／逆向內容與極長 persistent loop。
+第一階段刻意排除 Web/API 定位以外的能力，包括內網操作、Active Directory、行動裝置測試與不受限制的長時間自主循環。
 
 ## 12. Action 可靠性與錯誤處理
 
@@ -688,7 +689,7 @@ CI 不得對公共網站執行主動測試。
 - 修改任一語言版本的 Pull Request 必須同步更新配對文件，或在 merge 前明確標記翻譯仍待完成。
 - 程式碼 identifier、command name、API field 與 configuration key 不翻譯。
 
-專案採 MIT License。VulnClaw 與 PentAGI 將列於 Acknowledgements。若重用程式碼，必須保留原始聲明。
+專案採 MIT License。未來加入的第三方 dependency 或程式碼都必須經過授權相容性審查，並保留各自授權所要求的所有聲明。
 
 ## 15. 交付里程碑
 
@@ -727,7 +728,7 @@ CI 不得對公共網站執行主動測試。
 - Web/API Playbook。
 - HTML、SARIF 與 bug bounty report。
 
-v0.3 必須達到選定的 VulnClaw Web/API 基準，並證明在隔離、Policy enforcement、Evidence integrity、驗證與報告方面的提升。
+v0.3 必須符合第一階段能力基準，並證明完整的隔離、Policy enforcement、Evidence integrity、獨立驗證與報告產生能力。
 
 ### v0.4 — Web Experience
 
@@ -763,7 +764,7 @@ v0.3 必須達到選定的 VulnClaw Web/API 基準，並證明在隔離、Policy
 10. 匯出報告不能覆寫原始 Evidence。
 11. 選定的多 Provider family 必須通過 contract test。
 12. 主動 E2E test 只能對隔離本機目標執行。
-13. v0.3 Web/API capability 必須達到文件記載的 VulnClaw 比較基準。
+13. v0.3 Web/API capability 必須通過文件所定義的第一階段能力基準與隔離 E2E test。
 
 ## 17. 明確非目標
 

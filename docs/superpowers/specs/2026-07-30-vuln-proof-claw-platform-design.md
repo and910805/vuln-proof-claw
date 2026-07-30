@@ -11,7 +11,7 @@
 
 vuln-proof-claw is an evidence-driven autonomous Web and API security testing platform for authorized enterprise, red-team, penetration-testing, and vulnerability-research workflows.
 
-The project will be implemented independently. It may adopt architectural ideas from VulnClaw and PentAGI, but it will not be a fork of either project. Any reused MIT-licensed code must retain the applicable copyright and license notices.
+The project is independently designed and implemented. Its architecture, domain model, policy system, evidence model, agent workflow, and product documentation are developed specifically for vuln-proof-claw.
 
 The approved delivery strategy is:
 
@@ -538,29 +538,30 @@ Export redaction covers authorization headers, cookies, API keys, session tokens
 
 PDF output is deferred to the Web UI phase and generated from the HTML representation.
 
-## 11. VulnClaw Phase 1 comparison
+## 11. Phase 1 capability baseline
 
-vuln-proof-claw Phase 1 must reach VulnClaw's practical Web/API baseline while improving isolation, policy enforcement, evidence integrity, independent verification, and report formats.
+Phase 1 must provide a practical, end-to-end Web/API security workflow rather than a collection of disconnected tools.
 
-| Capability | VulnClaw baseline | vuln-proof-claw Phase 1 target |
-|---|---|---|
-| Autonomous workflow | Model-led solve loop | Planner, Operator, Verifier |
-| CLI | CLI, REPL, TUI | CLI first; REPL considered for v0.3 |
-| Web UI | Available | Deferred to v0.4 |
-| Deployment | Primarily one application container | Control plane, PostgreSQL, disposable workers |
-| Providers | Multiple presets | Native families plus compatible presets |
-| HTTP and batch probing | Available | Structured request, batch, evidence, replay |
-| Traffic evidence | Raw traffic files and indexes | Persisted evidence records and hash chain |
-| Reconnaissance | Directory, JS, nmap, auth checks | Equivalent Web/API structured tools |
-| Browser | External Chrome MCP | Isolated Playwright; MCP optional |
-| Shell and Python | Built-in experimental capabilities | Isolated and capability-controlled |
-| Skills | Broad security and CTF collection | Curated Phase 1 Web/API playbooks |
-| Anti-hallucination | Evidence completion gate | Independent Verifier and finding lifecycle |
-| Scope | Host/path/port and action checks | Scope-aware execution network boundary |
-| Approval | Task constraints | L0-L4 action-bound approvals |
-| Reporting | Markdown and PoC | Markdown, JSON, HTML, SARIF, bug bounty |
+| Capability area | Phase 1 requirement |
+|---|---|
+| Autonomous workflow | Planner, Operator, and independent Verifier |
+| User interface | CLI and REST API; Web UI deferred to v0.4 |
+| Deployment | Docker Compose control plane, PostgreSQL, and disposable workers |
+| Providers | Native provider families plus OpenAI-compatible presets |
+| HTTP testing | Structured requests, batch comparisons, persisted evidence, and replay |
+| Traffic analysis | List, search, view, sitemap, and request/response correlation |
+| Discovery | Crawling, directory enumeration, JavaScript, OpenAPI, and GraphQL analysis |
+| Authentication | Session analysis and authenticated/unauthenticated differential testing |
+| Browser | Isolated Playwright execution with captured screenshots and HAR artifacts |
+| Network reconnaissance | Scope-controlled DNS and basic nmap integration |
+| Local utilities | Encoding, decoding, hashing, source extraction, and evidence search |
+| Shell and Python | Isolated and capability-controlled execution |
+| Knowledge | Curated Web/API playbooks that cannot grant permissions |
+| Verification | Evidence-backed finding lifecycle and independent verification |
+| Scope and approval | Execution-boundary scope checks and L0-L4 approvals |
+| Reporting | Markdown, JSON, HTML, SARIF, Evidence Manifest, and bug bounty formats |
 
-Phase 1 deliberately defers VulnClaw breadth that is outside the selected Web/API focus, including TUI, internal-network knowledge packs, Android/reversing content, and very long persistent loops.
+Phase 1 deliberately excludes capabilities outside the selected Web/API focus, including internal-network operations, Active Directory, mobile testing, and long-running unrestricted autonomous loops.
 
 ## 12. Action reliability and error handling
 
@@ -684,7 +685,7 @@ The repository will include:
 - A pull request that changes one language version must update the paired document or explicitly mark the translation as pending before merge.
 - Code identifiers, command names, API fields, and configuration keys are not translated.
 
-The project uses the MIT License. VulnClaw and PentAGI will be acknowledged as inspirations. Reused code requires its original notices.
+The project uses the MIT License. Third-party dependencies or code introduced in the future must be reviewed for license compatibility and retain all notices required by their respective licenses.
 
 ## 15. Delivery milestones
 
@@ -723,7 +724,7 @@ The project uses the MIT License. VulnClaw and PentAGI will be acknowledged as i
 - Web/API playbooks.
 - HTML, SARIF, and bug bounty reports.
 
-At v0.3, vuln-proof-claw must meet the selected VulnClaw Web/API baseline and demonstrate improvements in isolation, policy enforcement, evidence integrity, verification, and reporting.
+At v0.3, vuln-proof-claw must satisfy the Phase 1 capability baseline and demonstrate complete isolation, policy enforcement, evidence integrity, independent verification, and report generation.
 
 ### v0.4 — Web Experience
 
@@ -759,7 +760,7 @@ Phase 1 is complete when:
 10. Reports can be exported without overwriting raw evidence.
 11. The selected multi-provider families pass contract tests.
 12. Active end-to-end tests run only against isolated local targets.
-13. The v0.3 Web/API capability set reaches the documented VulnClaw comparison baseline.
+13. The v0.3 Web/API capability set passes the documented Phase 1 capability baseline and isolated end-to-end tests.
 
 ## 17. Explicit non-goals
 
