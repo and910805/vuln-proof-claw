@@ -1,5 +1,7 @@
 # vuln-proof-claw Platform Design
 
+**English** | [繁體中文](2026-07-30-vuln-proof-claw-platform-design.zh-TW.md)
+
 **Status:** Approved  
 **Date:** 2026-07-30  
 **Default branch:** `mainer`  
@@ -146,7 +148,7 @@ vuln-proof-claw uses a Python modular monolith for the control plane and disposa
 ### 4.2 Module boundaries
 
 ```text
-proofclaw/
+vuln_proof_claw/
 ├── api/              # REST API
 ├── cli/              # CLI and API client
 ├── domain/           # Project, Flow, Action, Finding, Evidence
@@ -164,9 +166,9 @@ These are module boundaries, not separate deployable microservices in Phase 1. T
 
 ### 4.3 Initial Docker Compose topology
 
-- `proofclaw-api`
-- `proofclaw-postgres`
-- `proofclaw-worker-manager`
+- `vuln-proof-claw-api`
+- `vuln-proof-claw-postgres`
+- `vuln-proof-claw-worker-manager`
 - Per-flow disposable worker containers created by the Worker Manager
 
 Redis, Neo4j, MinIO, Grafana, and other infrastructure are not baseline dependencies. They may be introduced when a measured requirement exists.
@@ -671,6 +673,16 @@ The repository will include:
 - Release automation.
 - Developer Certificate of Origin policy.
 - Third-party notices.
+
+### 14.1 Bilingual documentation policy
+
+- Every maintained project document must be available in English and Traditional Chinese.
+- The English document uses the base filename, such as `README.md` or `ARCHITECTURE.md`.
+- The Traditional Chinese document uses the `.zh-TW.md` suffix, such as `README.zh-TW.md` or `ARCHITECTURE.zh-TW.md`.
+- Each language version links to its counterpart near the top of the document.
+- Both versions carry the same requirements, version status, and technical meaning.
+- A pull request that changes one language version must update the paired document or explicitly mark the translation as pending before merge.
+- Code identifiers, command names, API fields, and configuration keys are not translated.
 
 The project uses the MIT License. VulnClaw and PentAGI will be acknowledged as inspirations. Reused code requires its original notices.
 
