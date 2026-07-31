@@ -1,0 +1,79 @@
+name: vuln-proof-claw
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vuln_proof_claw}
+      POSTGRES_USER: ${POSTGRES_USER:-vuln_proof_claw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vuln_proof_claw_dev}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - control-plane
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      VULN_PROOF_CLAW_APP__ENVIRONMENT: development
+      VULN_PROOF_CLAW_API__HOST: 0.0.0.0
+      VULN_PROOF_CLAW_API__PORT: 8080
+      VULN_PROOF_CLAW_DATABASE__URL: >-
+        postgresql+psycopg://${POSTGRES_USER:-vuln_proof_claw}:${POSTGRES_PASSWORD:-vuln_proof_claw_dev}@database:5432/${POSTGRES_DB:-vuln_proof_claw}
+      VULN_PROOF_CLAW_LOGGING__FORMAT: json
+    ports:
+      - 127.0.0.1:8080:8080
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:8080/api/v1/health/ready',
+          timeout=2).read()
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - control-plane
+
+volumes:
+  postgres-data:
+
+networks:
+  control-plane:
+    driver: bridge
+  worker-isolated:
+    name: vuln-proof-claw-workers
+    driver: bridge
+    internal: true

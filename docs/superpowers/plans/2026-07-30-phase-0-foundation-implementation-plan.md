@@ -16,7 +16,7 @@ Phase 0 does not execute security scans or call an LLM.
 
 - `docker compose up --build` starts the API and PostgreSQL.
 - `vuln-proof-claw doctor` reports configuration, API, database, and Docker readiness.
-- `GET /health/live` and `GET /health/ready` return documented schemas.
+- `GET /api/v1/health/live` and `GET /api/v1/health/ready` return documented schemas.
 - Alembic can upgrade a new database to head.
 - Core domain and action-state tests pass.
 - English and Traditional Chinese contributor documentation exists.
@@ -364,7 +364,7 @@ pytest tests/cli -q
 docker compose config
 docker compose up --build -d
 docker compose ps
-curl --fail http://127.0.0.1:8080/health/ready
+curl --fail http://127.0.0.1:8080/api/v1/health/ready
 docker compose down --volumes
 pytest tests/execution tests/integration/test_compose_health.py -q
 ```
@@ -424,7 +424,7 @@ python scripts/check_bilingual_docs.py
 docker compose config
 docker compose up --build -d
 vuln-proof-claw doctor
-curl --fail http://127.0.0.1:8080/health/ready
+curl --fail http://127.0.0.1:8080/api/v1/health/ready
 docker compose down --volumes
 ```
 

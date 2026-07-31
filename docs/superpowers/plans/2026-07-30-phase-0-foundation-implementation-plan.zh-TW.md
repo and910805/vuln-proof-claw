@@ -16,7 +16,7 @@ Phase 0 不執行安全掃描，也不呼叫 LLM。
 
 - `docker compose up --build` 可啟動 API 與 PostgreSQL。
 - `vuln-proof-claw doctor` 可回報設定、API、資料庫與 Docker readiness。
-- `GET /health/live` 與 `GET /health/ready` 回傳文件化 schema。
+- `GET /api/v1/health/live` 與 `GET /api/v1/health/ready` 回傳文件化 schema。
 - Alembic 可將全新資料庫升級至 head。
 - 核心 domain 與 Action state test 通過。
 - 英文與繁體中文 contributor 文件齊全。
@@ -356,7 +356,7 @@ pytest tests/cli -q
 docker compose config
 docker compose up --build -d
 docker compose ps
-curl --fail http://127.0.0.1:8080/health/ready
+curl --fail http://127.0.0.1:8080/api/v1/health/ready
 docker compose down --volumes
 pytest tests/execution tests/integration/test_compose_health.py -q
 ```
@@ -416,7 +416,7 @@ python scripts/check_bilingual_docs.py
 docker compose config
 docker compose up --build -d
 vuln-proof-claw doctor
-curl --fail http://127.0.0.1:8080/health/ready
+curl --fail http://127.0.0.1:8080/api/v1/health/ready
 docker compose down --volumes
 ```
 
