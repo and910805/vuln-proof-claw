@@ -7,6 +7,7 @@ from contextlib import contextmanager
 
 from sqlalchemy import Engine
 from sqlalchemy import create_engine as sqlalchemy_create_engine
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session, sessionmaker
 
 from vuln_proof_claw.config.settings import Settings
@@ -15,7 +16,7 @@ SessionFactory = sessionmaker[Session]
 
 
 def create_engine(
-    database_url: str,
+    database_url: str | URL,
     *,
     echo: bool = False,
     pool_pre_ping: bool = True,
