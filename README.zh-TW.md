@@ -42,6 +42,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
 | REST API | 版本化 liveness、readiness contract 與 OpenAPI |
+| Web 控制台 | 內建 React／TypeScript 儀表板、雙語介面、建立專案與如實能力狀態 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
@@ -75,6 +76,7 @@ curl --fail http://127.0.0.1:8080/api/v1/health/ready
 
 接著可以開啟：
 
+- Web 控制台：<http://127.0.0.1:8080/>
 - API 文件：<http://127.0.0.1:8080/docs>
 - Liveness：<http://127.0.0.1:8080/api/v1/health/live>
 - Readiness：<http://127.0.0.1:8080/api/v1/health/ready>
@@ -136,7 +138,7 @@ Policy core 會在執行前為動作分類：
 
 ```mermaid
 flowchart TD
-    Clients["CLI · REST API · 未來 Web UI"] --> Control["Python 控制平面"]
+    Clients["Web UI · CLI · REST API"] --> Control["Python 控制平面"]
     Control --> Domain["Domain · Policy · Evidence"]
     Control --> Database[("PostgreSQL")]
     Control --> Manager["Worker Manager<br/>Phase 0 fail closed"]
@@ -189,6 +191,7 @@ Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdo
 | 路線圖 | [ROADMAP.md](ROADMAP.md) | [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) |
 | 安全政策 | [SECURITY.md](SECURITY.md) | [SECURITY.zh-TW.md](SECURITY.zh-TW.md) |
 | 貢獻指南 | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md) |
+| Web 控制台 | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

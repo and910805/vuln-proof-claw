@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -35,6 +36,13 @@ class ApiConfig(FrozenConfigModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8080, ge=1, le=65535)
     authentication_ready: bool = False
+
+
+class WebConfig(FrozenConfigModel):
+    """Bundled Web console configuration."""
+
+    enabled: bool = True
+    static_directory: Path | None = None
 
 
 class DatabaseConfig(FrozenConfigModel):

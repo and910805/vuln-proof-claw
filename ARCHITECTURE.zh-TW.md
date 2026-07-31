@@ -7,7 +7,7 @@
 vuln-proof-claw 使用 Python 模組化單體作為控制面，並使用拋棄式 Docker container 執行接觸目標的動作。
 
 ```text
-CLI / REST API / 未來 Web UI
+Web UI / CLI / REST API
               │
               ▼
        Python 控制面
@@ -37,6 +37,6 @@ CLI / REST API / 未來 Web UI
 
 ## Phase 0
 
-Phase 0 建立 Packaging、Configuration、Identifier、Domain state、Persistence、Policy/Evidence 原語、Health endpoint、CLI diagnostic、Docker Compose、Worker protocol 與 CI，並刻意不提供任何目標端安全工具。
+Phase 0 建立 Packaging、Configuration、Identifier、Domain state、Persistence、Policy/Evidence 原語、Health endpoint、內建 Web 控制台、CLI diagnostic、Docker Compose、Worker protocol 與 CI，並刻意不提供任何目標端安全工具。
 
 完整核准設計與實作計畫位於 `docs/superpowers/`。

@@ -16,6 +16,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web:
+    name: Web console
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+          package-manager-cache: true
+
+      - name: Install locked frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type check and build Web console
+        working-directory: web
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Verify bundled Web assets are current
+        run: git diff --exit-code -- src/vuln_proof_claw/web
+
+      - name: Audit frontend dependencies
+        working-directory: web
+        run: npm audit --audit-level=high
+
   quality:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-24.04

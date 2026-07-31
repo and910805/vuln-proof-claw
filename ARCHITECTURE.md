@@ -7,7 +7,7 @@
 vuln-proof-claw uses a Python modular monolith for the control plane and disposable Docker containers for target-facing execution.
 
 ```text
-CLI / REST API / future Web UI
+Web UI / CLI / REST API
               │
               ▼
       Python Control Plane
@@ -37,6 +37,6 @@ CLI / REST API / future Web UI
 
 ## Phase 0
 
-Phase 0 builds packaging, configuration, identifiers, domain state, persistence, policy/evidence primitives, health endpoints, CLI diagnostics, Docker Compose, worker protocol, and CI. It intentionally provides no target-facing security tools.
+Phase 0 builds packaging, configuration, identifiers, domain state, persistence, policy/evidence primitives, health endpoints, the bundled Web console, CLI diagnostics, Docker Compose, worker protocol, and CI. It intentionally provides no target-facing security tools.
 
 The detailed approved design and implementation plan are under `docs/superpowers/`.

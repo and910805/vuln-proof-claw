@@ -84,6 +84,18 @@ class ProjectRepository:
             return None
         return Project(id=ProjectId(row.id), name=row.name, created_at=_utc(row.created_at))
 
+    def list(self, *, limit: int = 100, offset: int = 0) -> tuple[Project, ...]:
+        rows = self._session.scalars(
+            select(ProjectRecord)
+            .order_by(ProjectRecord.created_at.desc(), ProjectRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            Project(id=ProjectId(row.id), name=row.name, created_at=_utc(row.created_at))
+            for row in rows
+        )
+
 
 class EngagementRepository:
     def __init__(self, session: Session) -> None:

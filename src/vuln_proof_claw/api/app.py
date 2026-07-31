@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -17,10 +20,14 @@ from vuln_proof_claw.api.dependencies import (
     ReadinessService,
     StaticReadinessProbe,
 )
+from vuln_proof_claw.api.routes.console import router as console_router
 from vuln_proof_claw.api.routes.health import router as health_router
 from vuln_proof_claw.config.settings import Settings, load_settings
 from vuln_proof_claw.observability.logging import configure_logging
-from vuln_proof_claw.persistence.session import create_engine_from_settings
+from vuln_proof_claw.persistence.session import (
+    create_engine_from_settings,
+    create_session_factory,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -41,9 +48,11 @@ def create_app(
         )
         engine: Engine | None = None
         probe = database_probe
+        app.state.session_factory = None
         if probe is None:
             try:
                 engine = create_engine_from_settings(app_settings)
+                app.state.session_factory = create_session_factory(engine)
                 probe = DatabaseReadinessProbe(engine)
             except SQLAlchemyError as error:
                 logger.warning(
@@ -69,4 +78,18 @@ def create_app(
         lifespan=lifespan,
     )
     app.include_router(health_router, prefix="/api/v1")
+    app.include_router(console_router, prefix="/api/v1")
+
+    web_root = app_settings.web.static_directory or (
+        Path(__file__).resolve().parents[1] / "web"
+    )
+    index_path = web_root / "index.html"
+    assets_path = web_root / "assets"
+    if app_settings.web.enabled and index_path.is_file() and assets_path.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_path), name="web-assets")
+
+        @app.get("/", include_in_schema=False)
+        def web_console() -> FileResponse:
+            return FileResponse(index_path)
+
     return app

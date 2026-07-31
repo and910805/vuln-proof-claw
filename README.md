@@ -44,6 +44,7 @@ vuln-proof-claw is being built around those requirements:
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
 | REST API | Versioned liveness and readiness contracts with OpenAPI |
+| Web console | Bundled React/TypeScript dashboard, bilingual UI, project creation, and truthful capability status |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
@@ -77,6 +78,7 @@ curl --fail http://127.0.0.1:8080/api/v1/health/ready
 
 Then open:
 
+- Web console: <http://127.0.0.1:8080/>
 - API documentation: <http://127.0.0.1:8080/docs>
 - Liveness: <http://127.0.0.1:8080/api/v1/health/live>
 - Readiness: <http://127.0.0.1:8080/api/v1/health/ready>
@@ -138,7 +140,7 @@ Out-of-scope and permanently denied actions take precedence over approval.
 
 ```mermaid
 flowchart TD
-    Clients["CLI · REST API · future Web UI"] --> Control["Python control plane"]
+    Clients["Web UI · CLI · REST API"] --> Control["Python control plane"]
     Control --> Domain["Domain · Policy · Evidence"]
     Control --> Database[("PostgreSQL")]
     Control --> Manager["Worker Manager<br/>fail closed in Phase 0"]
@@ -193,6 +195,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Roadmap | [ROADMAP.md](ROADMAP.md) | [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) |
 | Security policy | [SECURITY.md](SECURITY.md) | [SECURITY.zh-TW.md](SECURITY.zh-TW.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md) |
+| Web console | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

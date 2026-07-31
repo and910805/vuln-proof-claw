@@ -16,6 +16,7 @@ from vuln_proof_claw.config.models import (
     Environment,
     LoggingConfig,
     ProviderConfig,
+    WebConfig,
     WorkerRuntimeConfig,
 )
 
@@ -37,6 +38,7 @@ class Settings(BaseSettings):
 
     app: AppConfig = AppConfig()
     api: ApiConfig = ApiConfig()
+    web: WebConfig = WebConfig()
     database: DatabaseConfig = DatabaseConfig()
     docker: DockerConfig = DockerConfig()
     logging: LoggingConfig = LoggingConfig()

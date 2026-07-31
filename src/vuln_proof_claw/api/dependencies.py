@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Protocol, cast
 
 import structlog
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from vuln_proof_claw.config.settings import Settings
+from vuln_proof_claw.persistence.session import SessionFactory
 
 logger = structlog.get_logger(__name__)
 
@@ -81,3 +84,18 @@ class ReadinessService:
 def get_readiness_service(request: Request) -> ReadinessService:
     """Resolve the lifespan-managed readiness service."""
     return cast("ReadinessService", request.app.state.readiness_service)
+
+
+def get_session(request: Request) -> Generator[Session, None, None]:
+    """Provide a request-scoped database session."""
+    session_factory = cast(
+        "SessionFactory | None",
+        getattr(request.app.state, "session_factory", None),
+    )
+    if session_factory is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="database_unavailable",
+        )
+    with session_factory() as session:
+        yield session
