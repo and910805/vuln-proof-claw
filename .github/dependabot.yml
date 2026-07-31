@@ -1,0 +1,53 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    target-branch: mainer
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: Asia/Taipei
+    labels:
+      - dependencies
+      - python
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: mainer
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:15"
+      timezone: Asia/Taipei
+    labels:
+      - dependencies
+      - ci
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /
+    target-branch: mainer
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:30"
+      timezone: Asia/Taipei
+    labels:
+      - dependencies
+      - docker
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /docker/worker
+    target-branch: mainer
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:45"
+      timezone: Asia/Taipei
+    labels:
+      - dependencies
+      - docker
+    open-pull-requests-limit: 5

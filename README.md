@@ -2,9 +2,13 @@
 
 [繁體中文](README.zh-TW.md) | **English**
 
+[![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
+[![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
+
 Evidence-driven autonomous penetration testing platform with multi-agent orchestration, isolated execution, and verifiable findings.
 
-> **Project status:** Phase 0 foundation implementation is in active development.
+> **Project status:** Pre-alpha. The Phase 0 foundation is implemented; target-facing
+> execution remains disabled while higher-level workflows are developed.
 
 The current platform design is available in:
 

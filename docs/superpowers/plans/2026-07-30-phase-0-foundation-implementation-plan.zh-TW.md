@@ -374,9 +374,13 @@ pytest tests/execution tests/integration/test_compose_health.py -q
 - `.github/dependabot.yml`
 - `.github/ISSUE_TEMPLATE/bug_report.yml`
 - `.github/ISSUE_TEMPLATE/feature_request.yml`
+- `.github/ISSUE_TEMPLATE/config.yml`
 - `.github/pull_request_template.md`
+- `.github/pull_request_template.zh-TW.md`
+- `scripts/__init__.py`
 - `scripts/check_bilingual_docs.py`
 - `tests/scripts/test_check_bilingual_docs.py`
+- `tests/scripts/test_ci_configuration.py`
 
 **實作**
 
@@ -391,11 +395,11 @@ pytest tests/execution tests/integration/test_compose_health.py -q
 
 ```bash
 python scripts/check_bilingual_docs.py
-ruff check .
-mypy src
-pytest --cov=vuln_proof_claw --cov-report=term-missing
-pip-audit
-bandit -r src
+python -m ruff check .
+python -m mypy
+python -m pytest --cov=vuln_proof_claw --cov-report=term-missing
+python -m pip_audit
+python -m bandit -r src
 docker build .
 ```
 
@@ -409,9 +413,9 @@ docker build .
 
 ```bash
 python -m pip install -e ".[dev]"
-ruff check .
-mypy src
-pytest --cov=vuln_proof_claw --cov-report=term-missing
+python -m ruff check .
+python -m mypy
+python -m pytest --cov=vuln_proof_claw --cov-report=term-missing
 python scripts/check_bilingual_docs.py
 docker compose config
 docker compose up --build -d

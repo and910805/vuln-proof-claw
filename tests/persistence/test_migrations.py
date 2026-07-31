@@ -41,18 +41,22 @@ def test_upgrade_from_empty_database_and_downgrade(tmp_path: Path) -> None:
     command.check(config)
 
     engine = create_engine(database_url)
-    inspector = inspect(engine)
-    assert set(inspector.get_table_names()) == EXPECTED_TABLES
-    assert {"ix_actions_engagement_state", "ix_actions_task_created"} <= {
-        index["name"] for index in inspector.get_indexes("actions")
-    }
-    assert {"ix_evidence_action_captured"} <= {
-        index["name"] for index in inspector.get_indexes("evidence")
-    }
+    try:
+        with engine.connect() as connection:
+            inspector = inspect(connection)
+            assert set(inspector.get_table_names()) == EXPECTED_TABLES
+            assert {"ix_actions_engagement_state", "ix_actions_task_created"} <= {
+                index["name"] for index in inspector.get_indexes("actions")
+            }
+            assert {"ix_evidence_action_captured"} <= {
+                index["name"] for index in inspector.get_indexes("evidence")
+            }
 
-    command.downgrade(config, "base")
-    assert set(inspect(engine).get_table_names()) == {"alembic_version"}
-    engine.dispose()
+        command.downgrade(config, "base")
+        with engine.connect() as connection:
+            assert set(inspect(connection).get_table_names()) == {"alembic_version"}
+    finally:
+        engine.dispose()
 
 
 def test_postgresql_migration_can_render_offline_sql(capsys: pytest.CaptureFixture[str]) -> None:

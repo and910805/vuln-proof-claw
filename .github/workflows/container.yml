@@ -1,0 +1,68 @@
+name: Container security
+
+on:
+  pull_request:
+    branches:
+      - mainer
+  push:
+    branches:
+      - mainer
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Build and scan ${{ matrix.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: api
+            dockerfile: Dockerfile
+          - component: worker
+            dockerfile: docker/worker/Dockerfile
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: >-
+          docker build
+          --file "${{ matrix.dockerfile }}"
+          --tag "vuln-proof-claw-${{ matrix.component }}:${{ github.sha }}"
+          .
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: vuln-proof-claw-${{ matrix.component }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: vuln-proof-claw-${{ matrix.component }}:${{ github.sha }}
+          format: cyclonedx
+          output: sbom-${{ matrix.component }}.cdx.json
+          scanners: vuln
+          skip-setup-trivy: true
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ matrix.component }}
+          path: sbom-${{ matrix.component }}.cdx.json
+          if-no-files-found: error
+          retention-days: 30

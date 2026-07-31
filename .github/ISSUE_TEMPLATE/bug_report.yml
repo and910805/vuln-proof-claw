@@ -1,0 +1,68 @@
+name: "Bug report / 錯誤回報"
+description: "Report a reproducible defect / 回報可重現的程式錯誤"
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Vuln Proof Claw.
+        感謝你協助改善 Vuln Proof Claw。
+
+        Do not disclose security vulnerabilities here. Follow `SECURITY.md` instead.
+        請勿在此揭露安全漏洞，請改依照 `SECURITY.zh-TW.md` 的方式通報。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Pre-flight checks / 提交前確認"
+      options:
+        - label: "I searched existing issues / 我已搜尋現有 Issue"
+          required: true
+        - label: "This is not a confidential vulnerability report / 這不是機密漏洞通報"
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Version or commit / 版本或提交"
+      placeholder: "0.0.1 or commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: "Installation / 安裝方式"
+      options:
+        - Local CLI / 本機 CLI
+        - Docker Compose
+        - Source checkout / 原始碼
+        - Other / 其他
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description / 問題描述"
+      description: "What happened, and what did you expect? / 實際發生什麼，以及預期結果為何？"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: "Reproduction / 重現步驟"
+      description: "Provide the smallest safe reproduction. Remove secrets and target data. / 提供最小且安全的重現方式，移除機密與目標資料。"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Sanitized logs / 已清理的日誌"
+      description: "Paste redacted logs or evidence. Never include credentials. / 貼上已遮蔽的日誌或證據，切勿包含憑證。"
+      render: shell
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Environment / 執行環境"
+      placeholder: "OS, Python, Docker, database"
+    validations:
+      required: true

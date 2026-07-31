@@ -1,0 +1,37 @@
+name: "Feature request / 功能建議"
+description: "Propose a scoped improvement / 提出範圍明確的改進建議"
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem before proposing an implementation.
+        請先描述使用者問題，再提出實作方式。
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / 問題"
+      description: "Who needs this, and why? / 誰需要這項功能？原因是什麼？"
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: "Desired outcome / 期望結果"
+      description: "Describe observable behavior and acceptance criteria. / 描述可觀察行為與驗收條件。"
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: "Safety and authorization / 安全與授權"
+      description: "Explain scope, approval, evidence, and destructive-action implications. / 說明範圍、批准、證據及破壞性操作影響。"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives / 替代方案"
+      description: "What workarounds or designs did you consider? / 曾考慮哪些替代作法或設計？"
