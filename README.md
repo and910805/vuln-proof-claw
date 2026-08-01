@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.5-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.6-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -44,7 +44,7 @@ vuln-proof-claw is being built around those requirements:
 | Area | Available in Phase 0 |
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
-| REST API | Versioned liveness and readiness contracts with OpenAPI |
+| REST API | Versioned health, project, engagement, workflow, action-policy, audit, and report contracts with OpenAPI |
 | Web console | Bundled React/TypeScript dashboard, bilingual UI, project creation, and truthful capability status |
 | Evidence Core preview | Persisted engagement scopes, offline target-policy evaluation, and metadata-only JSON/Markdown reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
@@ -202,6 +202,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Web console | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
 | Evidence Core preview | [docs/EVIDENCE_CORE.md](docs/EVIDENCE_CORE.md) | [docs/EVIDENCE_CORE.zh-TW.md](docs/EVIDENCE_CORE.zh-TW.md) |
 | Controlled HTTP capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
+| Control-plane workflow API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

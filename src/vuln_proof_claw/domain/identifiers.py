@@ -55,6 +55,7 @@ EvidenceId = NewType("EvidenceId", str)
 ArtifactId = NewType("ArtifactId", str)
 ApprovalId = NewType("ApprovalId", str)
 FindingId = NewType("FindingId", str)
+AuditEventId = NewType("AuditEventId", str)
 
 
 def uuid7(*, timestamp_ms: int | None = None) -> UUID:
@@ -116,6 +117,10 @@ def new_approval_id() -> ApprovalId:
 
 def new_finding_id() -> FindingId:
     return FindingId(new_identifier())
+
+
+def new_audit_event_id() -> AuditEventId:
+    return AuditEventId(new_identifier())
 
 
 @dataclass(frozen=True, slots=True)

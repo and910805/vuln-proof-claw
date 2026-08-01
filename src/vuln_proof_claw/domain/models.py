@@ -12,6 +12,7 @@ from vuln_proof_claw.domain.identifiers import (
     ActionId,
     ApprovalId,
     ArtifactId,
+    AuditEventId,
     EngagementId,
     EvidenceId,
     FindingId,
@@ -21,6 +22,7 @@ from vuln_proof_claw.domain.identifiers import (
     new_action_id,
     new_approval_id,
     new_artifact_id,
+    new_audit_event_id,
     new_engagement_id,
     new_evidence_id,
     new_finding_id,
@@ -263,3 +265,21 @@ class Finding:
         _require_aware(self.created_at, "created_at")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEvent:
+    """Immutable record of a security-relevant control-plane decision."""
+
+    event_type: str
+    actor: str
+    payload: bytes
+    engagement_id: EngagementId | None = None
+    id: AuditEventId = field(default_factory=new_audit_event_id)
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _require_text(self.event_type, "event_type")
+        _require_text(self.actor, "actor")
+        _require_aware(self.created_at, "created_at")
+        object.__setattr__(self, "payload", bytes(self.payload))

@@ -23,6 +23,7 @@ from vuln_proof_claw.api.dependencies import (
 from vuln_proof_claw.api.routes.console import router as console_router
 from vuln_proof_claw.api.routes.health import router as health_router
 from vuln_proof_claw.api.routes.reports import router as reports_router
+from vuln_proof_claw.api.routes.workflow import router as workflow_router
 from vuln_proof_claw.config.settings import Settings, load_settings
 from vuln_proof_claw.observability.logging import configure_logging
 from vuln_proof_claw.persistence.session import (
@@ -81,6 +82,7 @@ def create_app(
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(console_router, prefix="/api/v1")
     app.include_router(reports_router, prefix="/api/v1")
+    app.include_router(workflow_router, prefix="/api/v1")
 
     web_root = app_settings.web.static_directory or (
         Path(__file__).resolve().parents[1] / "web"

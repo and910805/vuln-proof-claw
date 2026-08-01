@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.6] - 2026-08-01
+
+### Added
+
+- Added paginated Flow, Task, Action, and engagement audit-event API contracts.
+- Added transactional HTTP action proposals with deterministic risk and scope policy outcomes.
+- Added immutable audit events for flow, task, action-proposal, and policy-decision changes.
+- Added engagement-scoped idempotency replay and protected-parameter conflict detection.
+
+### Security
+
+- Kept allowed actions queued without exposing target-facing execution.
+- Rejected unsafe HTTP methods and credential-bearing headers before action persistence.
+- Derived risk and policy results on the server from persisted engagement scope.
+
 ## [0.0.5] - 2026-08-01
 
 ### Added

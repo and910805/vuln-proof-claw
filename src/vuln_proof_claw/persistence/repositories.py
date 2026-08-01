@@ -13,6 +13,7 @@ from vuln_proof_claw.domain.identifiers import (
     ActionId,
     ApprovalId,
     ArtifactId,
+    AuditEventId,
     EngagementId,
     EvidenceId,
     FindingId,
@@ -24,6 +25,7 @@ from vuln_proof_claw.domain.models import (
     Action,
     Approval,
     Artifact,
+    AuditEvent,
     Engagement,
     Evidence,
     Finding,
@@ -35,6 +37,7 @@ from vuln_proof_claw.persistence.models import (
     ActionRecord,
     ApprovalRecord,
     ArtifactRecord,
+    AuditEventRecord,
     EngagementRecord,
     EngagementScopeRecord,
     EvidenceRecord,
@@ -237,6 +240,33 @@ class FlowRepository:
             row.version,
         )
 
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Stored[Flow], ...]:
+        rows = self._session.scalars(
+            select(FlowRecord)
+            .where(FlowRecord.engagement_id == engagement_id)
+            .order_by(FlowRecord.created_at.desc(), FlowRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            Stored(
+                Flow(
+                    id=FlowId(row.id),
+                    engagement_id=EngagementId(row.engagement_id),
+                    objective=row.objective,
+                    created_at=_utc(row.created_at),
+                ),
+                row.version,
+            )
+            for row in rows
+        )
+
 
 class TaskRepository:
     def __init__(self, session: Session) -> None:
@@ -262,6 +292,30 @@ class TaskRepository:
             flow_id=FlowId(row.flow_id),
             title=row.title,
             created_at=_utc(row.created_at),
+        )
+
+    def list_for_flow(
+        self,
+        flow_id: FlowId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Task, ...]:
+        rows = self._session.scalars(
+            select(TaskRecord)
+            .where(TaskRecord.flow_id == flow_id)
+            .order_by(TaskRecord.created_at.desc(), TaskRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            Task(
+                id=TaskId(row.id),
+                flow_id=FlowId(row.flow_id),
+                title=row.title,
+                created_at=_utc(row.created_at),
+            )
+            for row in rows
         )
 
 
@@ -337,6 +391,37 @@ class ActionRepository:
         if row is None:
             return None
         return Stored(self._domain_from_record(row), row.version)
+
+    def get_by_idempotency_key(
+        self,
+        engagement_id: EngagementId,
+        idempotency_key: str,
+    ) -> Stored[Action] | None:
+        row = self._session.scalar(
+            select(ActionRecord).where(
+                ActionRecord.engagement_id == engagement_id,
+                ActionRecord.idempotency_key == idempotency_key,
+            )
+        )
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Stored[Action], ...]:
+        rows = self._session.scalars(
+            select(ActionRecord)
+            .where(ActionRecord.engagement_id == engagement_id)
+            .order_by(ActionRecord.created_at.desc(), ActionRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
 
     def save(self, action: Action, *, expected_version: int) -> Stored[Action]:
         row = self._session.scalar(
@@ -527,3 +612,49 @@ class FindingRepository:
                     for evidence_id in evidence_ids
                 ],
             )
+
+
+class AuditEventRepository:
+    """Append and inspect immutable engagement audit events."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, event: AuditEvent) -> None:
+        self._session.add(
+            AuditEventRecord(
+                id=event.id,
+                engagement_id=event.engagement_id,
+                event_type=event.event_type,
+                actor=event.actor,
+                payload=event.payload,
+                created_at=event.created_at,
+            )
+        )
+        self._session.flush()
+
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[AuditEvent, ...]:
+        rows = self._session.scalars(
+            select(AuditEventRecord)
+            .where(AuditEventRecord.engagement_id == engagement_id)
+            .order_by(AuditEventRecord.created_at.desc(), AuditEventRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            AuditEvent(
+                id=AuditEventId(row.id),
+                engagement_id=EngagementId(row.engagement_id) if row.engagement_id else None,
+                event_type=row.event_type,
+                actor=row.actor,
+                payload=row.payload,
+                created_at=_utc(row.created_at),
+            )
+            for row in rows
+        )

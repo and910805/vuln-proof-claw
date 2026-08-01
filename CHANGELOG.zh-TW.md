@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.6] - 2026-08-01
+
+### 新增
+
+- 新增具分頁能力的 Flow、Task、Action 與 Engagement audit-event API contract。
+- 新增 transactional HTTP Action 提案，以及確定性的風險與 scope policy 結果。
+- 新增 Flow、Task、Action 提案與 policy decision 的不可變 audit event。
+- 新增 Engagement 範圍的 idempotency replay 與受保護參數衝突偵測。
+
+### 安全性
+
+- 允許的 Action 只會進入 queued，不開放面向目標的實際執行。
+- 在 Action 持久化前拒絕不安全 HTTP method 與帶有 credential 的 header。
+- Risk 與 policy 結果一律由 server 依持久化的 Engagement scope 推導。
+
 ## [0.0.5] - 2026-08-01
 
 ### Added

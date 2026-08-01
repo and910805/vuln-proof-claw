@@ -13,7 +13,7 @@ Roadmap 表達預定方向，不保證 Release 日期。
 
 ## v0.1 — Evidence Core
 
-目前預覽進度：已完成持久化且正規化的評估範圍、離線範圍判斷、transactional raw evidence chain、具備完整性狀態的 JSON／Markdown 報告與資料庫重驗證。面向目標的 HTTP capture、一次性 Worker lifecycle、具備身分驗證的證據存取與報告匯出 artifact 仍在進行中。
+目前預覽進度：已完成持久化且正規化的評估範圍、離線範圍判斷、Flow／Task／Action 提案 API、確定性的政策狀態轉換、基本不可變稽核軌跡、transactional raw evidence chain、具備完整性狀態的 JSON／Markdown 報告、資料庫重驗證與 fail-closed HTTP capture contract。具體的一次性 Worker transport、具備身分驗證的證據存取、approval mutation 與報告匯出 artifact 仍在進行中。
 
 - Project、Engagement、Scope 與 Action persistence。
 - 結構化 HTTP Request/Response capture。

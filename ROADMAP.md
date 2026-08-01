@@ -13,7 +13,7 @@ Roadmap items describe intent, not guaranteed release dates.
 
 ## v0.1 — Evidence Core
 
-Current preview: persisted normalized engagement scopes, offline scope evaluation, transactional raw evidence chains, integrity-aware JSON/Markdown reports, and database re-verification are implemented. Target-facing HTTP capture, disposable worker lifecycle, authenticated evidence access, and export artifacts remain in progress.
+Current preview: persisted normalized engagement scopes, offline scope evaluation, Flow/Task/Action proposal APIs, deterministic policy-state transitions, a basic immutable audit trail, transactional raw evidence chains, integrity-aware JSON/Markdown reports, database re-verification, and a fail-closed HTTP capture contract are implemented. A concrete disposable worker transport, authenticated evidence access, approval mutations, and export artifacts remain in progress.
 
 - Project, Engagement, Scope, and Action persistence.
 - Structured HTTP request/response capture.
