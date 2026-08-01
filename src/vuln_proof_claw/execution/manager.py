@@ -20,6 +20,24 @@ __all__ = ["WorkerState"]
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeResource:
+    """Safe labels for one runtime resource owned by this application."""
+
+    worker_id: WorkerId
+    request_id: str
+    created_at: datetime
+    reference: str = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.request_id.strip():
+            raise ValueError("request_id must not be empty")
+        if not self.reference.strip():
+            raise ValueError("reference must not be empty")
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise ValueError("created_at must be timezone-aware")
+
+
+@dataclass(frozen=True, slots=True)
 class WorkerHandle:
     """Safe lifecycle metadata; the privileged runtime reference stays internal."""
 
@@ -59,7 +77,7 @@ class WorkerRuntime(Protocol):
     def identity(self) -> str:
         """Return an immutable runtime implementation or image identity."""
 
-    async def create(self, request: WorkerRequest) -> str:
+    async def create(self, request: WorkerRequest, *, worker_id: WorkerId) -> str:
         """Create a stopped disposable worker and return an opaque runtime reference."""
 
     async def start(self, runtime_reference: str) -> None:
@@ -73,6 +91,9 @@ class WorkerRuntime(Protocol):
 
     async def destroy(self, runtime_reference: str) -> None:
         """Destroy the worker and every per-action runtime resource."""
+
+    async def list_resources(self) -> tuple[RuntimeResource, ...]:
+        """List only resources carrying this application's immutable ownership labels."""
 
 
 class WorkerManager(Protocol):
@@ -140,11 +161,11 @@ class LifecycleWorkerManager:
                     raise WorkerRequestConflictError("worker_request_id_conflict")
                 return managed.handle
 
-            runtime_reference = await self._runtime.create(request)
+            worker_id = new_worker_id()
+            runtime_reference = await self._runtime.create(request, worker_id=worker_id)
             if not runtime_reference.strip():
                 raise WorkerManagerError("runtime_returned_empty_reference")
             timestamp = self._clock()
-            worker_id = new_worker_id()
             handle = WorkerHandle(
                 worker_id=worker_id,
                 request_id=request.request_id,

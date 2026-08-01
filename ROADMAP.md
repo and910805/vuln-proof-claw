@@ -13,11 +13,11 @@ Roadmap items describe intent, not guaranteed release dates.
 
 ## v0.1 — Evidence Core
 
-Current preview: persisted normalized engagement scopes, Flow/Task/Action APIs, authenticated approvals, execution-time approval consumption, an immutable audit trail, transactional evidence chains, separately authorized raw-evidence reads, immutable report exports, a DNS-pinned passive URL assessment pipeline with queryable history, deterministic response-header findings, and a durable disposable Worker lifecycle registry are implemented. A container-isolated restricted runtime, orphan-runtime janitor, crawler, and browser authentication sessions remain in progress.
+Current preview: persisted normalized engagement scopes, Flow/Task/Action APIs, authenticated approvals, execution-time approval consumption, an immutable audit trail, transactional evidence chains, separately authorized raw-evidence reads, immutable report exports, a DNS-pinned passive URL assessment pipeline with queryable history, deterministic response-header findings, a durable disposable Worker lifecycle registry, and a bounded orphan-runtime cleanup contract are implemented. A container-isolated restricted runtime with startup integration, crawler, and browser authentication sessions remain in progress.
 
 - Project, Engagement, Scope, and Action persistence.
 - Structured HTTP request/response capture.
-- Disposable Worker lifecycle (durable registry and fail-closed restart reconciliation complete; restricted runtime pending).
+- Disposable Worker lifecycle (durable registry, fail-closed restart reconciliation, immutable runtime ownership labels, and orphan cleanup complete; restricted runtime and startup wiring pending).
 - Evidence hash chain and Markdown/JSON reports.
 
 ## v0.2 — Autonomous Core
