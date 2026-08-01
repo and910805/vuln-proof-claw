@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from vuln_proof_claw.config.models import (
     ApiConfig,
     AppConfig,
+    AssessmentConfig,
     DatabaseConfig,
     DockerConfig,
     Environment,
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
 
     app: AppConfig = AppConfig()
     api: ApiConfig = ApiConfig()
+    assessment: AssessmentConfig = AssessmentConfig()
     web: WebConfig = WebConfig()
     database: DatabaseConfig = DatabaseConfig()
     docker: DockerConfig = DockerConfig()
@@ -57,6 +59,9 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         if self.database.echo:
             msg = "database query echo is not allowed in production"
+            raise ValueError(msg)
+        if self.assessment.enabled and not self.api.authentication_ready:
+            msg = "passive assessment requires authentication readiness in production"
             raise ValueError(msg)
         return self
 

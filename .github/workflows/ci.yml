@@ -38,9 +38,10 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Type check and build Web console
+      - name: Test, type check, and build Web console
         working-directory: web
         run: |
+          npm test
           npm run typecheck
           npm run build
 

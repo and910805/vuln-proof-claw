@@ -79,6 +79,117 @@ async def test_project_name_rejects_whitespace_only_value(tmp_path: Path) -> Non
     assert response.status_code == 422
 
 
+async def test_scoped_engagement_can_be_created_listed_and_reported(tmp_path: Path) -> None:
+    payload = {
+        "name": "Production API assessment",
+        "starts_at": "2026-08-01T00:00:00Z",
+        "ends_at": "2026-08-02T00:00:00Z",
+        "maximum_risk": "L2",
+        "scope": {
+            "allowed_hostnames": ["API.Example.TEST."],
+            "allowed_ports": [443],
+            "allowed_schemes": ["HTTPS"],
+            "allowed_paths": ["/v1/../v1"],
+            "denied_paths": ["/v1/admin"],
+        },
+    }
+    async with console_client(tmp_path / "engagement.db") as client:
+        project = await client.post("/api/v1/projects", json={"name": "Acme"})
+        project_id = project.json()["id"]
+        created = await client.post(
+            f"/api/v1/projects/{project_id}/engagements",
+            json=payload,
+        )
+        listed = await client.get(f"/api/v1/projects/{project_id}/engagements")
+        fetched = await client.get(f"/api/v1/engagements/{created.json()['id']}")
+        allowed = await client.post(
+            f"/api/v1/engagements/{created.json()['id']}/scope/evaluate",
+            json={"target": "HTTPS://API.EXAMPLE.TEST:443/v1/users"},
+        )
+        denied = await client.post(
+            f"/api/v1/engagements/{created.json()['id']}/scope/evaluate",
+            json={"target": "https://api.example.test/v1/admin"},
+        )
+        report = await client.get(f"/api/v1/engagements/{created.json()['id']}/report")
+        markdown = await client.get(f"/api/v1/engagements/{created.json()['id']}/report.md")
+
+    assert created.status_code == 201
+    assert created.json()["scope"]["allowed_hostnames"] == ["api.example.test"]
+    assert created.json()["scope"]["allowed_schemes"] == ["https"]
+    assert created.json()["scope"]["allowed_paths"] == ["/v1"]
+    assert created.json()["scope"]["valid_from"] == "2026-08-01T00:00:00Z"
+    assert created.json()["scope"]["valid_until"] == "2026-08-02T00:00:00Z"
+    assert listed.json()["items"] == [created.json()]
+    assert fetched.json() == created.json()
+    assert allowed.json() == {
+        "schema_version": "v1",
+        "allowed": True,
+        "reason": "scope_allowed",
+        "normalized_target": "https://api.example.test:443/v1/users",
+        "requires_dns_recheck": True,
+    }
+    assert denied.json()["allowed"] is False
+    assert denied.json()["reason"] == "path_denied"
+    assert report.status_code == 200
+    assert report.json()["counts"] == {"actions": 0, "evidence": 0, "findings": 0}
+    assert report.json()["evidence_integrity"] == {
+        "status": "valid",
+        "checked_records": 0,
+        "reason": None,
+    }
+    assert report.json()["raw_evidence_included"] is False
+    assert markdown.status_code == 200
+    assert "# Engagement report: Production API assessment" in markdown.text
+    assert "No findings have been recorded." in markdown.text
+
+
+async def test_engagement_requires_existing_project_and_explicit_allow_scope(
+    tmp_path: Path,
+) -> None:
+    payload = {
+        "name": "Invalid",
+        "starts_at": "2026-08-01T00:00:00Z",
+        "ends_at": "2026-08-02T00:00:00Z",
+        "scope": {"allowed_hostnames": ["example.test"]},
+    }
+    async with console_client(tmp_path / "engagement-validation.db") as client:
+        missing = await client.post(
+            "/api/v1/projects/01999999-9999-7999-8999-999999999999/engagements",
+            json=payload,
+        )
+        project = await client.post("/api/v1/projects", json={"name": "Acme"})
+        payload["scope"] = {}
+        empty_scope = await client.post(
+            f"/api/v1/projects/{project.json()['id']}/engagements",
+            json=payload,
+        )
+
+    assert missing.status_code == 404
+    assert empty_scope.status_code == 422
+
+
+async def test_scope_window_cannot_exceed_engagement_window(tmp_path: Path) -> None:
+    payload = {
+        "name": "Overbroad scope",
+        "starts_at": "2026-08-01T00:00:00Z",
+        "ends_at": "2026-08-02T00:00:00Z",
+        "scope": {
+            "allowed_hostnames": ["example.test"],
+            "valid_from": "2026-07-31T23:59:59Z",
+            "valid_until": "2026-08-02T00:00:01Z",
+        },
+    }
+    async with console_client(tmp_path / "scope-window.db") as client:
+        project = await client.post("/api/v1/projects", json={"name": "Acme"})
+        response = await client.post(
+            f"/api/v1/projects/{project.json()['id']}/engagements",
+            json=payload,
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "scope must not start before its engagement"
+
+
 async def test_web_console_serves_configured_static_bundle(tmp_path: Path) -> None:
     web_root = tmp_path / "web"
     assets = web_root / "assets"

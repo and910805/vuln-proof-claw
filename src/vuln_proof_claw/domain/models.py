@@ -6,27 +6,40 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from vuln_proof_claw.domain.enums import ActionState, ArtifactKind, FindingStatus, RiskLevel
+from vuln_proof_claw.domain.enums import (
+    ActionState,
+    ArtifactKind,
+    FindingStatus,
+    ReportFormat,
+    RiskLevel,
+    WorkerState,
+)
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import (
     ActionId,
     ApprovalId,
     ArtifactId,
+    AuditEventId,
     EngagementId,
     EvidenceId,
     FindingId,
     FlowId,
     ProjectId,
+    ReportExportId,
     TaskId,
+    WorkerId,
     new_action_id,
     new_approval_id,
     new_artifact_id,
+    new_audit_event_id,
     new_engagement_id,
     new_evidence_id,
     new_finding_id,
     new_flow_id,
     new_project_id,
+    new_report_export_id,
     new_task_id,
+    new_worker_id,
 )
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
@@ -160,6 +173,34 @@ class Action:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkerExecution:
+    """Durable, non-secret metadata for one disposable Worker lifecycle."""
+
+    request_id: str
+    engagement_id: EngagementId
+    action_id: ActionId
+    runtime_identity: str
+    state: WorkerState
+    created_at: datetime
+    updated_at: datetime
+    id: WorkerId = field(default_factory=new_worker_id)
+    cleaned_up: bool = False
+    error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.request_id, "request_id")
+        _require_text(self.runtime_identity, "runtime_identity")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+        if self.updated_at < self.created_at:
+            raise DomainValidationError("updated_at must not be earlier than created_at")
+        if self.cleaned_up and not self.state.terminal:
+            raise DomainValidationError("cleaned_up requires a terminal Worker state")
+        if self.error_code is not None:
+            _require_text(self.error_code, "error_code")
+
+
+@dataclass(frozen=True, slots=True)
 class Approval:
     """Single-action approval bound to protected action properties."""
 
@@ -244,6 +285,30 @@ class Artifact:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportExport:
+    """Immutable, engagement-scoped report snapshot metadata."""
+
+    engagement_id: EngagementId
+    format: ReportFormat
+    media_type: str
+    digest: str
+    size: int
+    idempotency_key: str
+    created_by: str
+    id: ReportExportId = field(default_factory=new_report_export_id)
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _require_text(self.media_type, "media_type")
+        _require_sha256(self.digest, "digest")
+        if self.size < 0:
+            raise DomainValidationError("size must not be negative")
+        _require_text(self.idempotency_key, "idempotency_key")
+        _require_text(self.created_by, "created_by")
+        _require_aware(self.created_at, "created_at")
+
+
+@dataclass(frozen=True, slots=True)
 class Finding:
     """A security finding whose verification is evidence-backed."""
 
@@ -263,3 +328,21 @@ class Finding:
         _require_aware(self.created_at, "created_at")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEvent:
+    """Immutable record of a security-relevant control-plane decision."""
+
+    event_type: str
+    actor: str
+    payload: bytes
+    engagement_id: EngagementId | None = None
+    id: AuditEventId = field(default_factory=new_audit_event_id)
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _require_text(self.event_type, "event_type")
+        _require_text(self.actor, "actor")
+        _require_aware(self.created_at, "created_at")
+        object.__setattr__(self, "payload", bytes(self.payload))

@@ -12,10 +12,15 @@ Web 基礎版本目前提供：
 - 即時 API 與資料庫 readiness 狀態。
 - 持久化控制平面數量摘要。
 - 專案清單與建立專案。
+- 可用 deep link 直接開啟的授權 URL 評估工作區。
+- 根據已確認目標，自動建立範圍縮到最小的 24 小時 L0 Engagement。
+- 被動評估狀態、Evidence／Finding 數量，以及 JSON／Markdown 報告下載。
+- 由新到舊的持久化評估歷史，可依專案篩選、顯示失敗狀態，並在重新整理後再次下載報告。
+- 供 authentication deployment 選用的 Operator Bearer Token 輸入。
 - 系統強制執行的 L0-L4 風險政策參考。
 - 如實標示已運作與仍鎖定的能力。
 
-目前還不能啟動 Flow、執行面向目標的工具、批准 Action、顯示原始 Evidence 或驗證 Finding。在對應 API、授權與執行邊界檢查完成前，這些控制項會明確維持不可用。
+Browser 目前只能啟動有界的被動 URL assessment，不會 crawl、登入目標、執行外部工具或 payload、批准高風險 Action、顯示原始 Evidence，或獨立驗證 Finding。
 
 ## 開啟控制台
 
@@ -34,6 +39,7 @@ docker compose up --build -d
 ```bash
 cd web
 npm ci
+npm test
 npm run typecheck
 npm run build
 ```
@@ -51,9 +57,11 @@ Vite 只監聽 `127.0.0.1:5173`，並將 `/api` 代理至 `127.0.0.1:8080`。
 
 - UI 使用 same-origin API request，不載入外部 CDN 資源。
 - Compose API 預設仍只綁定 `127.0.0.1`。
-- 建立專案目前只供本機 pre-alpha 使用；正式環境部署前必須完成 Authentication readiness。
+- 選用的 Operator Token 只保存在分頁範圍 `sessionStorage`，不會放進 URL，並可明確清除。正式多使用者環境仍須先完成更完整的 hardened session strategy。
+- 送出前會移除 query string 與 fragment，拒絕內嵌 credential、IP literal 與非 HTTP(S) scheme，並要求使用者明確確認授權。Private 與 IP-literal target 必須另外透過人工審查後的 API Scope 建立。
+- 自動建立的 Engagement 只允許目標 hostname、scheme、port 與 path；24 小時後失效、maximum risk 固定為 L0，且 destructive action 維持停用。
 - UI 是否顯示按鈕不是授權邊界；Policy、Scope、Approval 與 Execution 檢查仍由 Server 強制執行。
-- 未完成的 Action 不會以模擬方式執行，也無法從瀏覽器開啟。
+- Server 未啟用 assessment setting 前，UI 不會送出 target traffic。
 
 ## API contract
 
@@ -63,3 +71,8 @@ Vite 只監聽 `127.0.0.1:5173`，並將 `/api` 代理至 `127.0.0.1:8080`。
 - `GET /api/v1/dashboard/summary`
 - `GET /api/v1/projects`
 - `POST /api/v1/projects`
+- `POST /api/v1/projects/{project_id}/engagements`
+- `POST /api/v1/engagements/{engagement_id}/assessments`
+- `GET /api/v1/assessments?project_id={project_id}&limit=50&offset=0`
+- `GET /api/v1/engagements/{engagement_id}/report`
+- `GET /api/v1/engagements/{engagement_id}/report.md`

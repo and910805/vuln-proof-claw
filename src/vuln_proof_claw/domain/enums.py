@@ -34,6 +34,28 @@ class ActionState(StrEnum):
     WORKER_LOST = "worker_lost"
 
 
+class WorkerState(StrEnum):
+    """Durable control-plane state for one disposable Worker."""
+
+    STARTING = "starting"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    CANCELLED = "cancelled"
+    LOST = "lost"
+
+    @property
+    def terminal(self) -> bool:
+        return self in {
+            WorkerState.COMPLETED,
+            WorkerState.FAILED,
+            WorkerState.TIMED_OUT,
+            WorkerState.CANCELLED,
+            WorkerState.LOST,
+        }
+
+
 class FindingStatus(StrEnum):
     """Verification lifecycle for a potential finding."""
 
@@ -53,3 +75,10 @@ class ArtifactKind(StrEnum):
     DOWNLOAD = "download"
     REPORT = "report"
     OTHER = "other"
+
+
+class ReportFormat(StrEnum):
+    """Stable formats for immutable engagement report snapshots."""
+
+    JSON = "json"
+    MARKDOWN = "markdown"

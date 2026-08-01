@@ -9,15 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+[![Version](https://img.shields.io/badge/version-0.0.13-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0 provides the control-plane foundation only. It does
-> not call an LLM, launch scanning tools, or perform target-facing security tests.
-> The worker manager fails closed until scoped execution is implemented and verified.
+> **Pre-alpha status:** Phase 0.0.13 includes one opt-in, scope-checked passive URL
+> assessment that sends a bounded `GET`, stores evidence, and derives conservative
+> findings. It does not crawl, call an LLM, launch external scanners, authenticate to
+> targets, or execute exploit payloads. All broader execution paths fail closed.
 
 ## Why vuln-proof-claw?
 
@@ -43,18 +45,20 @@ vuln-proof-claw is being built around those requirements:
 | Area | Available in Phase 0 |
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
-| REST API | Versioned liveness and readiness contracts with OpenAPI |
-| Web console | Bundled React/TypeScript dashboard, bilingual UI, project creation, and truthful capability status |
+| REST API | Versioned health, project, engagement, passive assessment, workflow, audit, and report contracts with OpenAPI |
+| Web console | Bilingual dashboard, tab-scoped operator authentication, authorized URL assessment wizard, persistent project-filtered history, report downloads, and truthful capability status |
+| Evidence Core preview | Scoped passive URL assessment, transactional evidence, deterministic findings, and immutable reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
+| Authentication | Optional API-wide Bearer boundary with distinct operator, approver, and evidence-reader roles |
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Workers | Versioned request/response protocol, resource limits, and a fail-closed manager interface |
+| Execution | Opt-in DNS-pinned passive GET capture plus a durable Worker boundary; arbitrary tools and exploit execution remain disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
-Target discovery, security-tool execution, LLM orchestration, Planner/Operator/Verifier
-agents, and report generation are roadmap items—not current Phase 0 features.
+Crawler-based discovery, security-tool and exploit execution, LLM orchestration,
+Planner/Operator/Verifier agents, and advanced HTML/SARIF reporting remain roadmap items.
 
 ## Quick start
 
@@ -103,6 +107,7 @@ PowerShell:
 git clone https://github.com/and910805/vuln-proof-claw.git
 Set-Location vuln-proof-claw
 python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade "pip>=26.1.2"
 .\.venv\Scripts\python.exe -m pip install --editable ".[dev]"
 .\.venv\Scripts\python.exe -m vuln_proof_claw --version
 .\.venv\Scripts\python.exe -m vuln_proof_claw doctor
@@ -114,6 +119,7 @@ Linux and macOS:
 git clone https://github.com/and910805/vuln-proof-claw.git
 cd vuln-proof-claw
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade "pip>=26.1.2"
 .venv/bin/python -m pip install --editable ".[dev]"
 .venv/bin/python -m vuln_proof_claw --version
 .venv/bin/python -m vuln_proof_claw doctor
@@ -143,7 +149,7 @@ flowchart TD
     Clients["Web UI · CLI · REST API"] --> Control["Python control plane"]
     Control --> Domain["Domain · Policy · Evidence"]
     Control --> Database[("PostgreSQL")]
-    Control --> Manager["Worker Manager<br/>fail closed in Phase 0"]
+    Control --> Manager["Worker Manager<br/>audited lifecycle preview"]
     Manager --> Protocol["Versioned worker protocol"]
     Protocol --> Worker["Disposable worker<br/>planned execution adapter"]
     Worker -. "future scope-restricted egress" .-> Target["Authorized Web/API target"]
@@ -177,9 +183,10 @@ provider keys, customer credentials, or captured target data.
 
 ## Project status and roadmap
 
-Phase 0 is the completed foundation. The next milestone, v0.1, focuses on the
-evidence core: persisted engagements, structured HTTP capture, disposable worker
-lifecycle, and Markdown/JSON reporting.
+Phase 0 is the completed foundation. The v0.1 preview now includes persisted
+engagements, structured HTTP capture, durable disposable-worker state, guarded raw
+evidence review, and immutable Markdown/JSON report exports. A concrete restricted
+runtime and orphan-runtime janitor remain before the Evidence Core milestone is complete.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
 not guaranteed release dates.
@@ -196,6 +203,13 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Security policy | [SECURITY.md](SECURITY.md) | [SECURITY.zh-TW.md](SECURITY.zh-TW.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md) |
 | Web console | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
+| Evidence Core preview | [docs/EVIDENCE_CORE.md](docs/EVIDENCE_CORE.md) | [docs/EVIDENCE_CORE.zh-TW.md](docs/EVIDENCE_CORE.zh-TW.md) |
+| Controlled HTTP capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
+| Control-plane workflow API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
+| Authentication and approvals | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
+| Evidence access and report exports | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
+| Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
+| Disposable Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

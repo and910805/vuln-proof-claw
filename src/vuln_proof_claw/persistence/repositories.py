@@ -8,41 +8,59 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from vuln_proof_claw.domain.enums import ActionState, ArtifactKind, FindingStatus, RiskLevel
+from vuln_proof_claw.domain.enums import (
+    ActionState,
+    ArtifactKind,
+    FindingStatus,
+    ReportFormat,
+    RiskLevel,
+    WorkerState,
+)
 from vuln_proof_claw.domain.identifiers import (
     ActionId,
     ApprovalId,
     ArtifactId,
+    AuditEventId,
     EngagementId,
     EvidenceId,
     FindingId,
     FlowId,
     ProjectId,
+    ReportExportId,
     TaskId,
+    WorkerId,
 )
 from vuln_proof_claw.domain.models import (
     Action,
     Approval,
     Artifact,
+    AuditEvent,
     Engagement,
     Evidence,
     Finding,
     Flow,
     Project,
+    ReportExport,
     Task,
+    WorkerExecution,
 )
 from vuln_proof_claw.persistence.models import (
     ActionRecord,
     ApprovalRecord,
     ArtifactRecord,
+    AuditEventRecord,
     EngagementRecord,
+    EngagementScopeRecord,
     EvidenceRecord,
     FindingRecord,
     FlowRecord,
     ProjectRecord,
+    ReportExportRecord,
     TaskRecord,
+    WorkerExecutionRecord,
     finding_evidence,
 )
+from vuln_proof_claw.policy.scope import EngagementScope
 
 
 class PersistenceError(Exception):
@@ -134,6 +152,77 @@ class EngagementRepository:
             row.version,
         )
 
+    def list_for_project(
+        self,
+        project_id: ProjectId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Stored[Engagement], ...]:
+        rows = self._session.scalars(
+            select(EngagementRecord)
+            .where(EngagementRecord.project_id == project_id)
+            .order_by(EngagementRecord.created_at.desc(), EngagementRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
+
+    @staticmethod
+    def _domain_from_record(row: EngagementRecord) -> Engagement:
+        return Engagement(
+            id=EngagementId(row.id),
+            project_id=ProjectId(row.project_id),
+            name=row.name,
+            starts_at=_utc(row.starts_at),
+            ends_at=_utc(row.ends_at),
+            maximum_risk=RiskLevel(row.maximum_risk),
+            destructive_actions_enabled=row.destructive_actions_enabled,
+            created_at=_utc(row.created_at),
+        )
+
+
+class ScopeRepository:
+    """Persist normalized engagement scope rules as one atomic policy document."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, engagement_id: EngagementId, scope: EngagementScope) -> None:
+        self._session.add(
+            EngagementScopeRecord(
+                engagement_id=engagement_id,
+                allowed_hostnames=sorted(scope.allowed_hostnames),
+                allowed_cidrs=[str(network) for network in scope.allowed_networks],
+                allowed_ports=sorted(scope.allowed_ports),
+                allowed_schemes=sorted(scope.allowed_schemes),
+                allowed_paths=list(scope.allowed_paths),
+                denied_hostnames=sorted(scope.denied_hostnames),
+                denied_cidrs=[str(network) for network in scope.denied_networks],
+                denied_paths=list(scope.denied_paths),
+                valid_from=scope.valid_from,
+                valid_until=scope.valid_until,
+            )
+        )
+        self._session.flush()
+
+    def get(self, engagement_id: EngagementId) -> EngagementScope | None:
+        row = self._session.get(EngagementScopeRecord, engagement_id)
+        if row is None:
+            return None
+        return EngagementScope.create(
+            allowed_hostnames=tuple(row.allowed_hostnames),
+            allowed_cidrs=tuple(row.allowed_cidrs),
+            allowed_ports=tuple(row.allowed_ports),
+            allowed_schemes=tuple(row.allowed_schemes),
+            allowed_paths=tuple(row.allowed_paths),
+            denied_hostnames=tuple(row.denied_hostnames),
+            denied_cidrs=tuple(row.denied_cidrs),
+            denied_paths=tuple(row.denied_paths),
+            valid_from=_utc(row.valid_from) if row.valid_from else None,
+            valid_until=_utc(row.valid_until) if row.valid_until else None,
+        )
+
 
 class FlowRepository:
     def __init__(self, session: Session) -> None:
@@ -164,6 +253,33 @@ class FlowRepository:
             row.version,
         )
 
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Stored[Flow], ...]:
+        rows = self._session.scalars(
+            select(FlowRecord)
+            .where(FlowRecord.engagement_id == engagement_id)
+            .order_by(FlowRecord.created_at.desc(), FlowRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            Stored(
+                Flow(
+                    id=FlowId(row.id),
+                    engagement_id=EngagementId(row.engagement_id),
+                    objective=row.objective,
+                    created_at=_utc(row.created_at),
+                ),
+                row.version,
+            )
+            for row in rows
+        )
+
 
 class TaskRepository:
     def __init__(self, session: Session) -> None:
@@ -189,6 +305,30 @@ class TaskRepository:
             flow_id=FlowId(row.flow_id),
             title=row.title,
             created_at=_utc(row.created_at),
+        )
+
+    def list_for_flow(
+        self,
+        flow_id: FlowId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Task, ...]:
+        rows = self._session.scalars(
+            select(TaskRecord)
+            .where(TaskRecord.flow_id == flow_id)
+            .order_by(TaskRecord.created_at.desc(), TaskRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            Task(
+                id=TaskId(row.id),
+                flow_id=FlowId(row.flow_id),
+                title=row.title,
+                created_at=_utc(row.created_at),
+            )
+            for row in rows
         )
 
 
@@ -265,6 +405,37 @@ class ActionRepository:
             return None
         return Stored(self._domain_from_record(row), row.version)
 
+    def get_by_idempotency_key(
+        self,
+        engagement_id: EngagementId,
+        idempotency_key: str,
+    ) -> Stored[Action] | None:
+        row = self._session.scalar(
+            select(ActionRecord).where(
+                ActionRecord.engagement_id == engagement_id,
+                ActionRecord.idempotency_key == idempotency_key,
+            )
+        )
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Stored[Action], ...]:
+        rows = self._session.scalars(
+            select(ActionRecord)
+            .where(ActionRecord.engagement_id == engagement_id)
+            .order_by(ActionRecord.created_at.desc(), ActionRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
+
     def save(self, action: Action, *, expected_version: int) -> Stored[Action]:
         row = self._session.scalar(
             select(ActionRecord).where(
@@ -319,6 +490,100 @@ class ActionRepository:
         )
 
 
+class WorkerExecutionRepository:
+    """Persist safe Worker lifecycle metadata without privileged runtime references."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, execution: WorkerExecution) -> Stored[WorkerExecution]:
+        row = WorkerExecutionRecord(
+            id=execution.id,
+            request_id=execution.request_id,
+            engagement_id=execution.engagement_id,
+            action_id=execution.action_id,
+            runtime_identity=execution.runtime_identity,
+            state=execution.state.value,
+            cleaned_up=execution.cleaned_up,
+            error_code=execution.error_code,
+            created_at=execution.created_at,
+            updated_at=execution.updated_at,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get(self, worker_id: WorkerId) -> Stored[WorkerExecution] | None:
+        row = self._session.get(WorkerExecutionRecord, worker_id)
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get_for_action(self, action_id: ActionId) -> Stored[WorkerExecution] | None:
+        row = self._session.scalar(
+            select(WorkerExecutionRecord).where(WorkerExecutionRecord.action_id == action_id)
+        )
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get_for_request(self, request_id: str) -> Stored[WorkerExecution] | None:
+        row = self._session.scalar(
+            select(WorkerExecutionRecord).where(WorkerExecutionRecord.request_id == request_id)
+        )
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def list_in_flight(self) -> tuple[Stored[WorkerExecution], ...]:
+        rows = self._session.scalars(
+            select(WorkerExecutionRecord)
+            .where(
+                WorkerExecutionRecord.state.in_(
+                    (WorkerState.STARTING.value, WorkerState.RUNNING.value)
+                )
+            )
+            .order_by(WorkerExecutionRecord.created_at, WorkerExecutionRecord.id)
+        )
+        return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
+
+    def save(
+        self,
+        execution: WorkerExecution,
+        *,
+        expected_version: int,
+    ) -> Stored[WorkerExecution]:
+        row = self._session.scalar(
+            select(WorkerExecutionRecord).where(
+                WorkerExecutionRecord.id == execution.id,
+                WorkerExecutionRecord.version == expected_version,
+            )
+        )
+        if row is None:
+            raise ConcurrentUpdateError
+        row.state = execution.state.value
+        row.cleaned_up = execution.cleaned_up
+        row.error_code = execution.error_code
+        row.updated_at = execution.updated_at
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    @staticmethod
+    def _domain_from_record(row: WorkerExecutionRecord) -> WorkerExecution:
+        return WorkerExecution(
+            id=WorkerId(row.id),
+            request_id=row.request_id,
+            engagement_id=EngagementId(row.engagement_id),
+            action_id=ActionId(row.action_id),
+            runtime_identity=row.runtime_identity,
+            state=WorkerState(row.state),
+            cleaned_up=row.cleaned_up,
+            error_code=row.error_code,
+            created_at=_utc(row.created_at),
+            updated_at=_utc(row.updated_at),
+        )
+
+
 class EvidenceRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -337,23 +602,30 @@ class EvidenceRepository:
         )
         self._session.flush()
 
+    def get(self, evidence_id: EvidenceId) -> Evidence | None:
+        row = self._session.get(EvidenceRecord, evidence_id)
+        if row is None:
+            return None
+        return self._domain_from_record(row)
+
     def for_action(self, action_id: ActionId) -> tuple[Evidence, ...]:
         rows = self._session.scalars(
             select(EvidenceRecord)
             .where(EvidenceRecord.action_id == action_id)
             .order_by(EvidenceRecord.captured_at, EvidenceRecord.id)
         )
-        return tuple(
-            Evidence(
-                id=EvidenceId(row.id),
-                action_id=ActionId(row.action_id),
-                tool_name=row.tool_name,
-                tool_version=row.tool_version,
-                digest=row.digest,
-                previous_digest=row.previous_digest,
-                captured_at=_utc(row.captured_at),
-            )
-            for row in rows
+        return tuple(self._domain_from_record(row) for row in rows)
+
+    @staticmethod
+    def _domain_from_record(row: EvidenceRecord) -> Evidence:
+        return Evidence(
+            id=EvidenceId(row.id),
+            action_id=ActionId(row.action_id),
+            tool_name=row.tool_name,
+            tool_version=row.tool_version,
+            digest=row.digest,
+            previous_digest=row.previous_digest,
+            captured_at=_utc(row.captured_at),
         )
 
 
@@ -388,6 +660,86 @@ class ArtifactRepository:
             digest=row.digest,
             created_at=_utc(row.created_at),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class StoredReportExport:
+    """Report snapshot metadata paired with immutable serialized content."""
+
+    entity: ReportExport
+    content: bytes
+
+
+class ReportExportRepository:
+    """Persist immutable engagement reports and enforce idempotent creation."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, export: ReportExport, content: bytes) -> None:
+        immutable_content = bytes(content)
+        if len(immutable_content) != export.size:
+            raise ValueError("report export size does not match content")
+        self._session.add(
+            ReportExportRecord(
+                id=export.id,
+                engagement_id=export.engagement_id,
+                format=export.format.value,
+                media_type=export.media_type,
+                digest=export.digest,
+                size=export.size,
+                idempotency_key=export.idempotency_key,
+                content=immutable_content,
+                created_by=export.created_by,
+                created_at=export.created_at,
+            )
+        )
+        self._session.flush()
+
+    def get(self, export_id: ReportExportId) -> StoredReportExport | None:
+        row = self._session.get(ReportExportRecord, export_id)
+        return None if row is None else self._stored(row)
+
+    def get_by_idempotency_key(
+        self, engagement_id: EngagementId, idempotency_key: str
+    ) -> StoredReportExport | None:
+        row = self._session.scalar(
+            select(ReportExportRecord).where(
+                ReportExportRecord.engagement_id == engagement_id,
+                ReportExportRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return None if row is None else self._stored(row)
+
+    def list_for_engagement(
+        self, engagement_id: EngagementId, *, limit: int = 100, offset: int = 0
+    ) -> tuple[ReportExport, ...]:
+        rows = self._session.scalars(
+            select(ReportExportRecord)
+            .where(ReportExportRecord.engagement_id == engagement_id)
+            .order_by(ReportExportRecord.created_at.desc(), ReportExportRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(self._entity(row) for row in rows)
+
+    @staticmethod
+    def _entity(row: ReportExportRecord) -> ReportExport:
+        return ReportExport(
+            id=ReportExportId(row.id),
+            engagement_id=EngagementId(row.engagement_id),
+            format=ReportFormat(row.format),
+            media_type=row.media_type,
+            digest=row.digest,
+            size=row.size,
+            idempotency_key=row.idempotency_key,
+            created_by=row.created_by,
+            created_at=_utc(row.created_at),
+        )
+
+    @classmethod
+    def _stored(cls, row: ReportExportRecord) -> StoredReportExport:
+        return StoredReportExport(cls._entity(row), bytes(row.content))
 
 
 class FindingRepository:
@@ -454,3 +806,49 @@ class FindingRepository:
                     for evidence_id in evidence_ids
                 ],
             )
+
+
+class AuditEventRepository:
+    """Append and inspect immutable engagement audit events."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, event: AuditEvent) -> None:
+        self._session.add(
+            AuditEventRecord(
+                id=event.id,
+                engagement_id=event.engagement_id,
+                event_type=event.event_type,
+                actor=event.actor,
+                payload=event.payload,
+                created_at=event.created_at,
+            )
+        )
+        self._session.flush()
+
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[AuditEvent, ...]:
+        rows = self._session.scalars(
+            select(AuditEventRecord)
+            .where(AuditEventRecord.engagement_id == engagement_id)
+            .order_by(AuditEventRecord.created_at.desc(), AuditEventRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(
+            AuditEvent(
+                id=AuditEventId(row.id),
+                engagement_id=EngagementId(row.engagement_id) if row.engagement_id else None,
+                event_type=row.event_type,
+                actor=row.actor,
+                payload=row.payload,
+                created_at=_utc(row.created_at),
+            )
+            for row in rows
+        )

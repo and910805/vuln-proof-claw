@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 class Environment(StrEnum):
@@ -36,6 +36,32 @@ class ApiConfig(FrozenConfigModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8080, ge=1, le=65535)
     authentication_ready: bool = False
+    operator_identity: str = Field(default="local-operator", min_length=1, max_length=320)
+    approver_identity: str = Field(default="local-approver", min_length=1, max_length=320)
+    evidence_reader_identity: str = Field(
+        default="local-evidence-reader", min_length=1, max_length=320
+    )
+    operator_token: SecretStr | None = Field(default=None, min_length=32)
+    approver_token: SecretStr | None = Field(default=None, min_length=32)
+    evidence_reader_token: SecretStr | None = Field(default=None, min_length=32)
+
+    @property
+    def evidence_access_ready(self) -> bool:
+        """Return whether the separately authenticated raw-evidence path is enabled."""
+        return self.authentication_ready and self.evidence_reader_token is not None
+
+    @model_validator(mode="after")
+    def validate_authentication(self) -> ApiConfig:
+        """Require two distinct credentials before authentication is called ready."""
+        tokens = (self.operator_token, self.approver_token)
+        if self.authentication_ready and any(token is None for token in tokens):
+            raise ValueError("authentication readiness requires operator and approver tokens")
+        configured = [
+            token.get_secret_value() for token in (*tokens, self.evidence_reader_token) if token
+        ]
+        if len(configured) != len(set(configured)):
+            raise ValueError("operator, approver, and evidence-reader tokens must be distinct")
+        return self
 
 
 class WebConfig(FrozenConfigModel):
@@ -61,6 +87,25 @@ class DockerConfig(FrozenConfigModel):
     worker_image: str = "vuln-proof-claw-worker:dev"
     worker_network: str = "vuln-proof-claw-workers"
     default_timeout_seconds: int = Field(default=300, ge=1, le=10_800)
+
+
+class AssessmentConfig(FrozenConfigModel):
+    """Explicit opt-in limits for the passive URL assessment preview."""
+
+    enabled: bool = False
+    timeout_seconds: int = Field(default=10, ge=1, le=60)
+    max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
+    user_agent: str = Field(default="vuln-proof-claw/0.0.13", min_length=1, max_length=255)
+
+    @field_validator("user_agent")
+    @classmethod
+    def validate_user_agent(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("assessment user agent must not be blank")
+        if any(character in normalized for character in ("\r", "\n", "\x00")):
+            raise ValueError("assessment user agent contains a control delimiter")
+        return normalized
 
 
 class LoggingConfig(FrozenConfigModel):

@@ -40,7 +40,9 @@ ACTION_TRANSITIONS: Final = MappingProxyType(
         ActionState.PENDING_APPROVAL: frozenset(
             {ActionState.QUEUED, ActionState.DENIED, ActionState.CANCELLED}
         ),
-        ActionState.QUEUED: frozenset({ActionState.RUNNING, ActionState.CANCELLED}),
+        ActionState.QUEUED: frozenset(
+            {ActionState.RUNNING, ActionState.CANCELLED, ActionState.WORKER_LOST}
+        ),
         ActionState.RUNNING: frozenset(
             {
                 ActionState.SUCCEEDED,

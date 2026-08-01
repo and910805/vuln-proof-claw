@@ -26,6 +26,7 @@ Phase 0 covers the control-plane foundation and worker protocol. It does not exe
 
 - Scope bypass through DNS, redirects, IPv4/IPv6 ambiguity, proxies, or browser subresources.
 - Approval replay or parameter mutation.
+- Operator/approver token theft, role confusion, or credentials leaked through URLs and logs.
 - Prompt injection from target-controlled data.
 - Worker escape, unsafe mounts, Docker-socket abuse, or credential leakage.
 - Command/path injection and malicious plugins.
@@ -36,6 +37,7 @@ Phase 0 covers the control-plane foundation and worker protocol. It does not exe
 
 - Code-enforced scope checks at execution time.
 - L0-L4 risk policy and action-bound approvals.
+- Distinct constant-time checked Bearer credentials for operator and approver duties.
 - Disposable non-root workers with resource and network limits.
 - Secret redaction and no provider credentials in workers.
 - Canonical evidence hashing and append-oriented audit records.

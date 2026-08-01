@@ -9,15 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+[![Version](https://img.shields.io/badge/version-0.0.13-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0 目前只提供控制平面的基礎建設，不會呼叫 LLM、
-> 啟動掃描工具或對目標執行資安測試。在具備範圍限制的執行層完成並通過驗證前，
-> Worker Manager 會維持 fail-closed。
+> **Pre-alpha 狀態：** Phase 0.0.13 提供一條預設關閉、受 Scope 約束的被動 URL
+> 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
+> crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
+> 全部維持 fail-closed。
 
 ## 為什麼需要 vuln-proof-claw？
 
@@ -41,18 +43,20 @@ vuln-proof-claw 以這些要求作為核心設計：
 | 領域 | Phase 0 已完成 |
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
-| REST API | 版本化 liveness、readiness contract 與 OpenAPI |
-| Web 控制台 | 內建 React／TypeScript 儀表板、雙語介面、建立專案與如實能力狀態 |
+| REST API | 版本化 health、project、engagement、passive assessment、workflow、audit、report contract 與 OpenAPI |
+| Web 控制台 | 雙語儀表板、分頁範圍 Operator authentication、授權 URL 評估精靈、可依專案篩選的持久化歷史、報告下載與如實能力狀態 |
+| Evidence Core 預覽版 | Scoped passive URL assessment、transactional evidence、deterministic finding 與不可變報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
+| Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator、approver 與 evidence-reader role |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Worker | 版本化 request／response protocol、資源限制及 fail-closed Manager interface |
+| Execution | Opt-in DNS-pinned passive GET capture 與持久化 Worker boundary；任意工具與 exploit execution 仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
-目標探索、資安工具執行、LLM orchestration、Planner／Operator／Verifier agents 與
-報告產生都屬於後續路線圖，並不是目前 Phase 0 已提供的功能。
+Crawler 型目標探索、資安工具與 exploit execution、LLM orchestration、
+Planner／Operator／Verifier agents，以及進階 HTML／SARIF 報告仍屬於後續路線圖。
 
 ## 快速開始
 
@@ -101,6 +105,7 @@ PowerShell：
 git clone https://github.com/and910805/vuln-proof-claw.git
 Set-Location vuln-proof-claw
 python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade "pip>=26.1.2"
 .\.venv\Scripts\python.exe -m pip install --editable ".[dev]"
 .\.venv\Scripts\python.exe -m vuln_proof_claw --version
 .\.venv\Scripts\python.exe -m vuln_proof_claw doctor
@@ -112,6 +117,7 @@ Linux 與 macOS：
 git clone https://github.com/and910805/vuln-proof-claw.git
 cd vuln-proof-claw
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade "pip>=26.1.2"
 .venv/bin/python -m pip install --editable ".[dev]"
 .venv/bin/python -m vuln_proof_claw --version
 .venv/bin/python -m vuln_proof_claw doctor
@@ -141,7 +147,7 @@ flowchart TD
     Clients["Web UI · CLI · REST API"] --> Control["Python 控制平面"]
     Control --> Domain["Domain · Policy · Evidence"]
     Control --> Database[("PostgreSQL")]
-    Control --> Manager["Worker Manager<br/>Phase 0 fail closed"]
+    Control --> Manager["Worker Manager<br/>具稽核的 lifecycle 預覽"]
     Manager --> Protocol["版本化 Worker protocol"]
     Protocol --> Worker["一次性 Worker<br/>規劃中的 execution adapter"]
     Worker -. "未來受 scope 限制的 egress" .-> Target["已授權 Web／API 目標"]
@@ -173,9 +179,10 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 
 ## 專案狀態與路線圖
 
-Phase 0 基礎建設已完成。下一個里程碑 v0.1 將聚焦 Evidence Core：持久化
-Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdown／JSON
-報告。
+Phase 0 基礎建設已完成。v0.1 預覽版目前包含持久化 Engagement、結構化 HTTP
+capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱，以及不可變的
+Markdown／JSON 報告匯出。Evidence Core 里程碑仍待完成具體受限 runtime 與
+orphan-runtime janitor。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。
@@ -192,6 +199,13 @@ Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdo
 | 安全政策 | [SECURITY.md](SECURITY.md) | [SECURITY.zh-TW.md](SECURITY.zh-TW.md) |
 | 貢獻指南 | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md) |
 | Web 控制台 | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
+| Evidence Core 預覽版 | [docs/EVIDENCE_CORE.md](docs/EVIDENCE_CORE.md) | [docs/EVIDENCE_CORE.zh-TW.md](docs/EVIDENCE_CORE.zh-TW.md) |
+| 受控 HTTP Capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
+| 控制平面工作流程 API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
+| Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
+| Evidence 存取與報告匯出 | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
+| Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
+| 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

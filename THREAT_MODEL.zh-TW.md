@@ -26,6 +26,7 @@ Phase 0 涵蓋控制面基礎與 Worker protocol，不執行 Scan、LLM Action�
 
 - 透過 DNS、Redirect、IPv4/IPv6 ambiguity、Proxy 或 Browser subresource 繞過 Scope。
 - Approval replay 或 Parameter mutation。
+- Operator／Approver token 遭竊、角色混淆，或 Credential 透過 URL 與 Log 洩漏。
 - 目標控制資料造成的 Prompt injection。
 - Worker escape、不安全 Mount、Docker socket 濫用或 Credential leakage。
 - Command/path injection 與惡意 Plugin。
@@ -36,6 +37,7 @@ Phase 0 涵蓋控制面基礎與 Worker protocol，不執行 Scan、LLM Action�
 
 - 在執行時由程式碼強制執行 Scope check。
 - L0-L4 Risk Policy 與綁定 Action 的 Approval。
+- Operator 與 Approver 職責使用分離且以 constant-time 比對的 Bearer Credential。
 - 具 Resource 與 Network limit 的拋棄式 non-root Worker。
 - Secret redaction，且 Worker 不持有 Provider credential。
 - Canonical Evidence hash 與 append-oriented Audit record。

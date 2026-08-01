@@ -17,12 +17,16 @@ EXPECTED_TABLES = {
     "artifacts",
     "audit_events",
     "engagements",
+    "engagement_scopes",
     "evidence",
+    "evidence_payloads",
     "finding_evidence",
     "findings",
     "flows",
     "projects",
+    "report_exports",
     "tasks",
+    "worker_executions",
 }
 
 
@@ -51,6 +55,12 @@ def test_upgrade_from_empty_database_and_downgrade(tmp_path: Path) -> None:
             assert {"ix_evidence_action_captured"} <= {
                 index["name"] for index in inspector.get_indexes("evidence")
             }
+            assert {"ix_worker_executions_engagement_state"} <= {
+                index["name"] for index in inspector.get_indexes("worker_executions")
+            }
+            assert {"ix_report_exports_engagement_created"} <= {
+                index["name"] for index in inspector.get_indexes("report_exports")
+            }
 
         command.downgrade(config, "base")
         with engine.connect() as connection:
@@ -67,6 +77,10 @@ def test_postgresql_migration_can_render_offline_sql(capsys: pytest.CaptureFixtu
     output = capsys.readouterr().out
     assert "CREATE TABLE projects" in output
     assert "CREATE TABLE actions" in output
+    assert "CREATE TABLE engagement_scopes" in output
+    assert "CREATE TABLE evidence_payloads" in output
+    assert "CREATE TABLE worker_executions" in output
+    assert "CREATE TABLE report_exports" in output
     assert "CREATE INDEX ix_evidence_action_captured" in output
 
 

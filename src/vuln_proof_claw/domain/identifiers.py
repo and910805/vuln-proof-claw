@@ -53,8 +53,11 @@ TaskId = NewType("TaskId", str)
 ActionId = NewType("ActionId", str)
 EvidenceId = NewType("EvidenceId", str)
 ArtifactId = NewType("ArtifactId", str)
+ReportExportId = NewType("ReportExportId", str)
 ApprovalId = NewType("ApprovalId", str)
 FindingId = NewType("FindingId", str)
+AuditEventId = NewType("AuditEventId", str)
+WorkerId = NewType("WorkerId", str)
 
 
 def uuid7(*, timestamp_ms: int | None = None) -> UUID:
@@ -110,12 +113,24 @@ def new_artifact_id() -> ArtifactId:
     return ArtifactId(new_identifier())
 
 
+def new_report_export_id() -> ReportExportId:
+    return ReportExportId(new_identifier())
+
+
 def new_approval_id() -> ApprovalId:
     return ApprovalId(new_identifier())
 
 
 def new_finding_id() -> FindingId:
     return FindingId(new_identifier())
+
+
+def new_audit_event_id() -> AuditEventId:
+    return AuditEventId(new_identifier())
+
+
+def new_worker_id() -> WorkerId:
+    return WorkerId(new_identifier())
 
 
 @dataclass(frozen=True, slots=True)

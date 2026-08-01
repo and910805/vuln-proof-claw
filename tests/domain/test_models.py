@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from vuln_proof_claw.domain.enums import FindingStatus, RiskLevel
+from vuln_proof_claw.domain.enums import FindingStatus, RiskLevel, WorkerState
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import (
     EvidenceId,
@@ -23,6 +23,7 @@ from vuln_proof_claw.domain.models import (
     Evidence,
     Finding,
     Project,
+    WorkerExecution,
 )
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
@@ -130,6 +131,21 @@ def test_evidence_requires_sha256_digest() -> None:
             tool_version="1.0.0",
             digest="not-a-digest",
             captured_at=NOW,
+        )
+
+
+def test_worker_cleanup_requires_terminal_state() -> None:
+    action = make_action()
+    with pytest.raises(DomainValidationError, match="terminal Worker state"):
+        WorkerExecution(
+            request_id="request-1",
+            engagement_id=action.engagement_id,
+            action_id=action.id,
+            runtime_identity="fake-runtime@sha256:test",
+            state=WorkerState.RUNNING,
+            created_at=NOW,
+            updated_at=NOW,
+            cleaned_up=True,
         )
 
 
