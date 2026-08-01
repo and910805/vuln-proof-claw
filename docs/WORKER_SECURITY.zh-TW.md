@@ -12,7 +12,8 @@
 - 只有 API health endpoint 發布於 `127.0.0.1:8080`。
 - Worker image 不掛載 Docker socket、host home directory、credential store 或 control-plane provider credential。
 - Compose 預留不具外部 egress 的 internal-only `vuln-proof-claw-workers` network。
-- Phase 0 的 `DisabledWorkerManager` 採 fail-closed，不執行任何面向目標的操作。
+- process-local 生命週期預覽會稽核 create／start／collect／cancel／destroy、強制 timeout，並透過注入的 runtime 邊界一律嘗試清理。
+- 預設 `DisabledWorkerManager` 仍採 fail-closed，不執行任何面向目標的操作。
 
 Compose 預設值只供本機開發使用。預設資料庫密碼不適用於共享或 production 環境。
 
@@ -45,6 +46,10 @@ Docker socket 存取權實質上等同 host 管理權限。擁有不受限制 so
 - 清理 Worker 前必須先收集 Evidence。
 - 無論成功、失敗、逾時、取消或 worker lost，都必須完成清理。
 
-## Phase 0 限制
+## 目前限制
 
-Phase 0 只定義 protocol 與 fail-closed Manager interface，尚不建立 container，也不執行安全測試工具。在 scoped egress 完成前，internal-only Worker network 會維持封閉。Network policy enforcement、受限 runtime adapter 與隔離端對端目標，都是後續階段的必要實作門檻。
+控制平面目前已定義並測試生命週期狀態機、Action 綁定、Approval 消耗、response
+綁定、Evidence 驗證、稽核軌跡、timeout、取消與清理行為，但尚未提供具體 runtime、
+建立 container 或執行安全測試工具。registry 只存在單一 process 內，重啟後無法復原。
+在完成並驗證持久化復原、network policy enforcement、受限 runtime adapter 與隔離式
+端對端目標前，internal-only Worker network 會維持封閉。

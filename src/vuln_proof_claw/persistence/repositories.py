@@ -495,23 +495,30 @@ class EvidenceRepository:
         )
         self._session.flush()
 
+    def get(self, evidence_id: EvidenceId) -> Evidence | None:
+        row = self._session.get(EvidenceRecord, evidence_id)
+        if row is None:
+            return None
+        return self._domain_from_record(row)
+
     def for_action(self, action_id: ActionId) -> tuple[Evidence, ...]:
         rows = self._session.scalars(
             select(EvidenceRecord)
             .where(EvidenceRecord.action_id == action_id)
             .order_by(EvidenceRecord.captured_at, EvidenceRecord.id)
         )
-        return tuple(
-            Evidence(
-                id=EvidenceId(row.id),
-                action_id=ActionId(row.action_id),
-                tool_name=row.tool_name,
-                tool_version=row.tool_version,
-                digest=row.digest,
-                previous_digest=row.previous_digest,
-                captured_at=_utc(row.captured_at),
-            )
-            for row in rows
+        return tuple(self._domain_from_record(row) for row in rows)
+
+    @staticmethod
+    def _domain_from_record(row: EvidenceRecord) -> Evidence:
+        return Evidence(
+            id=EvidenceId(row.id),
+            action_id=ActionId(row.action_id),
+            tool_name=row.tool_name,
+            tool_version=row.tool_version,
+            digest=row.digest,
+            previous_digest=row.previous_digest,
+            captured_at=_utc(row.captured_at),
         )
 
 

@@ -176,4 +176,6 @@ class WorkerResponse(ProtocolModel):
             raise ValueError("non-success responses require a safe error_code")
         if self.status is WorkerResultStatus.SUCCEEDED and self.error_code is not None:
             raise ValueError("successful responses must not include an error_code")
+        if self.status is WorkerResultStatus.SUCCEEDED and not self.evidence_ids:
+            raise ValueError("successful responses require at least one evidence_id")
         return self

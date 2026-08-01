@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.8] - 2026-08-01
+
+### Added
+
+- Added an injected-runtime disposable Worker manager with create, start, collect, timeout, cancellation, and mandatory cleanup states.
+- Added durable Action-to-Worker orchestration and lifecycle audit events.
+- Added process-safe request replay checks and concurrent collect/cancel handling.
+
+### Security
+
+- Rechecks persisted Action, Scope, policy, and Approval state before a Worker starts.
+- Consumes a bound Approval only when the Action moves to `running`.
+- Rejects mismatched Worker responses and successful results without same-Action persisted Evidence.
+- Keeps the concrete runtime and all target-facing execution disabled by default.
+
 ## [0.0.7] - 2026-08-01
 
 ### Added

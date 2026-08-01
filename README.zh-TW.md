@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.7-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.8-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -51,7 +51,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Worker | 版本化 request／response protocol、資源限制及 fail-closed Manager interface |
+| Worker | 具稽核的 create／start／collect／cancel／cleanup lifecycle 與可注入 runtime；具體目標執行仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
 目標探索、資安工具執行、LLM orchestration、Planner／Operator／Verifier agents 與
@@ -146,7 +146,7 @@ flowchart TD
     Clients["Web UI · CLI · REST API"] --> Control["Python 控制平面"]
     Control --> Domain["Domain · Policy · Evidence"]
     Control --> Database[("PostgreSQL")]
-    Control --> Manager["Worker Manager<br/>Phase 0 fail closed"]
+    Control --> Manager["Worker Manager<br/>具稽核的 lifecycle 預覽"]
     Manager --> Protocol["版本化 Worker protocol"]
     Protocol --> Worker["一次性 Worker<br/>規劃中的 execution adapter"]
     Worker -. "未來受 scope 限制的 egress" .-> Target["已授權 Web／API 目標"]
@@ -201,6 +201,7 @@ Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdo
 | 受控 HTTP Capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
 | 控制平面工作流程 API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
+| 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

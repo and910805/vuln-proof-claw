@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.8] - 2026-08-01
+
+### 新增
+
+- 加入可注入 runtime 的拋棄式 Worker manager，涵蓋建立、啟動、收集、逾時、取消與必要清理狀態。
+- 加入持久化 Action-to-Worker 協調與生命週期稽核事件。
+- 加入 process 內安全的 request replay 檢查與並行 collect／cancel 處理。
+
+### 安全性
+
+- Worker 啟動前重新檢查持久化 Action、Scope、policy 與 Approval 狀態。
+- 只在 Action 轉為 `running` 時消耗綁定的 Approval。
+- 拒絕不相符的 Worker 回應，以及沒有同一 Action 持久化 Evidence 的成功結果。
+- 預設仍停用具體 runtime 與所有面向目標的執行。
+
 ## [0.0.7] - 2026-08-01
 
 ### 新增

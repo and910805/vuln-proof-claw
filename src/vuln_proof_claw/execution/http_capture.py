@@ -14,19 +14,15 @@ from vuln_proof_claw.domain.action_state import transition_action
 from vuln_proof_claw.domain.enums import ActionState
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import ActionId, EvidenceId, new_evidence_id
-from vuln_proof_claw.domain.models import Action, Approval
 from vuln_proof_claw.evidence.canonical import canonical_json
 from vuln_proof_claw.evidence.models import EvidenceMetadata, EvidenceRecord
 from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
-from vuln_proof_claw.persistence.repositories import (
-    ActionRepository,
-    ApprovalRepository,
-    EngagementRepository,
-    ScopeRepository,
-    Stored,
+from vuln_proof_claw.execution.authorization import (
+    ExecutionAuthorizationError,
+    authorize_queued_action,
+    begin_execution,
 )
-from vuln_proof_claw.policy.approval import consume_approval
-from vuln_proof_claw.policy.decision import DecisionKind, PolicyConfig, decide_action
+from vuln_proof_claw.persistence.repositories import ActionRepository
 from vuln_proof_claw.policy.scope import normalize_target
 
 _ALLOWED_METHODS = frozenset({"GET", "HEAD"})
@@ -197,18 +193,6 @@ def _evidence_bytes(
     )
 
 
-def _load_action_approval(
-    session: Session,
-    action: Action,
-) -> Stored[Approval] | None:
-    if action.approval_id is None:
-        return None
-    stored = ApprovalRepository(session).get(action.approval_id)
-    if stored is None:
-        raise CapturePolicyError("approval_record_missing")
-    return stored
-
-
 class HttpCaptureCoordinator:
     """Authorize, execute through an injected boundary, and persist one capture."""
 
@@ -231,41 +215,21 @@ class HttpCaptureCoordinator:
         if stored_action is None:
             raise CapturePolicyError("action_not_found")
         action = stored_action.entity
-        if action.state is not ActionState.QUEUED:
-            raise CapturePolicyError("action_not_queued")
         if action.normalized_target != request.target:
             raise CapturePolicyError("target_mismatch")
         if action.parameter_digest != capture_parameter_digest(request):
             raise CapturePolicyError("parameter_digest_mismatch")
 
-        stored_engagement = EngagementRepository(self._session).get(action.engagement_id)
-        scope = ScopeRepository(self._session).get(action.engagement_id)
-        if stored_engagement is None or scope is None:
-            raise CapturePolicyError("engagement_or_scope_not_found")
-        engagement = stored_engagement.entity
-        stored_approval = _load_action_approval(self._session, action)
-        approval = stored_approval.entity if stored_approval is not None else None
-        decision = decide_action(
-            action,
-            scope=scope,
-            config=PolicyConfig(
-                maximum_risk=engagement.maximum_risk,
-                destructive_actions_enabled=engagement.destructive_actions_enabled,
-            ),
-            at=timestamp,
-            approval=approval,
-        )
-        if decision.kind is not DecisionKind.ALLOW:
-            raise CapturePolicyError(decision.reason)
-
-        running = transition_action(action, ActionState.RUNNING, at=timestamp)
-        running_stored = action_repository.save(running, expected_version=stored_action.version)
-        if approval is not None and stored_approval is not None:
-            consumed = consume_approval(approval, action, at=timestamp)
-            ApprovalRepository(self._session).save(
-                consumed,
-                expected_version=stored_approval.version,
+        try:
+            authorization = authorize_queued_action(
+                self._session,
+                stored_action,
+                at=timestamp,
             )
+        except ExecutionAuthorizationError as error:
+            raise CapturePolicyError(str(error)) from error
+        decision = authorization.decision
+        running_stored = begin_execution(self._session, authorization, at=timestamp)
         try:
             response = self._transport.send(request, capture_limits)
             if response.final_target != request.target:

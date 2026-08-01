@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.7-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.8-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -53,7 +53,7 @@ vuln-proof-claw is being built around those requirements:
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Workers | Versioned request/response protocol, resource limits, and a fail-closed manager interface |
+| Workers | Audited create/start/collect/cancel/cleanup lifecycle with an injected runtime; concrete target execution remains disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
 Target discovery, security-tool execution, LLM orchestration, Planner/Operator/Verifier
@@ -148,7 +148,7 @@ flowchart TD
     Clients["Web UI · CLI · REST API"] --> Control["Python control plane"]
     Control --> Domain["Domain · Policy · Evidence"]
     Control --> Database[("PostgreSQL")]
-    Control --> Manager["Worker Manager<br/>fail closed in Phase 0"]
+    Control --> Manager["Worker Manager<br/>audited lifecycle preview"]
     Manager --> Protocol["Versioned worker protocol"]
     Protocol --> Worker["Disposable worker<br/>planned execution adapter"]
     Worker -. "future scope-restricted egress" .-> Target["Authorized Web/API target"]
@@ -205,6 +205,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Controlled HTTP capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
 | Control-plane workflow API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication and approvals | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
+| Disposable Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

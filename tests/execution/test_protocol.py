@@ -135,6 +135,16 @@ def test_response_requires_safe_error_code_and_ordered_aware_times() -> None:
     )
     assert success.protocol_version == "v1"
 
+    with pytest.raises(ValidationError, match="evidence_id"):
+        WorkerResponse(
+            request_id="request-1",
+            engagement_id=request().engagement_id,
+            action_id=request().action_id,
+            status=WorkerResultStatus.SUCCEEDED,
+            started_at=NOW,
+            completed_at=NOW,
+        )
+
     with pytest.raises(ValidationError, match="error_code"):
         WorkerResponse(
             request_id="request-1",
@@ -162,6 +172,9 @@ async def test_disabled_manager_fails_closed() -> None:
 
     with pytest.raises(WorkerExecutionUnavailableError, match="not configured"):
         await manager.submit(request())
+
+    with pytest.raises(WorkerExecutionUnavailableError, match="not configured"):
+        await manager.start("missing")
 
     assert await manager.status("missing") is None
     assert await manager.collect("missing") is None
