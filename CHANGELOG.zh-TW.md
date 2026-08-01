@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+## [0.0.12] - 2026-08-01
+
+### 新增
+
+- 新增雙語 Web 評估工作區，能從明確授權的 URL 建立範圍縮到最小的 24 小時 L0 Engagement，並啟動被動評估流程。
+- 新增供 authentication deployment 使用的分頁範圍 Operator Bearer Token；只保存於 `sessionStorage`，並提供明確清除控制。
+- 新增 assessment 結果狀態、Evidence／Finding 數量、具 authentication 的 JSON／Markdown 報告下載，以及穩定的 `#assessments` deep link。
+- 新增 URL／Scope 準備、IP literal 拒絕、credential 拒絕、API authentication header、安全錯誤、idempotency key 與 navigation restore 的前端單元測試。
+
+### 變更
+
+- Web CI 現在會先跑前端單元測試，再執行 TypeScript 與正式資產驗證。
+- 改善鍵盤導覽、可見 focus、觸控範圍、reduced motion、響應式評估版面，以及授權與 loading feedback。
+
+### 安全性
+
+- UI 會先移除 query string 與 fragment，拒絕 URL 內嵌 credential、不支援的 scheme 與 IP literal，並要求明確勾選授權確認。Private 與 IP-literal target 必須使用經人工審查的 API Scope。
+- UI 顯示狀態不是授權邊界；Server 仍會強制檢查 authentication、role、scope、policy、DNS、transport 與 response limit。
+
 ## [0.0.11] - 2026-08-01
 
 ### 新增

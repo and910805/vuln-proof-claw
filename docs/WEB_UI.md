@@ -12,10 +12,16 @@ The Web foundation currently provides:
 - Live API and database readiness state.
 - Persisted control-plane counts.
 - Project listing and project creation.
+- A deep-linkable authorized URL assessment workspace.
+- Automatic creation of a narrow 24-hour L0 Engagement from the confirmed target.
+- Passive assessment status, Evidence/Finding counts, and JSON/Markdown report downloads.
+- Optional operator Bearer-token input for authenticated deployments.
 - The enforced L0-L4 risk-policy reference.
 - Explicit status for capabilities that are operational or still locked.
 
-It does not yet start flows, execute target-facing tools, approve actions, render raw evidence, or verify findings through the browser. Workflow and authenticated approval APIs now exist, but the Web credential session and those controls remain intentionally unavailable.
+The browser can start only the bounded passive URL assessment. It does not crawl,
+authenticate to targets, run external tools or payloads, approve risky actions, render
+raw Evidence, or independently verify Findings.
 
 ## Open the console
 
@@ -34,6 +40,7 @@ Requirements: Node.js 22 or newer and npm.
 ```bash
 cd web
 npm ci
+npm test
 npm run typecheck
 npm run build
 ```
@@ -51,9 +58,18 @@ Vite listens only on `127.0.0.1:5173` and proxies `/api` to `127.0.0.1:8080`.
 
 - The UI uses same-origin API requests and no external CDN resources.
 - The Compose API remains bound to `127.0.0.1` by default.
-- Project creation is intended for local pre-alpha use; production deployment requires authentication readiness.
+- The optional operator token is kept in tab-scoped `sessionStorage`, never placed in
+  a URL, and can be explicitly cleared. Production deployments still need a hardened
+  session strategy before general multi-user use.
+- Query strings and fragments are removed from a submitted target; embedded
+  credentials, IP literals, and non-HTTP(S) schemes are rejected; and the user must
+  explicitly confirm authorization. Private and IP-literal targets require a
+  separately reviewed API-created Scope.
+- The generated Engagement allows only the target hostname, scheme,
+  port, and path, expires after 24 hours, uses maximum risk L0, and keeps destructive
+  actions disabled.
 - UI visibility is not an authorization boundary. Policy, scope, approval, and execution checks remain server-side.
-- Unimplemented actions are not simulated and cannot be enabled from the browser.
+- Target traffic remains disabled until the server-side assessment setting is enabled.
 
 ## API contracts
 
@@ -63,3 +79,7 @@ The foundation UI consumes:
 - `GET /api/v1/dashboard/summary`
 - `GET /api/v1/projects`
 - `POST /api/v1/projects`
+- `POST /api/v1/projects/{project_id}/engagements`
+- `POST /api/v1/engagements/{engagement_id}/assessments`
+- `GET /api/v1/engagements/{engagement_id}/report`
+- `GET /api/v1/engagements/{engagement_id}/report.md`

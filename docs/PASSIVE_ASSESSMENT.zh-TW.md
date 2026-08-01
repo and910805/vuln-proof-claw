@@ -17,7 +17,7 @@ Target traffic 預設停用：
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.11
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.12
 ```
 
 使用 Docker Compose 開發時，先把 `.env.example` 複製成 `.env`，再把
@@ -28,6 +28,17 @@ VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.11
 正式環境若尚未達成 API authentication readiness，會拒絕啟用此設定。只有 operator
 role 能啟動 assessment。URL 必須符合持久化 Engagement 的 hostname／CIDR、scheme、
 port、path 與時間範圍。
+
+## Web 控制台
+
+開啟 `/#assessments`，選擇 Project、輸入以 hostname 表示的 HTTP(S) URL、確認你確實
+獲得該目標的評估授權，再啟動 assessment。精靈會建立只允許該 hostname、scheme、
+port 與 path 的 24 小時 L0 Engagement，接著顯示 Action 終態與 Evidence／Finding
+數量，並可下載目前的 JSON 或 Markdown Engagement report。
+
+啟用 authentication 的 deployment 可透過「操作員權限」輸入 Operator Token。憑證只
+保存在分頁範圍的 `sessionStorage`，也能在相同對話框清除。精靈不會自動替 IP literal
+或 private target 建立 Scope；這類目標必須另外透過 API 建立經審查的 Engagement。
 
 ## Request
 

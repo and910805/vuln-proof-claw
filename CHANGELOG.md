@@ -6,6 +6,25 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.12] - 2026-08-01
+
+### Added
+
+- Added a bilingual Web assessment workspace that creates a narrow 24-hour L0 Engagement from an explicitly authorized URL and starts the passive assessment pipeline.
+- Added tab-scoped operator Bearer-token support for authenticated deployments, persisted only in `sessionStorage` with explicit clear controls.
+- Added assessment result state, Evidence/Finding counts, authenticated JSON/Markdown report downloads, and stable `#assessments` deep linking.
+- Added frontend unit coverage for URL/scope preparation, IP-literal rejection, credential rejection, API authentication headers, stable API errors, idempotency keys, and navigation restoration.
+
+### Changed
+
+- The Web CI job now runs frontend unit tests before TypeScript checking and production asset verification.
+- Improved keyboard navigation, visible focus, touch target sizing, reduced-motion handling, responsive assessment layout, and authorization/loading feedback.
+
+### Security
+
+- The UI removes query strings and fragments before assessment, rejects embedded URL credentials, unsupported schemes, and IP literals, and requires an explicit authorization confirmation. Private and IP-literal targets require manually reviewed API scope.
+- UI visibility remains non-authoritative: the server continues to enforce authentication, role, scope, policy, DNS, transport, and response limits.
+
 ## [0.0.11] - 2026-08-01
 
 ### Added

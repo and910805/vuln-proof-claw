@@ -19,7 +19,7 @@ Target traffic is disabled by default:
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.11
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.12
 ```
 
 For Docker Compose development, copy `.env.example` to `.env`, change
@@ -30,6 +30,19 @@ service bound to loopback unless production authentication has been configured.
 Production mode rejects this setting unless API authentication is also ready. Only
 the operator role can start an assessment. The URL must already match the persisted
 Engagement hostname/CIDR, scheme, port, path, and time window.
+
+## Web console
+
+Open `/#assessments`, select a Project, enter a hostname-based HTTP(S) URL, confirm
+that you are authorized to assess the exact target, and start the assessment. The
+wizard creates a 24-hour L0 Engagement limited to that hostname, scheme, port, and
+path. It then shows the terminal Action state and Evidence/Finding counts and can
+download the current JSON or Markdown engagement report.
+
+Authenticated deployments can enter the operator token through **Operator access**.
+The credential is held only in tab-scoped `sessionStorage` and can be cleared from
+the same dialog. IP literals and private targets are not auto-scoped by the wizard;
+they require a separately reviewed Engagement created through the API.
 
 ## Request
 

@@ -246,18 +246,24 @@ class ActionWorkerCoordinator:
         reconciled: list[WorkerExecution] = []
         for stored_execution in execution_repository.list_in_flight():
             previous_state = stored_execution.entity.state
+            stored_action = action_repository.get(stored_execution.entity.action_id)
+            timestamp_floor = [timestamp, stored_execution.entity.created_at]
+            if stored_action is not None:
+                timestamp_floor.append(stored_action.entity.created_at)
+                if stored_action.entity.started_at is not None:
+                    timestamp_floor.append(stored_action.entity.started_at)
+            reconciliation_timestamp = max(timestamp_floor)
             lost = replace(
                 stored_execution.entity,
                 state=WorkerState.LOST,
                 cleaned_up=False,
                 error_code="worker_recovery_unavailable",
-                updated_at=timestamp,
+                updated_at=reconciliation_timestamp,
             )
             saved = execution_repository.save(
                 lost,
                 expected_version=stored_execution.version,
             )
-            stored_action = action_repository.get(lost.action_id)
             action_state = "missing"
             if stored_action is not None:
                 action_state = stored_action.entity.state.value
@@ -265,7 +271,7 @@ class ActionWorkerCoordinator:
                     terminal = transition_action(
                         stored_action.entity,
                         ActionState.WORKER_LOST,
-                        at=timestamp,
+                        at=reconciliation_timestamp,
                     )
                     action_repository.save(
                         terminal,
@@ -282,7 +288,7 @@ class ActionWorkerCoordinator:
                     "action_state": action_state,
                     "error_code": lost.error_code,
                 },
-                at=timestamp,
+                at=reconciliation_timestamp,
             )
             reconciled.append(saved.entity)
         return tuple(reconciled)

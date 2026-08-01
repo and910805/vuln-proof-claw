@@ -41,6 +41,8 @@ def test_quality_workflow_contains_required_gates() -> None:
     ):
         assert command in content
 
+    assert "npm test" in content
+
 
 def test_container_workflow_builds_and_scans_both_images() -> None:
     content = (REPOSITORY_ROOT / ".github/workflows/container.yml").read_text(encoding="utf-8")

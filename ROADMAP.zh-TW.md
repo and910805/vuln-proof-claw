@@ -8,7 +8,7 @@ Roadmap 表達預定方向，不保證 Release 日期。
 
 - Python 專案、CLI、API health contract、PostgreSQL、Docker Compose。
 - Domain、Policy、Approval 與 Evidence 原語。
-- Web 控制台基礎：React／TypeScript 外殼、儀表板摘要、建立專案與雙語 UI。
+- Web 控制台基礎：React／TypeScript 外殼、儀表板摘要、建立專案、分頁範圍 Operator access、授權被動評估精靈、報告下載與雙語 UI。
 - 雙語治理、CI、Supply-chain check 與 Worker protocol。
 
 ## v0.1 — Evidence Core

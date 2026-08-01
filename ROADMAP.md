@@ -8,7 +8,7 @@ Roadmap items describe intent, not guaranteed release dates.
 
 - Python project, CLI, API health contracts, PostgreSQL, Docker Compose.
 - Domain, policy, approval, and evidence primitives.
-- Web console foundation: React/TypeScript shell, dashboard summary, project creation, and bilingual UI.
+- Web console foundation: React/TypeScript shell, dashboard summary, project creation, tab-scoped operator access, authorized passive assessment wizard, report downloads, and bilingual UI.
 - Bilingual governance, CI, supply-chain checks, and worker protocol.
 
 ## v0.1 — Evidence Core

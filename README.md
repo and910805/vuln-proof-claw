@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.11-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.12-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0.0.11 includes one opt-in, scope-checked passive URL
+> **Pre-alpha status:** Phase 0.0.12 includes one opt-in, scope-checked passive URL
 > assessment that sends a bounded `GET`, stores evidence, and derives conservative
 > findings. It does not crawl, call an LLM, launch external scanners, authenticate to
 > targets, or execute exploit payloads. All broader execution paths fail closed.
@@ -46,7 +46,7 @@ vuln-proof-claw is being built around those requirements:
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
 | REST API | Versioned health, project, engagement, passive assessment, workflow, audit, and report contracts with OpenAPI |
-| Web console | Bundled React/TypeScript dashboard, bilingual UI, project creation, and truthful capability status |
+| Web console | Bilingual dashboard, tab-scoped operator authentication, authorized URL assessment wizard, report downloads, and truthful capability status |
 | Evidence Core preview | Scoped passive URL assessment, transactional evidence, deterministic findings, and immutable reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |

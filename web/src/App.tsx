@@ -1,47 +1,29 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import { ApiError, apiRequest, downloadApiFile } from "./api";
+import { assessmentIdempotencyKey, prepareAssessment } from "./assessment";
+import { AssessmentWorkspace } from "./AssessmentWorkspace";
+import {
+  AssessmentSummary,
+  DashboardSummary,
+  Engagement,
+  HealthStatus,
+  Project,
+  ProjectList,
+} from "./contracts";
+import { View, viewFromHash, views } from "./navigation";
+
 type Language = "en" | "zh-TW";
-type View = "overview" | "projects" | "approvals" | "evidence" | "findings" | "policy";
-
-type Project = {
-  id: string;
-  name: string;
-  created_at: string;
-};
-
-type DashboardSummary = {
-  schema_version: "v1";
-  phase: "web-foundation";
-  execution_available: boolean;
-  counts: {
-    projects: number;
-    engagements: number;
-    active_actions: number;
-    pending_approvals: number;
-    evidence: number;
-    findings: number;
-  };
-  recent_projects: Project[];
-};
-
-type ProjectList = {
-  schema_version: "v1";
-  items: Project[];
-  total: number;
-};
-
-type HealthStatus = {
-  schema_version: "v1";
-  version: string;
-};
 
 const copy = {
   en: {
     product: "ProofClaw",
+    skipContent: "Skip to content",
     edition: "CONTROL PLANE",
     nav: {
       overview: "Overview",
       projects: "Projects",
+      assessments: "Assess URL",
       approvals: "Approval inbox",
       evidence: "Evidence",
       findings: "Findings",
@@ -71,7 +53,7 @@ const copy = {
     noProjectsHint: "Create the first project to establish an assessment boundary.",
     created: "Created",
     status: "Status",
-    draft: "Setup required",
+    draft: "Project boundary",
     guardrails: "Execution guardrails",
     guardrailsHint: "Default policy applied at the control-plane boundary.",
     risk: [
@@ -99,8 +81,39 @@ const copy = {
     cancel: "Cancel",
     create: "Create project",
     creating: "Creating…",
+    auth: "Operator access",
+    authTitle: "Operator token",
+    authHint: "Kept only in this browser tab and sent as a Bearer token to this API.",
+    authPlaceholder: "Paste operator token",
+    saveToken: "Use token",
+    clearToken: "Clear token",
+    tokenActive: "Token configured",
+    assessmentTitle: "Authorized passive URL assessment",
+    assessmentHint: "Creates a 24-hour L0 engagement, sends one bounded GET, stores evidence, and produces report data.",
+    chooseProject: "Project",
+    chooseProjectPlaceholder: "Select a project",
+    targetUrl: "Target URL",
+    targetPlaceholder: "https://app.example.com/",
+    authorizationConfirm: "I confirm that I am authorized to assess this exact target.",
+    runAssessment: "Run passive assessment",
+    assessing: "Assessing…",
+    assessmentDisabled: "Passive target traffic is disabled in server settings.",
+    assessmentResult: "Latest assessment result",
+    actionState: "Action state",
+    findingCount: "Findings",
+    evidenceCount: "Evidence records",
+    downloadJson: "Download JSON report",
+    downloadMarkdown: "Download Markdown report",
+    assessmentSuccess: "Assessment completed and persisted.",
+    assessmentError: "Assessment could not be completed.",
+    invalidTarget: "Enter a complete HTTP or HTTPS URL.",
+    unsupportedTarget: "Only HTTP and HTTPS targets are supported.",
+    credentialTarget: "Remove the username and password from the target URL.",
+    ipTarget: "IP-literal targets require a manually reviewed API scope.",
+    authorizationRequired: "Enter a valid operator token to use protected features.",
     pageHints: {
       projects: "Manage authorized assessment boundaries.",
+      assessments: "Run one bounded passive check against a target you are authorized to test.",
       approvals: "Review protected actions before execution.",
       evidence: "Inspect immutable tool output and integrity chains.",
       findings: "Review evidence-backed vulnerability claims.",
@@ -108,15 +121,17 @@ const copy = {
     },
     emptyPending: "Nothing is waiting here",
     emptyPendingHint: "This area will populate when execution workflows create records.",
-    unavailableAction: "Execution features are not enabled in this foundation release.",
+    unavailableAction: "Active probes, exploit payloads, and arbitrary tools remain disabled.",
     error: "The console could not reach the control-plane API.",
   },
   "zh-TW": {
     product: "ProofClaw",
+    skipContent: "跳至主要內容",
     edition: "控制平面",
     nav: {
       overview: "總覽",
       projects: "專案",
+      assessments: "網址評估",
       approvals: "批准佇列",
       evidence: "證據",
       findings: "漏洞發現",
@@ -146,7 +161,7 @@ const copy = {
     noProjectsHint: "建立第一個專案，開始定義授權評估邊界。",
     created: "建立時間",
     status: "狀態",
-    draft: "需要設定",
+    draft: "專案邊界",
     guardrails: "執行安全邊界",
     guardrailsHint: "控制平面強制套用的預設政策。",
     risk: [
@@ -174,8 +189,39 @@ const copy = {
     cancel: "取消",
     create: "建立專案",
     creating: "建立中…",
+    auth: "操作員權限",
+    authTitle: "Operator Token",
+    authHint: "Token 只保存在目前瀏覽器分頁，並以 Bearer Token 傳送到這個 API。",
+    authPlaceholder: "貼上 Operator Token",
+    saveToken: "使用 Token",
+    clearToken: "清除 Token",
+    tokenActive: "Token 已設定",
+    assessmentTitle: "已授權的被動網址評估",
+    assessmentHint: "建立 24 小時 L0 Engagement、送出一次有界 GET、保存 Evidence 並產生報告資料。",
+    chooseProject: "所屬專案",
+    chooseProjectPlaceholder: "選擇專案",
+    targetUrl: "目標網址",
+    targetPlaceholder: "https://app.example.com/",
+    authorizationConfirm: "我確認自己已獲授權，可以評估這個確切目標。",
+    runAssessment: "執行被動評估",
+    assessing: "評估中…",
+    assessmentDisabled: "伺服器設定目前未啟用被動目標流量。",
+    assessmentResult: "最近一次評估結果",
+    actionState: "動作狀態",
+    findingCount: "Finding 數量",
+    evidenceCount: "Evidence 數量",
+    downloadJson: "下載 JSON 報告",
+    downloadMarkdown: "下載 Markdown 報告",
+    assessmentSuccess: "評估已完成並保存。",
+    assessmentError: "無法完成評估。",
+    invalidTarget: "請輸入完整的 HTTP 或 HTTPS 網址。",
+    unsupportedTarget: "目前只支援 HTTP 與 HTTPS 目標。",
+    credentialTarget: "請移除目標網址內的使用者名稱與密碼。",
+    ipTarget: "IP literal 目標必須使用經人工審查的 API Scope。",
+    authorizationRequired: "請輸入有效的 Operator Token 以使用受保護功能。",
     pageHints: {
       projects: "管理經授權的評估邊界。",
+      assessments: "針對你確實獲得授權的目標，執行一次有界的被動檢查。",
       approvals: "執行前審核受保護的動作。",
       evidence: "檢視不可變工具輸出與完整性鏈。",
       findings: "審核由證據支持的漏洞主張。",
@@ -183,19 +229,10 @@ const copy = {
     },
     emptyPending: "目前沒有資料",
     emptyPendingHint: "執行工作流程產生紀錄後，內容會顯示在這裡。",
-    unavailableAction: "此基礎版本尚未啟用執行功能。",
+    unavailableAction: "主動探測、Exploit Payload 與任意工具執行仍維持停用。",
     error: "控制台無法連線至控制平面 API。",
   },
 } as const;
-
-const navViews: View[] = [
-  "overview",
-  "projects",
-  "approvals",
-  "evidence",
-  "findings",
-  "policy",
-];
 
 function formatDate(value: string, language: Language): string {
   return new Intl.DateTimeFormat(language, {
@@ -213,7 +250,7 @@ async function readJson<T>(response: Response): Promise<T> {
 
 function App() {
   const [language, setLanguage] = useState<Language>("zh-TW");
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>(() => viewFromHash(window.location.hash));
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [apiReady, setApiReady] = useState(false);
@@ -223,35 +260,63 @@ function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [operatorToken, setOperatorToken] = useState(
+    () => sessionStorage.getItem("proofclaw.operatorToken") ?? "",
+  );
+  const [tokenDraft, setTokenDraft] = useState(operatorToken);
+  const [showAuthentication, setShowAuthentication] = useState(false);
+  const [authenticationRequired, setAuthenticationRequired] = useState(false);
+  const [assessmentProjectId, setAssessmentProjectId] = useState("");
+  const [assessmentTarget, setAssessmentTarget] = useState("");
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
+  const [assessing, setAssessing] = useState(false);
+  const [assessmentMessage, setAssessmentMessage] = useState("");
+  const [latestAssessment, setLatestAssessment] = useState<AssessmentSummary | null>(null);
   const t = copy[language];
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(false);
     try {
-      const [health, dashboard, projectList] = await Promise.all([
-        fetch("/api/v1/health/ready"),
-        fetch("/api/v1/dashboard/summary").then(readJson<DashboardSummary>),
-        fetch("/api/v1/projects?limit=100").then(readJson<ProjectList>),
-      ]);
+      const health = await fetch("/api/v1/health/ready");
       setApiReady(health.ok);
       if (health.ok) {
         const healthStatus = await readJson<HealthStatus>(health);
         setAppVersion(healthStatus.version);
       }
+      const [dashboard, projectList] = await Promise.all([
+        apiRequest<DashboardSummary>("/api/v1/dashboard/summary", operatorToken),
+        apiRequest<ProjectList>("/api/v1/projects?limit=100", operatorToken),
+      ]);
       setSummary(dashboard);
       setProjects(projectList.items);
-    } catch {
-      setApiReady(false);
+      setAuthenticationRequired(false);
+    } catch (loadError) {
       setError(true);
+      if (loadError instanceof ApiError && loadError.status === 401) {
+        setAuthenticationRequired(true);
+      } else {
+        setApiReady(false);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [operatorToken]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const restoreView = () => setView(viewFromHash(window.location.hash));
+    window.addEventListener("hashchange", restoreView);
+    return () => window.removeEventListener("hashchange", restoreView);
+  }, []);
+
+  const navigate = (nextView: View) => {
+    setView(nextView);
+    window.location.hash = nextView === "overview" ? "" : nextView;
+  };
 
   const createProject = async (event: FormEvent) => {
     event.preventDefault();
@@ -259,19 +324,99 @@ function App() {
     if (!normalized) return;
     setCreating(true);
     try {
-      await fetch("/api/v1/projects", {
+      await apiRequest<Project>("/api/v1/projects", operatorToken, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: normalized }),
-      }).then(readJson<Project>);
+      });
       setProjectName("");
       setShowCreate(false);
       await loadData();
-      setView("projects");
+      navigate("projects");
     } catch {
       setError(true);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const saveOperatorToken = (event: FormEvent) => {
+    event.preventDefault();
+    const normalized = tokenDraft.trim();
+    if (normalized) sessionStorage.setItem("proofclaw.operatorToken", normalized);
+    else sessionStorage.removeItem("proofclaw.operatorToken");
+    setOperatorToken(normalized);
+    setShowAuthentication(false);
+  };
+
+  const clearOperatorToken = () => {
+    sessionStorage.removeItem("proofclaw.operatorToken");
+    setTokenDraft("");
+    setOperatorToken("");
+    setShowAuthentication(false);
+  };
+
+  const runAssessment = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!assessmentProjectId || !authorizationConfirmed || assessing) return;
+    setAssessing(true);
+    setAssessmentMessage("");
+    try {
+      const prepared = prepareAssessment(assessmentTarget);
+      const engagement = await apiRequest<Engagement>(
+        `/api/v1/projects/${assessmentProjectId}/engagements`,
+        operatorToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(prepared.engagementPayload),
+        },
+      );
+      const result = await apiRequest<AssessmentSummary>(
+        `/api/v1/engagements/${engagement.id}/assessments`,
+        operatorToken,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": assessmentIdempotencyKey(),
+          },
+          body: JSON.stringify({ target: prepared.displayTarget }),
+        },
+      );
+      setLatestAssessment(result);
+      setAssessmentMessage(result.error_code ?? t.assessmentSuccess);
+      await loadData();
+    } catch (assessmentError) {
+      const detail = assessmentError instanceof Error ? assessmentError.message : t.assessmentError;
+      const localizedErrors: Record<string, string> = {
+        embedded_credentials: t.credentialTarget,
+        invalid_url: t.invalidTarget,
+        ip_literal_requires_manual_scope: t.ipTarget,
+        unsupported_scheme: t.unsupportedTarget,
+      };
+      setAssessmentMessage(localizedErrors[detail] ?? detail);
+      if (assessmentError instanceof ApiError && assessmentError.status === 401) {
+        setAuthenticationRequired(true);
+        setShowAuthentication(true);
+      }
+    } finally {
+      setAssessing(false);
+    }
+  };
+
+  const downloadReport = async (format: "json" | "markdown") => {
+    if (!latestAssessment) return;
+    const path = format === "json"
+      ? latestAssessment.report_url
+      : latestAssessment.markdown_report_url;
+    const extension = format === "json" ? "json" : "md";
+    try {
+      await downloadApiFile(path, operatorToken, `proofclaw-${latestAssessment.action_id}.${extension}`);
+    } catch (downloadError) {
+      setAssessmentMessage(
+        downloadError instanceof Error ? downloadError.message : t.assessmentError,
+      );
     }
   };
 
@@ -291,6 +436,7 @@ function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">{t.skipContent}</a>
       <aside className="sidebar">
         <div className="brand">
           <div className="claw-mark" aria-hidden="true">
@@ -305,11 +451,11 @@ function App() {
         </div>
 
         <nav aria-label="Primary">
-          {navViews.map((item) => (
+          {views.map((item) => (
             <button
               className={view === item ? "nav-item active" : "nav-item"}
               key={item}
-              onClick={() => setView(item)}
+              onClick={() => navigate(item)}
               type="button"
             >
               <span className={`nav-glyph glyph-${item}`} aria-hidden="true" />
@@ -331,13 +477,20 @@ function App() {
         </div>
       </aside>
 
-      <main>
+      <main id="main-content">
         <header className="topbar">
           <div>
             <span className="eyebrow">{t.webFoundation}</span>
             <h1>{currentTitle}</h1>
           </div>
           <div className="topbar-actions">
+            <button
+              className={operatorToken ? "quiet-button token-ready" : "quiet-button"}
+              onClick={() => setShowAuthentication(true)}
+              type="button"
+            >
+              {operatorToken ? t.tokenActive : t.auth}
+            </button>
             <button
               className="language-switch"
               onClick={() => setLanguage(language === "en" ? "zh-TW" : "en")}
@@ -357,7 +510,16 @@ function App() {
         </header>
 
         <div className="workspace">
-          {error && <div className="error-banner">{t.error}</div>}
+          {authenticationRequired && (
+            <button
+              className="error-banner auth-banner"
+              onClick={() => setShowAuthentication(true)}
+              type="button"
+            >
+              {t.authorizationRequired}
+            </button>
+          )}
+          {error && !authenticationRequired && <div className="error-banner">{t.error}</div>}
           {view === "overview" && (
             <Overview
               executionAvailable={summary?.execution_available ?? false}
@@ -366,7 +528,7 @@ function App() {
               projects={projects.slice(0, 5)}
               t={t}
               onCreate={() => setShowCreate(true)}
-              onProjects={() => setView("projects")}
+              onProjects={() => navigate("projects")}
             />
           )}
           {view === "projects" && (
@@ -375,6 +537,24 @@ function App() {
               projects={projects}
               t={t}
               onCreate={() => setShowCreate(true)}
+            />
+          )}
+          {view === "assessments" && (
+            <AssessmentWorkspace
+              authorizationConfirmed={authorizationConfirmed}
+              assessing={assessing}
+              executionAvailable={summary?.execution_available ?? false}
+              latestAssessment={latestAssessment}
+              message={assessmentMessage}
+              projectId={assessmentProjectId}
+              projects={projects}
+              target={assessmentTarget}
+              t={t}
+              onAuthorizationChange={setAuthorizationConfirmed}
+              onDownload={(format) => void downloadReport(format)}
+              onProjectChange={setAssessmentProjectId}
+              onSubmit={(event) => void runAssessment(event)}
+              onTargetChange={setAssessmentTarget}
             />
           )}
           {view === "policy" && <Policy t={t} />}
@@ -421,6 +601,51 @@ function App() {
                 <button className="primary-button" disabled={!projectName.trim() || creating}>
                   {creating ? t.creating : t.create}
                 </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+      {showAuthentication && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setShowAuthentication(false)}
+        >
+          <section
+            aria-labelledby="auth-title"
+            aria-modal="true"
+            className="modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <button
+              aria-label="Close"
+              className="modal-close"
+              onClick={() => setShowAuthentication(false)}
+              type="button"
+            >
+              ×
+            </button>
+            <span className="eyebrow">{t.auth}</span>
+            <h2 id="auth-title">{t.authTitle}</h2>
+            <p>{t.authHint}</p>
+            <form onSubmit={saveOperatorToken}>
+              <label htmlFor="operator-token">{t.authTitle}</label>
+              <input
+                autoComplete="off"
+                autoFocus
+                id="operator-token"
+                onChange={(event) => setTokenDraft(event.target.value)}
+                placeholder={t.authPlaceholder}
+                type="password"
+                value={tokenDraft}
+              />
+              <div className="modal-actions">
+                <button className="quiet-button" onClick={clearOperatorToken} type="button">
+                  {t.clearToken}
+                </button>
+                <button className="primary-button">{t.saveToken}</button>
               </div>
             </form>
           </section>

@@ -313,6 +313,33 @@ async def test_restart_reconciliation_closes_running_action_as_worker_lost(
     assert runtime.calls == ["create", "start"]
 
 
+def test_restart_reconciliation_tolerates_clock_rollback(engine: Engine) -> None:
+    _engagement, _action, worker_request = seed_action(engine)
+    future = NOW + timedelta(minutes=5)
+    execution = WorkerExecution(
+        request_id=worker_request.request_id,
+        engagement_id=worker_request.engagement_id,
+        action_id=worker_request.action_id,
+        runtime_identity="previous-runtime@sha256:test",
+        state=WorkerState.RUNNING,
+        created_at=future,
+        updated_at=future,
+    )
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        WorkerExecutionRepository(session).add(execution)
+
+    with session_factory.begin() as session:
+        reconciled = ActionWorkerCoordinator(
+            session,
+            DisabledWorkerManager(),
+        ).reconcile_after_restart(at=NOW)
+
+    assert len(reconciled) == 1
+    assert reconciled[0].state is WorkerState.LOST
+    assert reconciled[0].updated_at == future
+
+
 def test_restart_reconciliation_closes_action_after_worker_was_created(engine: Engine) -> None:
     _engagement, action, worker_request = seed_action(engine)
     execution = WorkerExecution(
