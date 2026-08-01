@@ -48,6 +48,6 @@ optimistic registry update 發生競態，結果會是 `registry_update_conflict
 
 ## 目前邊界
 
-本版完成與 runtime 無關的 inventory、reconciliation、cleanup、audit 與測試契約。
-具體受限 runtime adapter 與啟動 wiring 仍刻意不提供，因此預設仍使用
-`DisabledWorkerManager`，任意工具仍無法執行。
+本版完成 inventory、reconciliation、cleanup、audit 與受限 container-policy
+adapter。Privileged Engine transport、Worker executor、scope egress 與啟動 wiring 仍
+刻意不提供，因此預設仍使用 `DisabledWorkerManager`，任意工具仍無法執行。

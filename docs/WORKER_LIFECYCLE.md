@@ -2,7 +2,8 @@
 
 [繁體中文](WORKER_LIFECYCLE.zh-TW.md) | **English**
 
-Version 0.0.14 provides an internal, runtime-independent lifecycle coordinator. It is
+Version 0.0.15 provides an internal lifecycle coordinator and restricted-container
+policy adapter. It is
 not a public scanning endpoint and does not enable a Docker or network execution
 adapter.
 
@@ -36,9 +37,9 @@ append safe engagement audit events. See [Runtime resource janitor](RUNTIME_JANI
 
 ## Current limits
 
-The privileged runtime manager remains process-local and accepts only an injected
-runtime implementation. The runtime-neutral orphan cleanup contract is complete,
-but a restricted Docker adapter, DNS pinning, scoped egress, streaming output limits,
-startup wiring, and isolated end-to-end target tests remain required before
-target-facing execution can be enabled. The default `DisabledWorkerManager` still
-fails closed.
+The process-local lifecycle now accepts a complete restricted-container policy
+adapter with digest pinning, fixed privilege controls, resource ceilings, bounded
+protocol I/O, inventory, and cleanup. A privileged authenticated Engine transport,
+scoped egress, worker executor, startup wiring, and isolated end-to-end target tests
+remain required before target-facing execution can be enabled. The default
+`DisabledWorkerManager` still fails closed.

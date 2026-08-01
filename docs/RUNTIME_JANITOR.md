@@ -53,7 +53,7 @@ Audit event types are:
 
 ## Current boundary
 
-This release provides the runtime-neutral inventory, reconciliation, cleanup, audit,
-and test contract. A concrete restricted runtime adapter and its startup wiring are
-still deliberately absent, so `DisabledWorkerManager` remains the default and
-arbitrary tools cannot run.
+This release provides the inventory, reconciliation, cleanup, audit, and restricted
+container-policy adapter. The privileged Engine transport, worker executor, scoped
+egress, and startup wiring are still deliberately absent, so `DisabledWorkerManager`
+remains the default and arbitrary tools cannot run.

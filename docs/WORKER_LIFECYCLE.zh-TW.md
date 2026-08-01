@@ -2,7 +2,7 @@
 
 **繁體中文** | [English](WORKER_LIFECYCLE.md)
 
-0.0.14 版提供內部、與 runtime 實作無關的生命週期協調器。這不是公開掃描
+0.0.15 版提供內部生命週期協調器與受限 container policy adapter。這不是公開掃描
 endpoint，也不會啟用 Docker 或網路執行 adapter。
 
 ## 強制執行順序
@@ -33,7 +33,8 @@ adapter 可在啟動時執行整合式 recovery。它會先把 abandoned `starti
 
 ## 目前限制
 
-privileged runtime manager 仍只存在單一 process 內，而且只接受注入的 runtime
-實作。與 runtime 無關的 orphan cleanup 契約已完成；在啟用面向目標的執行前，仍須
-完成受限 Docker adapter、DNS pinning、scope egress、串流輸出限制、啟動 wiring 與
-隔離式端對端目標測試。預設的 `DisabledWorkerManager` 仍維持 fail closed。
+process-local lifecycle 現在可接受完整受限 container policy adapter，包含 digest
+pinning、固定 privilege control、資源上限、有界 protocol I/O、inventory 與 cleanup。
+在啟用面向目標的執行前，仍須完成 privileged authenticated Engine transport、scope
+egress、Worker executor、啟動 wiring 與隔離式端對端目標測試。預設的
+`DisabledWorkerManager` 仍維持 fail closed。

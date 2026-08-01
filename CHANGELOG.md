@@ -6,6 +6,26 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.15] - 2026-08-02
+
+### Added
+
+- Added a complete restricted `DockerWorkerRuntime` lifecycle over a narrow privileged Engine interface, including create, start, bounded wait, stop, idempotent removal, and labeled inventory.
+- Added immutable policy-derived runtime identities, digest-pinned image validation, dedicated-network validation, capability allowlists, and configurable CPU, memory, PID, timeout, request, output, tmpfs, and stop ceilings.
+- Added 32 focused runtime tests covering hardened container specs, lifecycle integration, protocol and exit-code validation, inventory ownership, unsafe configuration, metadata injection, oversized I/O, and safe Engine failures.
+- Added bilingual restricted-runtime boundary documentation and explicit fail-closed environment settings.
+
+### Changed
+
+- Worker requests now enter containers only as bounded strict-protocol stdin; the Engine request has no arbitrary command, entrypoint, environment, host mount, device, privileged, host-network, or added-capability fields.
+- Runtime inventory labels now bind owner, Worker ID, request ID, creation time, and exact policy identity.
+- Advanced the project and Web package version to `0.0.15`.
+
+### Security
+
+- Every emitted container spec requires non-root execution, a read-only root filesystem, `cap_drop=ALL`, `no-new-privileges`, init, and `noexec,nosuid,nodev` tmpfs storage.
+- Runtime enablement is explicit, digest-pinned policy creation fails closed, production enablement requires API authentication readiness, and raw Engine details, output, and references stay out of safe exceptions and representations.
+
 ## [0.0.14] - 2026-08-02
 
 ### Added
