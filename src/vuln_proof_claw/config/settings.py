@@ -63,6 +63,9 @@ class Settings(BaseSettings):
         if self.assessment.enabled and not self.api.authentication_ready:
             msg = "passive assessment requires authentication readiness in production"
             raise ValueError(msg)
+        if self.docker.runtime_enabled and not self.api.authentication_ready:
+            msg = "worker runtime requires authentication readiness in production"
+            raise ValueError(msg)
         return self
 
     def worker_runtime(self) -> WorkerRuntimeConfig:

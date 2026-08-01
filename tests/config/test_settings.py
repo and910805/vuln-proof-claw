@@ -9,6 +9,7 @@ from vuln_proof_claw.config.models import (
     ApiConfig,
     AppConfig,
     AssessmentConfig,
+    DockerConfig,
     Environment,
 )
 from vuln_proof_claw.config.settings import Settings
@@ -116,6 +117,14 @@ def test_production_assessment_requires_authentication() -> None:
         Settings(
             app=AppConfig(environment=Environment.PRODUCTION),
             assessment=AssessmentConfig(enabled=True),
+        )
+
+
+def test_production_worker_runtime_requires_authentication() -> None:
+    with pytest.raises(ValidationError, match="worker runtime requires authentication"):
+        Settings(
+            app=AppConfig(environment=Environment.PRODUCTION),
+            docker=DockerConfig(runtime_enabled=True),
         )
 
 

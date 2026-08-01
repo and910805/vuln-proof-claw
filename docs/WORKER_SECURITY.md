@@ -15,6 +15,7 @@ This document defines the Phase 0 container trust boundaries. It is a security r
 - The lifecycle coordinator audits create/start/collect/cancel/destroy, enforces timeouts, and always attempts cleanup through an injected process-local runtime boundary.
 - Safe lifecycle metadata is durable and abandoned in-flight records are reconciled to explicit lost states after restart.
 - Runtime inventory uses immutable Worker/request labels; terminal and orphaned resources are removed with a bounded grace period and safe audit events.
+- The restricted-container adapter requires digest-pinned images, a dedicated network, non-root execution, read-only root, dropped capabilities, no-new-privileges, and bounded resources and protocol I/O.
 - The default `DisabledWorkerManager` still fails closed and performs no target-facing execution.
 
 The Compose defaults are for local development. The default database password is not suitable for shared or production environments.
@@ -53,9 +54,9 @@ Every concrete Worker Manager must enforce:
 The control plane now defines and tests the lifecycle state machine, durable
 registry, Action binding, approval consumption, response binding, evidence
 validation, audit trail, timeout, cancellation, cleanup, and fail-closed restart
-reconciliation, and a runtime-neutral orphan-resource janitor. It does not yet
-provide a concrete runtime, reattach to a surviving container, wire recovery into
-startup, or execute security tools.
+reconciliation, an orphan-resource janitor, and a complete restricted-container
+policy adapter. It does not yet provide the authenticated privileged Engine
+transport, scoped egress, worker executor, startup wiring, or security tools.
 The internal-only Worker network remains closed until network-policy enforcement,
-a restricted runtime adapter, startup integration, and isolated end-to-end targets
-are implemented and verified.
+the Engine gateway, startup integration, and isolated end-to-end targets are
+implemented and verified.

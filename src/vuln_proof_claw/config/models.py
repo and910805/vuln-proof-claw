@@ -84,9 +84,18 @@ class DatabaseConfig(FrozenConfigModel):
 class DockerConfig(FrozenConfigModel):
     """Worker-manager Docker configuration."""
 
+    runtime_enabled: bool = False
     worker_image: str = "vuln-proof-claw-worker:dev"
     worker_network: str = "vuln-proof-claw-workers"
     default_timeout_seconds: int = Field(default=300, ge=1, le=10_800)
+    allowed_capabilities: tuple[str, ...] = ("http_client",)
+    maximum_memory_megabytes: int = Field(default=2048, ge=64, le=32_768)
+    maximum_cpu_count: float = Field(default=2.0, gt=0, le=32)
+    maximum_process_limit: int = Field(default=256, ge=16, le=4096)
+    maximum_request_bytes: int = Field(default=256 * 1024, ge=1024, le=1024 * 1024)
+    maximum_output_bytes: int = Field(default=1024 * 1024, ge=1024, le=16 * 1024 * 1024)
+    task_tmpfs_megabytes: int = Field(default=64, ge=16, le=1024)
+    stop_grace_seconds: int = Field(default=5, ge=1, le=30)
 
 
 class AssessmentConfig(FrozenConfigModel):
@@ -95,7 +104,7 @@ class AssessmentConfig(FrozenConfigModel):
     enabled: bool = False
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
-    user_agent: str = Field(default="vuln-proof-claw/0.0.14", min_length=1, max_length=255)
+    user_agent: str = Field(default="vuln-proof-claw/0.0.15", min_length=1, max_length=255)
 
     @field_validator("user_agent")
     @classmethod

@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+## [0.0.15] - 2026-08-02
+
+### 新增
+
+- 新增建立於窄化 privileged Engine 介面上的完整受限 `DockerWorkerRuntime` lifecycle，包含 create、start、有界 wait、stop、冪等 remove 與具 label inventory。
+- 新增由不可變 policy 產生的 runtime identity、digest-pinned image 驗證、專用 network 驗證、capability allowlist，以及可設定的 CPU、記憶體、PID、timeout、request、output、tmpfs 與 stop 上限。
+- 新增 32 項 runtime 測試，涵蓋 hardened container spec、lifecycle 整合、protocol 與 exit-code 驗證、inventory ownership、不安全設定、metadata injection、過大 I/O 與安全 Engine failure。
+- 新增雙語受限 runtime 邊界文件及明確的 fail-closed 環境設定。
+
+### 變更
+
+- Worker request 現在只透過有界的嚴格 protocol stdin 進入 container；Engine request 不提供任意 command、entrypoint、environment、host mount、device、privileged、host network 或新增 capability 欄位。
+- Runtime inventory label 現在會綁定 owner、Worker ID、request ID、建立時間與完全相符的 policy identity。
+- 專案與 Web package 版號升至 `0.0.15`。
+
+### 安全性
+
+- 每個 container spec 都要求非 root、唯讀 root filesystem、`cap_drop=ALL`、`no-new-privileges`、init，以及 `noexec,nosuid,nodev` tmpfs storage。
+- Runtime 必須明確啟用、digest-pinned policy 建立採 fail closed、production 啟用要求 API authentication readiness，而且 raw Engine detail、output 與 reference 不會出現在安全 exception 或物件表示。
+
 ## [0.0.14] - 2026-08-02
 
 ### 新增
