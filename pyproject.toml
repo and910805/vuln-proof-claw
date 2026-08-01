@@ -39,7 +39,7 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.10,<3",
   "sqlalchemy>=2.0,<3",
-  "structlog>=25.4,<26",
+  "structlog>=25.4,<27",
   "typer>=0.16,<1",
   "uvicorn[standard]>=0.35,<1",
 ]
