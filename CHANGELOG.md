@@ -6,6 +6,25 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.14] - 2026-08-02
+
+### Added
+
+- Added a runtime-neutral inventory contract with immutable Worker/request ownership labels and opaque privileged references.
+- Added a serialized orphan-resource janitor that preserves in-flight work, applies a bounded grace period to unregistered resources, and removes terminal, stale, or mismatched resources.
+- Added ordered restart recovery that first marks abandoned Worker executions and Actions lost, then cleans their runtime resources.
+- Added focused coverage for live-resource preservation, restart cleanup, binding and runtime-identity mismatches, duplicate inventory entries, cleanup retries, safe errors, and optimistic update conflicts.
+
+### Changed
+
+- Worker IDs are now allocated before runtime creation and passed into the adapter so ownership labels cannot be attached after the fact.
+- Advanced the project and Web package version to `0.0.14` and documented the runtime cleanup contract in English and Traditional Chinese.
+
+### Security
+
+- Runtime references remain process-local and are excluded from durable rows, audit payloads, result representations, and safe exceptions.
+- Inventory failures and cleanup exceptions are reduced to stable error codes; resources with non-terminal durable bindings are never destroyed by the janitor.
+
 ## [0.0.13] - 2026-08-02
 
 ### Added

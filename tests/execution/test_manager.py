@@ -8,10 +8,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from tests.execution.test_protocol import request
-from vuln_proof_claw.domain.identifiers import EvidenceId
+from vuln_proof_claw.domain.identifiers import EvidenceId, WorkerId
 from vuln_proof_claw.execution.manager import (
     InvalidWorkerStateError,
     LifecycleWorkerManager,
+    RuntimeResource,
     WorkerManagerError,
     WorkerNotFoundError,
     WorkerRequestConflictError,
@@ -44,10 +45,14 @@ class FakeRuntime:
         self.wait_started = asyncio.Event()
         self.wait_release: asyncio.Event | None = None
 
-    async def create(self, worker_request: WorkerRequest) -> str:
+    async def create(self, worker_request: WorkerRequest, *, worker_id: WorkerId) -> str:
         del worker_request
+        self.worker_id = worker_id
         self.calls.append("create")
         return "runtime-reference-1"
+
+    async def list_resources(self) -> tuple[RuntimeResource, ...]:
+        return ()
 
     async def start(self, runtime_reference: str) -> None:
         assert runtime_reference == "runtime-reference-1"
@@ -92,6 +97,7 @@ async def test_successful_worker_is_created_started_collected_and_destroyed_once
     terminal = await lifecycle.status(submitted.worker_id)
 
     assert replayed == submitted
+    assert runtime.worker_id == submitted.worker_id
     assert submitted.state is WorkerState.STARTING
     assert running.state is WorkerState.RUNNING
     assert response is not None

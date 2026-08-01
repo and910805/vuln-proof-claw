@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+## [0.0.14] - 2026-08-02
+
+### 新增
+
+- 新增與 runtime 無關的 inventory 契約，使用不可變 Worker／request ownership label，並將 privileged reference 保持為不透明值。
+- 新增序列化 orphan-resource janitor：保留執行中的工作、對未登記資源套用有界 grace period，並移除終止、過期或綁定不符的資源。
+- 新增有順序的重啟 recovery，先將 abandoned Worker execution 與 Action 標為 lost，再清除其 runtime resource。
+- 新增 live resource 保護、重啟清理、綁定與 runtime identity 不符、重複 inventory、cleanup retry、安全錯誤及 optimistic update conflict 的測試。
+
+### 變更
+
+- Worker ID 現在會在建立 runtime 前配置並傳入 adapter，避免 ownership label 在事後才附加。
+- 專案與 Web package 版號升至 `0.0.14`，並以英文及繁體中文記錄 runtime cleanup 契約。
+
+### 安全性
+
+- Runtime reference 只保留於 process 內，不會出現在持久化資料、稽核 payload、結果表示或安全 exception。
+- Inventory 與 cleanup exception 會轉成穩定 error code；janitor 絕不刪除綁定非終止持久化紀錄的資源。
+
 ## [0.0.13] - 2026-08-02
 
 ### 新增

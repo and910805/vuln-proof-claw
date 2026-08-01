@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import Engine
 
 from vuln_proof_claw.domain.enums import ActionState, RiskLevel, WorkerState
-from vuln_proof_claw.domain.identifiers import EvidenceId
+from vuln_proof_claw.domain.identifiers import EvidenceId, WorkerId
 from vuln_proof_claw.domain.models import (
     Action,
     Engagement,
@@ -21,7 +21,11 @@ from vuln_proof_claw.domain.models import (
     WorkerExecution,
 )
 from vuln_proof_claw.execution.lifecycle import ActionWorkerCoordinator, WorkerLifecycleError
-from vuln_proof_claw.execution.manager import DisabledWorkerManager, LifecycleWorkerManager
+from vuln_proof_claw.execution.manager import (
+    DisabledWorkerManager,
+    LifecycleWorkerManager,
+    RuntimeResource,
+)
 from vuln_proof_claw.execution.protocol import (
     WorkerLimits,
     WorkerRequest,
@@ -56,10 +60,14 @@ class FakeRuntime:
         self.calls: list[str] = []
         self.start_error: Exception | None = None
 
-    async def create(self, request: WorkerRequest) -> str:
+    async def create(self, request: WorkerRequest, *, worker_id: WorkerId) -> str:
         del request
+        self.worker_id = worker_id
         self.calls.append("create")
         return "runtime-1"
+
+    async def list_resources(self) -> tuple[RuntimeResource, ...]:
+        return ()
 
     async def start(self, reference: str) -> None:
         assert reference == "runtime-1"

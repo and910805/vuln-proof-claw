@@ -13,7 +13,7 @@ runner = CliRunner()
 
 
 def test_version_is_pep440_compatible() -> None:
-    assert __version__ == "0.0.13"
+    assert __version__ == "0.0.14"
 
 
 def test_release_version_is_consistent() -> None:
