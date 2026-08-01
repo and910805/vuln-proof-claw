@@ -104,6 +104,22 @@ async def test_assessment_creates_evidence_findings_report_and_audit_idempotentl
             f"{endpoint}/{created.json()['action_id']}",
             headers=OPERATOR_HEADERS,
         )
+        history = await client.get("/api/v1/assessments", headers=OPERATOR_HEADERS)
+        project_history = await client.get(
+            "/api/v1/assessments",
+            params={"project_id": history.json()["items"][0]["project_id"], "limit": 1},
+            headers=OPERATOR_HEADERS,
+        )
+        next_page = await client.get(
+            "/api/v1/assessments",
+            params={"limit": 1, "offset": 1},
+            headers=OPERATOR_HEADERS,
+        )
+        empty_history = await client.get(
+            "/api/v1/assessments",
+            params={"project_id": "00000000-0000-7000-8000-000000000099"},
+            headers=OPERATOR_HEADERS,
+        )
         conflict = await client.post(
             endpoint,
             json={"target": "https://api.example.test/v1/users"},
@@ -132,6 +148,25 @@ async def test_assessment_creates_evidence_findings_report_and_audit_idempotentl
     assert replay.json()["action_id"] == created.json()["action_id"]
     assert fetched.status_code == 200
     assert fetched.json()["finding_ids"] == created.json()["finding_ids"]
+    assert history.status_code == 200
+    assert history.json()["total"] == 1
+    assert history.json()["items"][0] == {
+        "action_id": created.json()["action_id"],
+        "engagement_id": engagement_id,
+        "project_id": project_history.json()["items"][0]["project_id"],
+        "target": "https://api.example.test:443/v1",
+        "state": "succeeded",
+        "created_at": history.json()["items"][0]["created_at"],
+        "completed_at": history.json()["items"][0]["completed_at"],
+        "evidence_count": 1,
+        "findings_count": 8,
+        "error_code": None,
+        "report_url": f"/api/v1/engagements/{engagement_id}/report",
+        "markdown_report_url": f"/api/v1/engagements/{engagement_id}/report.md",
+    }
+    assert project_history.json()["total"] == 1
+    assert next_page.json() == {"schema_version": "v1", "items": [], "total": 1}
+    assert empty_history.json() == {"schema_version": "v1", "items": [], "total": 0}
     assert conflict.status_code == 409
     assert len(transport.calls) == 1
     assert report.json()["counts"] == {"actions": 1, "evidence": 1, "findings": 8}
@@ -195,6 +230,7 @@ async def test_assessment_commits_safe_failed_state_when_transport_fails(tmp_pat
             f"/api/v1/engagements/{engagement_id}/actions",
             headers=OPERATOR_HEADERS,
         )
+        history = await client.get("/api/v1/assessments", headers=OPERATOR_HEADERS)
 
     assert response.status_code == 201
     assert response.json()["state"] == "failed"
@@ -203,5 +239,8 @@ async def test_assessment_commits_safe_failed_state_when_transport_fails(tmp_pat
     assert replay.status_code == 200
     assert replay.json()["error_code"] == "test_transport_failed"
     assert fetched.json()["error_code"] == "test_transport_failed"
+    assert history.json()["items"][0]["error_code"] == "test_transport_failed"
+    assert history.json()["items"][0]["evidence_count"] == 0
+    assert history.json()["items"][0]["findings_count"] == 0
     assert len(transport.calls) == 1
     assert actions.json()["items"][0]["state"] == "failed"

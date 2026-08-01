@@ -62,3 +62,9 @@ export function prepareAssessment(rawTarget: string, now = new Date()): Prepared
 export function assessmentIdempotencyKey(): string {
   return `console-${crypto.randomUUID()}`;
 }
+
+export function assessmentHistoryPath(projectId: string): string {
+  const parameters = new URLSearchParams({ limit: "50" });
+  if (projectId) parameters.set("project_id", projectId);
+  return `/api/v1/assessments?${parameters.toString()}`;
+}

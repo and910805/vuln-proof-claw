@@ -5,12 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.api.auth import AuthenticatedPrincipal, require_operator_if_configured
 from vuln_proof_claw.api.dependencies import get_session
-from vuln_proof_claw.api.schemas.assessments import AssessmentCreate, AssessmentSummary
+from vuln_proof_claw.api.schemas.assessments import (
+    AssessmentCreate,
+    AssessmentHistoryItem,
+    AssessmentListResponse,
+    AssessmentSummary,
+)
 from vuln_proof_claw.assessment.service import (
     AssessmentConflictError,
     AssessmentError,
@@ -19,7 +24,7 @@ from vuln_proof_claw.assessment.service import (
 )
 from vuln_proof_claw.config.settings import Settings
 from vuln_proof_claw.domain.errors import DomainValidationError
-from vuln_proof_claw.domain.identifiers import ActionId, EngagementId
+from vuln_proof_claw.domain.identifiers import ActionId, EngagementId, ProjectId
 from vuln_proof_claw.execution.http_capture import HttpCaptureLimits, HttpCaptureTransport
 from vuln_proof_claw.persistence.repositories import ScopeRepository
 from vuln_proof_claw.policy.scope import EngagementScope
@@ -46,6 +51,45 @@ def _summary(result: PassiveAssessmentResult) -> AssessmentSummary:
         replayed=result.replayed,
         report_url=f"{prefix}/report",
         markdown_report_url=f"{prefix}/report.md",
+    )
+
+
+@router.get(
+    "/assessments",
+    response_model=AssessmentListResponse,
+    summary="List persisted passive assessments",
+)
+def list_assessments(
+    session: SessionDependency,
+    project_id: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AssessmentListResponse:
+    """Return newest-first assessment history without initiating network activity."""
+    page = PassiveAssessmentService(session).list_history(
+        project_id=ProjectId(project_id) if project_id else None,
+        limit=limit,
+        offset=offset,
+    )
+    return AssessmentListResponse(
+        items=tuple(
+            AssessmentHistoryItem(
+                action_id=item.action_id,
+                engagement_id=item.engagement_id,
+                project_id=item.project_id,
+                target=item.target,
+                state=item.state,
+                created_at=item.created_at,
+                completed_at=item.completed_at,
+                evidence_count=item.evidence_count,
+                findings_count=item.findings_count,
+                error_code=item.error_code,
+                report_url=f"/api/v1/engagements/{item.engagement_id}/report",
+                markdown_report_url=f"/api/v1/engagements/{item.engagement_id}/report.md",
+            )
+            for item in page.items
+        ),
+        total=page.total,
     )
 
 

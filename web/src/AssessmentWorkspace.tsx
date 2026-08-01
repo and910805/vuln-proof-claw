@@ -1,6 +1,6 @@
 import { FormEvent } from "react";
 
-import { AssessmentSummary, Project } from "./contracts";
+import { AssessmentHistoryItem, AssessmentSummary, Project } from "./contracts";
 
 type AssessmentCopy = {
   pageHints: { assessments: string };
@@ -21,11 +21,23 @@ type AssessmentCopy = {
   downloadJson: string;
   downloadMarkdown: string;
   emptyPendingHint: string;
+  assessmentHistory: string;
+  assessmentHistoryHint: string;
+  assessmentHistoryFilter: string;
+  allProjects: string;
+  historyCount: string;
+  noAssessmentHistory: string;
+  loadingHistory: string;
+  completedAt: string;
 };
 
 export function AssessmentWorkspace({
   authorizationConfirmed,
   assessing,
+  history,
+  historyLoading,
+  historyProjectId,
+  historyTotal,
   executionAvailable,
   latestAssessment,
   message,
@@ -35,12 +47,19 @@ export function AssessmentWorkspace({
   t,
   onAuthorizationChange,
   onDownload,
+  onHistoryDownload,
+  onHistoryProjectChange,
   onProjectChange,
   onSubmit,
   onTargetChange,
+  formatTimestamp,
 }: {
   authorizationConfirmed: boolean;
   assessing: boolean;
+  history: AssessmentHistoryItem[];
+  historyLoading: boolean;
+  historyProjectId: string;
+  historyTotal: number;
   executionAvailable: boolean;
   latestAssessment: AssessmentSummary | null;
   message: string;
@@ -50,9 +69,12 @@ export function AssessmentWorkspace({
   t: AssessmentCopy;
   onAuthorizationChange: (value: boolean) => void;
   onDownload: (format: "json" | "markdown") => void;
+  onHistoryDownload: (assessment: AssessmentHistoryItem, format: "json" | "markdown") => void;
+  onHistoryProjectChange: (value: string) => void;
   onProjectChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
   onTargetChange: (value: string) => void;
+  formatTimestamp: (value: string) => string;
 }) {
   const canRun = executionAvailable
     && Boolean(projectId)
@@ -139,6 +161,83 @@ export function AssessmentWorkspace({
           )}
         </section>
       </div>
+
+      <section className="panel assessment-history">
+        <div className="panel-heading history-heading">
+          <div>
+            <h3>{t.assessmentHistory}</h3>
+            <p>{t.assessmentHistoryHint}</p>
+          </div>
+          <label className="history-filter" htmlFor="assessment-history-project">
+            <span>{t.assessmentHistoryFilter}</span>
+            <select
+              id="assessment-history-project"
+              onChange={(event) => onHistoryProjectChange(event.target.value)}
+              value={historyProjectId}
+            >
+              <option value="">{t.allProjects}</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="history-summary">
+          <span>{t.historyCount}</span>
+          <strong>{historyTotal.toLocaleString()}</strong>
+        </div>
+        {historyLoading ? (
+          <div aria-busy="true" className="history-loading">{t.loadingHistory}</div>
+        ) : history.length === 0 ? (
+          <div className="history-empty"><p>{t.noAssessmentHistory}</p></div>
+        ) : (
+          <div className="history-list">
+            {history.map((item) => {
+              const project = projects.find((candidate) => candidate.id === item.project_id);
+              return (
+                <article className="history-row" key={item.action_id}>
+                  <div className="history-primary">
+                    <div className={`state-badge state-${item.state}`}>
+                      <span aria-hidden="true" />{item.state}
+                    </div>
+                    <strong title={item.target}>{item.target}</strong>
+                    <small>{project?.name ?? item.project_id}</small>
+                  </div>
+                  <dl className="history-metrics">
+                    <div><dt>{t.evidenceCount}</dt><dd>{item.evidence_count}</dd></div>
+                    <div><dt>{t.findingCount}</dt><dd>{item.findings_count}</dd></div>
+                  </dl>
+                  <div className="history-time">
+                    <span>{t.completedAt}</span>
+                    <time dateTime={item.completed_at ?? item.created_at}>
+                      {formatTimestamp(item.completed_at ?? item.created_at)}
+                    </time>
+                    {item.error_code && <code>{item.error_code}</code>}
+                  </div>
+                  <div className="history-actions">
+                    <button
+                      aria-label={`${t.downloadJson}: ${item.target}`}
+                      className="quiet-button"
+                      onClick={() => onHistoryDownload(item, "json")}
+                      type="button"
+                    >
+                      JSON
+                    </button>
+                    <button
+                      aria-label={`${t.downloadMarkdown}: ${item.target}`}
+                      className="quiet-button"
+                      onClick={() => onHistoryDownload(item, "markdown")}
+                      type="button"
+                    >
+                      Markdown
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </>
   );
 }

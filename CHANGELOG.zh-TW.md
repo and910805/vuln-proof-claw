@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+## [0.0.13] - 2026-08-02
+
+### 新增
+
+- 新增由新到舊、支援分頁與專案篩選的被動評估歷史 API，提供正規化目標、完成時間、Evidence／Finding 數量、安全錯誤碼與報告連結。
+- Web 評估工作區新增持久化歷史，可依專案篩選、顯示本地化時間、明確狀態、結果數量與錯誤，並可透過 authentication 下載 JSON／Markdown 報告。
+- 新增成功、失敗、空白及專案篩選歷史的 API 整合測試，以及前端 URL contract 測試。
+
+### 變更
+
+- 歷史數量改由 correlated database query 與每頁一次的 audit lookup 聚合，避免逐列載入關聯造成 N+1。
+- 響應式歷史列在小螢幕會重排為觸控友善卡片，同時保留可見狀態文字與可用鍵盤操作的報告按鈕。
+
+### 安全性
+
+- 查詢評估歷史是唯讀操作，絕不會產生 target traffic；既有 API authentication 仍會保護正規化目標與報告連結。
+- 失敗歷史只公開 audit trail 既有的穩定錯誤碼，不會透過此 endpoint 提供 transport exception 或敏感的原始 Evidence。
+
 ## [0.0.12] - 2026-08-01
 
 ### 新增

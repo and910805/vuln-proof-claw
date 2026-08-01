@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,3 +30,32 @@ class AssessmentSummary(BaseModel):
     replayed: bool
     report_url: str
     markdown_report_url: str
+
+
+class AssessmentHistoryItem(BaseModel):
+    """Persisted assessment metadata safe for operational list views."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    action_id: str
+    engagement_id: str
+    project_id: str
+    target: str
+    state: ActionState
+    created_at: datetime
+    completed_at: datetime | None
+    evidence_count: int
+    findings_count: int
+    error_code: str | None
+    report_url: str
+    markdown_report_url: str
+
+
+class AssessmentListResponse(BaseModel):
+    """Paginated passive-assessment history."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["v1"] = "v1"
+    items: tuple[AssessmentHistoryItem, ...]
+    total: int

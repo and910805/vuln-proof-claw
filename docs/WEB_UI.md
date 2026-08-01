@@ -15,6 +15,7 @@ The Web foundation currently provides:
 - A deep-linkable authorized URL assessment workspace.
 - Automatic creation of a narrow 24-hour L0 Engagement from the confirmed target.
 - Passive assessment status, Evidence/Finding counts, and JSON/Markdown report downloads.
+- Persistent newest-first assessment history with project filtering, failure status, and repeat report downloads after refresh.
 - Optional operator Bearer-token input for authenticated deployments.
 - The enforced L0-L4 risk-policy reference.
 - Explicit status for capabilities that are operational or still locked.
@@ -81,5 +82,6 @@ The foundation UI consumes:
 - `POST /api/v1/projects`
 - `POST /api/v1/projects/{project_id}/engagements`
 - `POST /api/v1/engagements/{engagement_id}/assessments`
+- `GET /api/v1/assessments?project_id={project_id}&limit=50&offset=0`
 - `GET /api/v1/engagements/{engagement_id}/report`
 - `GET /api/v1/engagements/{engagement_id}/report.md`

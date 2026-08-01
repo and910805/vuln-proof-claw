@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from vuln_proof_claw.domain.identifiers import (
     EngagementId,
     EvidenceId,
     FindingId,
+    ProjectId,
     new_action_id,
 )
 from vuln_proof_claw.domain.models import Action, Flow, Task
@@ -30,7 +31,9 @@ from vuln_proof_claw.execution.http_capture import (
     capture_parameter_digest,
 )
 from vuln_proof_claw.persistence.models import (
+    ActionRecord,
     AuditEventRecord,
+    EngagementRecord,
     EvidenceRecord,
     FindingRecord,
     finding_evidence,
@@ -69,6 +72,26 @@ class PassiveAssessmentResult:
     replayed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class PassiveAssessmentHistoryItem:
+    action_id: ActionId
+    engagement_id: EngagementId
+    project_id: ProjectId
+    target: str
+    state: ActionState
+    created_at: datetime
+    completed_at: datetime | None
+    evidence_count: int
+    findings_count: int
+    error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PassiveAssessmentHistoryPage:
+    items: tuple[PassiveAssessmentHistoryItem, ...]
+    total: int
+
+
 class PassiveAssessmentService:
     """Create, execute, analyze, and audit one passive HTTP capture."""
 
@@ -87,6 +110,116 @@ class PassiveAssessmentService:
         ):
             raise AssessmentError("assessment_not_found")
         return self._summary(stored.entity, replayed=True)
+
+    def list_history(
+        self,
+        *,
+        project_id: ProjectId | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> PassiveAssessmentHistoryPage:
+        """List persisted passive assessments without contacting any target."""
+        evidence_count = (
+            select(func.count(EvidenceRecord.id))
+            .where(EvidenceRecord.action_id == ActionRecord.id)
+            .correlate(ActionRecord)
+            .scalar_subquery()
+        )
+        finding_count = (
+            select(func.count(func.distinct(FindingRecord.id)))
+            .select_from(FindingRecord)
+            .join(finding_evidence, finding_evidence.c.finding_id == FindingRecord.id)
+            .join(EvidenceRecord, finding_evidence.c.evidence_id == EvidenceRecord.id)
+            .where(EvidenceRecord.action_id == ActionRecord.id)
+            .correlate(ActionRecord)
+            .scalar_subquery()
+        )
+        filters = [ActionRecord.action_type == _ACTION_TYPE]
+        if project_id is not None:
+            filters.append(EngagementRecord.project_id == project_id)
+        statement = (
+            select(
+                ActionRecord,
+                EngagementRecord.project_id,
+                evidence_count.label("evidence_count"),
+                finding_count.label("finding_count"),
+            )
+            .join(EngagementRecord, EngagementRecord.id == ActionRecord.engagement_id)
+            .where(*filters)
+            .order_by(ActionRecord.created_at.desc(), ActionRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = self._session.execute(statement).all()
+        error_codes = self._history_error_codes(
+            tuple(row[0].id for row in rows),
+            tuple({row[0].engagement_id for row in rows}),
+        )
+        items: list[PassiveAssessmentHistoryItem] = []
+        for action, row_project_id, row_evidence_count, row_finding_count in rows:
+            items.append(
+                PassiveAssessmentHistoryItem(
+                    action_id=ActionId(action.id),
+                    engagement_id=EngagementId(action.engagement_id),
+                    project_id=ProjectId(row_project_id),
+                    target=action.normalized_target,
+                    state=ActionState(action.state),
+                    created_at=self._utc(action.created_at),
+                    completed_at=(
+                        self._utc(action.completed_at) if action.completed_at else None
+                    ),
+                    evidence_count=row_evidence_count,
+                    findings_count=row_finding_count,
+                    error_code=error_codes.get(action.id),
+                )
+            )
+        total = self._session.scalar(
+            select(func.count())
+            .select_from(ActionRecord)
+            .join(EngagementRecord, EngagementRecord.id == ActionRecord.engagement_id)
+            .where(*filters)
+        ) or 0
+        return PassiveAssessmentHistoryPage(items=tuple(items), total=total)
+
+    def _history_error_codes(
+        self,
+        action_ids: tuple[str, ...],
+        engagement_ids: tuple[str, ...],
+    ) -> dict[str, str]:
+        """Read failure codes for one history page in a single audit query."""
+        if not action_ids:
+            return {}
+        action_id_set = set(action_ids)
+        events = self._session.scalars(
+            select(AuditEventRecord)
+            .where(
+                AuditEventRecord.event_type == "assessment.failed",
+                AuditEventRecord.engagement_id.in_(engagement_ids),
+            )
+            .order_by(AuditEventRecord.created_at.desc(), AuditEventRecord.id.desc())
+        )
+        result: dict[str, str] = {}
+        for event in events:
+            try:
+                payload = json.loads(event.payload)
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+                continue
+            action_id = payload.get("action_id")
+            error_code = payload.get("error_code")
+            if (
+                isinstance(action_id, str)
+                and action_id in action_id_set
+                and action_id not in result
+                and isinstance(error_code, str)
+            ):
+                result[action_id] = error_code
+        return result
+
+    @staticmethod
+    def _utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def run(  # noqa: PLR0913 - explicit security inputs remain visible
         self,

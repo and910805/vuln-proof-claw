@@ -15,6 +15,7 @@ Web 基礎版本目前提供：
 - 可用 deep link 直接開啟的授權 URL 評估工作區。
 - 根據已確認目標，自動建立範圍縮到最小的 24 小時 L0 Engagement。
 - 被動評估狀態、Evidence／Finding 數量，以及 JSON／Markdown 報告下載。
+- 由新到舊的持久化評估歷史，可依專案篩選、顯示失敗狀態，並在重新整理後再次下載報告。
 - 供 authentication deployment 選用的 Operator Bearer Token 輸入。
 - 系統強制執行的 L0-L4 風險政策參考。
 - 如實標示已運作與仍鎖定的能力。
@@ -72,5 +73,6 @@ Vite 只監聽 `127.0.0.1:5173`，並將 `/api` 代理至 `127.0.0.1:8080`。
 - `POST /api/v1/projects`
 - `POST /api/v1/projects/{project_id}/engagements`
 - `POST /api/v1/engagements/{engagement_id}/assessments`
+- `GET /api/v1/assessments?project_id={project_id}&limit=50&offset=0`
 - `GET /api/v1/engagements/{engagement_id}/report`
 - `GET /api/v1/engagements/{engagement_id}/report.md`

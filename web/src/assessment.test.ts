@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { assessmentIdempotencyKey, prepareAssessment } from "./assessment";
+import {
+  assessmentHistoryPath,
+  assessmentIdempotencyKey,
+  prepareAssessment,
+} from "./assessment";
 
 describe("prepareAssessment", () => {
   it("builds a narrow hostname scope and removes query and fragment data", () => {
@@ -40,4 +44,11 @@ it("creates a unique console idempotency key without target content", () => {
   const key = assessmentIdempotencyKey();
   expect(key).toBe("console-00000000-0000-4000-8000-000000000001");
   vi.unstubAllGlobals();
+});
+
+it("builds bounded and encoded assessment history URLs", () => {
+  expect(assessmentHistoryPath("")).toBe("/api/v1/assessments?limit=50");
+  expect(assessmentHistoryPath("project id/one")).toBe(
+    "/api/v1/assessments?limit=50&project_id=project+id%2Fone",
+  );
 });

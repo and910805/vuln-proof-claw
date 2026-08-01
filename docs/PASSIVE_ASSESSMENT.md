@@ -19,7 +19,7 @@ Target traffic is disabled by default:
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.12
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.13
 ```
 
 For Docker Compose development, copy `.env.example` to `.env`, change
@@ -63,6 +63,15 @@ network request. Reusing the key for another target returns
 ```http
 GET /api/v1/engagements/{engagement_id}/assessments/{action_id}
 ```
+
+Persisted runs can also be listed newest first without producing target traffic:
+
+```http
+GET /api/v1/assessments?project_id={project_id}&limit=50&offset=0
+```
+
+The list returns normalized targets, terminal state and time, Evidence/Finding counts,
+stable failure codes, and report links. Omitting `project_id` returns history across projects.
 
 ## Network controls
 

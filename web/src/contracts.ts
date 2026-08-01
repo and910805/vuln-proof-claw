@@ -49,3 +49,24 @@ export type AssessmentSummary = {
   report_url: string;
   markdown_report_url: string;
 };
+
+export type AssessmentHistoryItem = {
+  action_id: string;
+  engagement_id: string;
+  project_id: string;
+  target: string;
+  state: string;
+  created_at: string;
+  completed_at: string | null;
+  evidence_count: number;
+  findings_count: number;
+  error_code: string | null;
+  report_url: string;
+  markdown_report_url: string;
+};
+
+export type AssessmentList = {
+  schema_version: "v1";
+  items: AssessmentHistoryItem[];
+  total: number;
+};

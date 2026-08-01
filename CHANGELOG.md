@@ -6,6 +6,24 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.13] - 2026-08-02
+
+### Added
+
+- Added a newest-first, paginated passive-assessment history API with optional project filtering, normalized targets, terminal timestamps, Evidence/Finding counts, safe failure codes, and report links.
+- Added a persistent Web assessment-history workspace with project filtering, localized timestamps, explicit state labels, result counts, error visibility, and authenticated JSON/Markdown report downloads.
+- Added API integration coverage for successful, failed, empty, and project-filtered assessment histories, plus frontend URL-contract coverage.
+
+### Changed
+
+- Assessment-history count aggregation now uses correlated database queries and one bounded audit lookup per page instead of per-row relationship loading.
+- Responsive history rows collapse to touch-friendly cards on small screens while preserving visible status text and keyboard-operable report actions.
+
+### Security
+
+- Listing assessment history is read-only and never initiates target traffic. Existing API authentication still protects normalized targets and report references.
+- Failure history exposes only the existing stable error code from the audit trail; transport exceptions and sensitive raw Evidence remain unavailable through this endpoint.
+
 ## [0.0.12] - 2026-08-01
 
 ### Added

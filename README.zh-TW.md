@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.12-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.13-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0.0.12 提供一條預設關閉、受 Scope 約束的被動 URL
+> **Pre-alpha 狀態：** Phase 0.0.13 提供一條預設關閉、受 Scope 約束的被動 URL
 > 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
 > crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
 > 全部維持 fail-closed。
@@ -44,7 +44,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
 | REST API | 版本化 health、project、engagement、passive assessment、workflow、audit、report contract 與 OpenAPI |
-| Web 控制台 | 雙語儀表板、分頁範圍 Operator authentication、授權 URL 評估精靈、報告下載與如實能力狀態 |
+| Web 控制台 | 雙語儀表板、分頁範圍 Operator authentication、授權 URL 評估精靈、可依專案篩選的持久化歷史、報告下載與如實能力狀態 |
 | Evidence Core 預覽版 | Scoped passive URL assessment、transactional evidence、deterministic finding 與不可變報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |

@@ -17,7 +17,7 @@ Target traffic 預設停用：
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.12
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.13
 ```
 
 使用 Docker Compose 開發時，先把 `.env.example` 複製成 `.env`，再把
@@ -58,6 +58,14 @@ target 時回覆 `409 idempotency_key_conflict`。可透過下列 endpoint 查�
 ```http
 GET /api/v1/engagements/{engagement_id}/assessments/{action_id}
 ```
+
+也可由新到舊查詢已保存的執行紀錄，而且不會產生 target traffic：
+
+```http
+GET /api/v1/assessments?project_id={project_id}&limit=50&offset=0
+```
+
+清單會提供正規化目標、terminal state 與時間、Evidence／Finding 數量、穩定錯誤碼及報告連結。省略 `project_id` 時會回傳跨專案歷史。
 
 ## Network control
 

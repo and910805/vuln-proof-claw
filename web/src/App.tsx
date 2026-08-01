@@ -1,9 +1,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiError, apiRequest, downloadApiFile } from "./api";
-import { assessmentIdempotencyKey, prepareAssessment } from "./assessment";
+import {
+  assessmentHistoryPath,
+  assessmentIdempotencyKey,
+  prepareAssessment,
+} from "./assessment";
 import { AssessmentWorkspace } from "./AssessmentWorkspace";
 import {
+  AssessmentHistoryItem,
+  AssessmentList,
   AssessmentSummary,
   DashboardSummary,
   Engagement,
@@ -111,6 +117,14 @@ const copy = {
     credentialTarget: "Remove the username and password from the target URL.",
     ipTarget: "IP-literal targets require a manually reviewed API scope.",
     authorizationRequired: "Enter a valid operator token to use protected features.",
+    assessmentHistory: "Assessment history",
+    assessmentHistoryHint: "Persisted runs remain available after refresh and can be filtered by project.",
+    assessmentHistoryFilter: "History project",
+    allProjects: "All projects",
+    historyCount: "Persisted runs",
+    noAssessmentHistory: "No passive assessments match this project yet.",
+    loadingHistory: "Loading assessment history...",
+    completedAt: "Completed",
     pageHints: {
       projects: "Manage authorized assessment boundaries.",
       assessments: "Run one bounded passive check against a target you are authorized to test.",
@@ -126,6 +140,14 @@ const copy = {
   },
   "zh-TW": {
     product: "ProofClaw",
+    assessmentHistory: "評估歷史",
+    assessmentHistoryHint: "已保存的執行紀錄會在重新整理後保留，並可依專案篩選。",
+    assessmentHistoryFilter: "歷史專案",
+    allProjects: "所有專案",
+    historyCount: "保存紀錄",
+    noAssessmentHistory: "這個專案目前沒有符合的被動評估紀錄。",
+    loadingHistory: "\u6b63\u5728\u8f09\u5165\u8a55\u4f30\u6b77\u53f2...",
+    completedAt: "完成時間",
     skipContent: "跳至主要內容",
     edition: "控制平面",
     nav: {
@@ -272,6 +294,9 @@ function App() {
   const [assessing, setAssessing] = useState(false);
   const [assessmentMessage, setAssessmentMessage] = useState("");
   const [latestAssessment, setLatestAssessment] = useState<AssessmentSummary | null>(null);
+  const [assessmentHistory, setAssessmentHistory] = useState<AssessmentHistoryItem[]>([]);
+  const [assessmentHistoryTotal, setAssessmentHistoryTotal] = useState(0);
+  const [historyProjectId, setHistoryProjectId] = useState("");
   const t = copy[language];
 
   const loadData = useCallback(async () => {
@@ -284,12 +309,15 @@ function App() {
         const healthStatus = await readJson<HealthStatus>(health);
         setAppVersion(healthStatus.version);
       }
-      const [dashboard, projectList] = await Promise.all([
+      const [dashboard, projectList, assessmentList] = await Promise.all([
         apiRequest<DashboardSummary>("/api/v1/dashboard/summary", operatorToken),
         apiRequest<ProjectList>("/api/v1/projects?limit=100", operatorToken),
+        apiRequest<AssessmentList>(assessmentHistoryPath(historyProjectId), operatorToken),
       ]);
       setSummary(dashboard);
       setProjects(projectList.items);
+      setAssessmentHistory(assessmentList.items);
+      setAssessmentHistoryTotal(assessmentList.total);
       setAuthenticationRequired(false);
     } catch (loadError) {
       setError(true);
@@ -301,7 +329,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [operatorToken]);
+  }, [historyProjectId, operatorToken]);
 
   useEffect(() => {
     void loadData();
@@ -405,14 +433,17 @@ function App() {
     }
   };
 
-  const downloadReport = async (format: "json" | "markdown") => {
-    if (!latestAssessment) return;
+  const downloadReport = async (
+    format: "json" | "markdown",
+    assessment: AssessmentSummary | AssessmentHistoryItem | null = latestAssessment,
+  ) => {
+    if (!assessment) return;
     const path = format === "json"
-      ? latestAssessment.report_url
-      : latestAssessment.markdown_report_url;
+      ? assessment.report_url
+      : assessment.markdown_report_url;
     const extension = format === "json" ? "json" : "md";
     try {
-      await downloadApiFile(path, operatorToken, `proofclaw-${latestAssessment.action_id}.${extension}`);
+      await downloadApiFile(path, operatorToken, `proofclaw-${assessment.action_id}.${extension}`);
     } catch (downloadError) {
       setAssessmentMessage(
         downloadError instanceof Error ? downloadError.message : t.assessmentError,
@@ -543,6 +574,11 @@ function App() {
             <AssessmentWorkspace
               authorizationConfirmed={authorizationConfirmed}
               assessing={assessing}
+              formatTimestamp={(value) => formatDate(value, language)}
+              history={assessmentHistory}
+              historyLoading={loading}
+              historyProjectId={historyProjectId}
+              historyTotal={assessmentHistoryTotal}
               executionAvailable={summary?.execution_available ?? false}
               latestAssessment={latestAssessment}
               message={assessmentMessage}
@@ -552,6 +588,8 @@ function App() {
               t={t}
               onAuthorizationChange={setAuthorizationConfirmed}
               onDownload={(format) => void downloadReport(format)}
+              onHistoryDownload={(assessment, format) => void downloadReport(format, assessment)}
+              onHistoryProjectChange={setHistoryProjectId}
               onProjectChange={setAssessmentProjectId}
               onSubmit={(event) => void runAssessment(event)}
               onTargetChange={setAssessmentTarget}
