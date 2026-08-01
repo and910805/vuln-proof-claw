@@ -6,6 +6,34 @@
 
 ## Unreleased
 
+## [0.0.3] - 2026-08-01
+
+### Added
+
+- 為具備時間範圍的評估任務保存正規化的允許／拒絕 Scope 政策。
+- 新增 Engagement 建立、列表、詳細資料與離線 Scope 判斷 API contract。
+- 新增僅含 metadata 的 JSON 與 Markdown 評估報告。
+- 新增 Alembic revision `0002_engagement_scopes` 與 Evidence Core 預覽文件。
+
+### Security
+
+- Scope 判斷維持離線執行，hostname 結果會標記需要在執行時重新檢查 DNS。
+- 報告不包含原始證據，面向目標的執行仍維持 fail-closed。
+
+## [0.0.2] - 2026-08-01
+
+### Added
+
+- 新增根目錄 `VERSION` 版次標記，以及 Python 與 Web 套件版次一致性測試。
+- Web 控制台顯示目前執行中的 API 版次。
+
+### Changed
+
+- 本機安裝流程會先安裝仍受安全支援的 `pip`，再執行相依套件稽核。
+- 統一產生後 Web 資產的換行格式，避免 Windows 建置產生無意義差異。
+
+## [0.0.1] - 2026-07-30
+
 ### Added
 
 - 完全獨立設計的雙語平台規格。

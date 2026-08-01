@@ -6,6 +6,34 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.3] - 2026-08-01
+
+### Added
+
+- Persisted normalized allow/deny scope policies for time-bounded engagements.
+- Added engagement create, list, detail, and offline scope-evaluation API contracts.
+- Added metadata-only JSON and Markdown engagement reports.
+- Added Alembic revision `0002_engagement_scopes` and Evidence Core preview documentation.
+
+### Security
+
+- Scope evaluation remains offline and flags hostname decisions for execution-time DNS rechecks.
+- Reports exclude raw evidence and target execution remains fail-closed.
+
+## [0.0.2] - 2026-08-01
+
+### Added
+
+- Added a root `VERSION` marker and consistency coverage for Python and Web package versions.
+- Displayed the running API version in the Web console.
+
+### Changed
+
+- Updated local setup instructions to install a security-supported `pip` before auditing dependencies.
+- Normalized generated Web asset line endings for reproducible Windows builds.
+
+## [0.0.1] - 2026-07-30
+
 ### Added
 
 - Independently designed bilingual platform specification.

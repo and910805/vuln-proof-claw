@@ -9,6 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+[![Version](https://img.shields.io/badge/version-0.0.3-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -45,6 +46,7 @@ vuln-proof-claw is being built around those requirements:
 | CLI | Version command and credential-safe `doctor` diagnostics |
 | REST API | Versioned liveness and readiness contracts with OpenAPI |
 | Web console | Bundled React/TypeScript dashboard, bilingual UI, project creation, and truthful capability status |
+| Evidence Core preview | Persisted engagement scopes, offline target-policy evaluation, and metadata-only JSON/Markdown reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
@@ -103,6 +105,7 @@ PowerShell:
 git clone https://github.com/and910805/vuln-proof-claw.git
 Set-Location vuln-proof-claw
 python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade "pip>=26.1.2"
 .\.venv\Scripts\python.exe -m pip install --editable ".[dev]"
 .\.venv\Scripts\python.exe -m vuln_proof_claw --version
 .\.venv\Scripts\python.exe -m vuln_proof_claw doctor
@@ -114,6 +117,7 @@ Linux and macOS:
 git clone https://github.com/and910805/vuln-proof-claw.git
 cd vuln-proof-claw
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade "pip>=26.1.2"
 .venv/bin/python -m pip install --editable ".[dev]"
 .venv/bin/python -m vuln_proof_claw --version
 .venv/bin/python -m vuln_proof_claw doctor
@@ -196,6 +200,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Security policy | [SECURITY.md](SECURITY.md) | [SECURITY.zh-TW.md](SECURITY.zh-TW.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md) |
 | Web console | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
+| Evidence Core preview | [docs/EVIDENCE_CORE.md](docs/EVIDENCE_CORE.md) | [docs/EVIDENCE_CORE.zh-TW.md](docs/EVIDENCE_CORE.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

@@ -36,6 +36,7 @@ from vuln_proof_claw.persistence.models import (
     ApprovalRecord,
     ArtifactRecord,
     EngagementRecord,
+    EngagementScopeRecord,
     EvidenceRecord,
     FindingRecord,
     FlowRecord,
@@ -43,6 +44,7 @@ from vuln_proof_claw.persistence.models import (
     TaskRecord,
     finding_evidence,
 )
+from vuln_proof_claw.policy.scope import EngagementScope
 
 
 class PersistenceError(Exception):
@@ -132,6 +134,77 @@ class EngagementRepository:
                 created_at=_utc(row.created_at),
             ),
             row.version,
+        )
+
+    def list_for_project(
+        self,
+        project_id: ProjectId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Stored[Engagement], ...]:
+        rows = self._session.scalars(
+            select(EngagementRecord)
+            .where(EngagementRecord.project_id == project_id)
+            .order_by(EngagementRecord.created_at.desc(), EngagementRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
+
+    @staticmethod
+    def _domain_from_record(row: EngagementRecord) -> Engagement:
+        return Engagement(
+            id=EngagementId(row.id),
+            project_id=ProjectId(row.project_id),
+            name=row.name,
+            starts_at=_utc(row.starts_at),
+            ends_at=_utc(row.ends_at),
+            maximum_risk=RiskLevel(row.maximum_risk),
+            destructive_actions_enabled=row.destructive_actions_enabled,
+            created_at=_utc(row.created_at),
+        )
+
+
+class ScopeRepository:
+    """Persist normalized engagement scope rules as one atomic policy document."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, engagement_id: EngagementId, scope: EngagementScope) -> None:
+        self._session.add(
+            EngagementScopeRecord(
+                engagement_id=engagement_id,
+                allowed_hostnames=sorted(scope.allowed_hostnames),
+                allowed_cidrs=[str(network) for network in scope.allowed_networks],
+                allowed_ports=sorted(scope.allowed_ports),
+                allowed_schemes=sorted(scope.allowed_schemes),
+                allowed_paths=list(scope.allowed_paths),
+                denied_hostnames=sorted(scope.denied_hostnames),
+                denied_cidrs=[str(network) for network in scope.denied_networks],
+                denied_paths=list(scope.denied_paths),
+                valid_from=scope.valid_from,
+                valid_until=scope.valid_until,
+            )
+        )
+        self._session.flush()
+
+    def get(self, engagement_id: EngagementId) -> EngagementScope | None:
+        row = self._session.get(EngagementScopeRecord, engagement_id)
+        if row is None:
+            return None
+        return EngagementScope.create(
+            allowed_hostnames=tuple(row.allowed_hostnames),
+            allowed_cidrs=tuple(row.allowed_cidrs),
+            allowed_ports=tuple(row.allowed_ports),
+            allowed_schemes=tuple(row.allowed_schemes),
+            allowed_paths=tuple(row.allowed_paths),
+            denied_hostnames=tuple(row.denied_hostnames),
+            denied_cidrs=tuple(row.denied_cidrs),
+            denied_paths=tuple(row.denied_paths),
+            valid_from=_utc(row.valid_from) if row.valid_from else None,
+            valid_until=_utc(row.valid_until) if row.valid_until else None,
         )
 
 

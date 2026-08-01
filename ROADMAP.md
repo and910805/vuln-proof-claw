@@ -13,6 +13,8 @@ Roadmap items describe intent, not guaranteed release dates.
 
 ## v0.1 — Evidence Core
 
+Current preview: persisted normalized engagement scopes, offline scope evaluation, and metadata-only JSON/Markdown reports are implemented. Target-facing HTTP capture, disposable worker lifecycle, raw evidence persistence, and export artifacts remain in progress.
+
 - Project, Engagement, Scope, and Action persistence.
 - Structured HTTP request/response capture.
 - Disposable worker lifecycle.

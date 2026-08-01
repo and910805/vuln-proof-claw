@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
     DateTime,
@@ -49,6 +50,25 @@ class EngagementRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class EngagementScopeRecord(Base):
+    __tablename__ = "engagement_scopes"
+
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    allowed_hostnames: Mapped[list[str]] = mapped_column(JSON)
+    allowed_cidrs: Mapped[list[str]] = mapped_column(JSON)
+    allowed_ports: Mapped[list[int]] = mapped_column(JSON)
+    allowed_schemes: Mapped[list[str]] = mapped_column(JSON)
+    allowed_paths: Mapped[list[str]] = mapped_column(JSON)
+    denied_hostnames: Mapped[list[str]] = mapped_column(JSON)
+    denied_cidrs: Mapped[list[str]] = mapped_column(JSON)
+    denied_paths: Mapped[list[str]] = mapped_column(JSON)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class FlowRecord(Base):

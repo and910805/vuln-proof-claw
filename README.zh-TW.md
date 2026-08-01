@@ -9,6 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+[![Version](https://img.shields.io/badge/version-0.0.3-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -43,6 +44,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
 | REST API | 版本化 liveness、readiness contract 與 OpenAPI |
 | Web 控制台 | 內建 React／TypeScript 儀表板、雙語介面、建立專案與如實能力狀態 |
+| Evidence Core 預覽版 | 持久化評估範圍、離線目標政策判斷，以及僅含 metadata 的 JSON／Markdown 報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
@@ -101,6 +103,7 @@ PowerShell：
 git clone https://github.com/and910805/vuln-proof-claw.git
 Set-Location vuln-proof-claw
 python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade "pip>=26.1.2"
 .\.venv\Scripts\python.exe -m pip install --editable ".[dev]"
 .\.venv\Scripts\python.exe -m vuln_proof_claw --version
 .\.venv\Scripts\python.exe -m vuln_proof_claw doctor
@@ -112,6 +115,7 @@ Linux 與 macOS：
 git clone https://github.com/and910805/vuln-proof-claw.git
 cd vuln-proof-claw
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade "pip>=26.1.2"
 .venv/bin/python -m pip install --editable ".[dev]"
 .venv/bin/python -m vuln_proof_claw --version
 .venv/bin/python -m vuln_proof_claw doctor
@@ -192,6 +196,7 @@ Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdo
 | 安全政策 | [SECURITY.md](SECURITY.md) | [SECURITY.zh-TW.md](SECURITY.zh-TW.md) |
 | 貢獻指南 | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.zh-TW.md](CONTRIBUTING.zh-TW.md) |
 | Web 控制台 | [docs/WEB_UI.md](docs/WEB_UI.md) | [docs/WEB_UI.zh-TW.md](docs/WEB_UI.zh-TW.md) |
+| Evidence Core 預覽版 | [docs/EVIDENCE_CORE.md](docs/EVIDENCE_CORE.md) | [docs/EVIDENCE_CORE.zh-TW.md](docs/EVIDENCE_CORE.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

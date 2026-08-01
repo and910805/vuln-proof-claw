@@ -30,6 +30,11 @@ type ProjectList = {
   total: number;
 };
 
+type HealthStatus = {
+  schema_version: "v1";
+  version: string;
+};
+
 const copy = {
   en: {
     product: "ProofClaw",
@@ -42,8 +47,8 @@ const copy = {
       findings: "Findings",
       policy: "Safety policy",
     },
-    webFoundation: "WEB FOUNDATION",
-    phaseText: "Control surface online",
+    webFoundation: "EVIDENCE CORE PREVIEW",
+    phaseText: "Scoped engagements online",
     apiReady: "API ready",
     apiUnavailable: "API unavailable",
     commandCenter: "Security operations console",
@@ -79,6 +84,8 @@ const copy = {
     capability: "Capability status",
     operational: "Operational",
     foundation: "Foundation ready",
+    evidenceCore: "Scoped evidence API",
+    evidenceCoreText: "Engagement scope evaluation and JSON/Markdown reports are online.",
     locked: "Execution locked",
     lockedText: "Worker isolation and scoped HTTP execution are the next implementation gate.",
     chain: "Evidence chain",
@@ -113,8 +120,8 @@ const copy = {
       findings: "漏洞發現",
       policy: "安全政策",
     },
-    webFoundation: "WEB 基礎階段",
-    phaseText: "控制介面已上線",
+    webFoundation: "證據核心預覽版",
+    phaseText: "授權範圍評估已上線",
     apiReady: "API 正常",
     apiUnavailable: "API 無法連線",
     commandCenter: "資安作業控制台",
@@ -150,6 +157,8 @@ const copy = {
     capability: "能力狀態",
     operational: "運作正常",
     foundation: "基礎功能就緒",
+    evidenceCore: "範圍與證據 API",
+    evidenceCoreText: "評估任務範圍判斷與 JSON／Markdown 報告已可使用。",
     locked: "執行功能鎖定",
     lockedText: "下一個實作關卡是 Worker 隔離與具備範圍限制的 HTTP 執行。",
     chain: "證據鏈",
@@ -204,6 +213,7 @@ function App() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [apiReady, setApiReady] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -221,6 +231,10 @@ function App() {
         fetch("/api/v1/projects?limit=100").then(readJson<ProjectList>),
       ]);
       setApiReady(health.ok);
+      if (health.ok) {
+        const healthStatus = await readJson<HealthStatus>(health);
+        setAppVersion(healthStatus.version);
+      }
       setSummary(dashboard);
       setProjects(projectList.items);
     } catch {
@@ -308,7 +322,7 @@ function App() {
             <span className="phase-kicker">{t.webFoundation}</span>
             <strong>{t.phaseText}</strong>
             <div className="phase-progress"><span /></div>
-            <small>v0.0.1 · Phase 0+</small>
+            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.1 preview</small>
           </div>
         </div>
       </aside>
@@ -473,6 +487,10 @@ function Overview({
             <div className="capability-row">
               <span className="cap-icon ready">✓</span>
               <div><strong>{t.foundation}</strong><p>API · PostgreSQL · Policy · Evidence</p></div>
+            </div>
+            <div className="capability-row">
+              <span className="cap-icon chain">#</span>
+              <div><strong>{t.evidenceCore}</strong><p>{t.evidenceCoreText}</p></div>
             </div>
             <div className="capability-row">
               <span className="cap-icon locked">⌁</span>

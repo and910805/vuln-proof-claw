@@ -34,10 +34,12 @@ from vuln_proof_claw.persistence.repositories import (
     FindingRepository,
     FlowRepository,
     ProjectRepository,
+    ScopeRepository,
     TaskRepository,
 )
 from vuln_proof_claw.persistence.session import create_engine, create_session_factory
 from vuln_proof_claw.policy.approval import consume_approval
+from vuln_proof_claw.policy.scope import EngagementScope
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 DIGEST = "a" * 64
@@ -90,6 +92,35 @@ def make_action(engagement: Engagement, task: Task) -> Action:
         risk_level=RiskLevel.L0,
         idempotency_key="action-1",
         created_at=NOW,
+    )
+
+
+def test_engagement_scope_round_trip(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    scope = EngagementScope.create(
+        allowed_hostnames=("Example.TEST.",),
+        allowed_cidrs=("10.10.4.8/24",),
+        allowed_ports=(443, 8443),
+        allowed_paths=("/api/../api/v1",),
+        denied_paths=("/api/v1/admin",),
+        valid_from=NOW,
+        valid_until=NOW + timedelta(days=1),
+    )
+    with session_factory.begin() as session:
+        engagement, _task = add_hierarchy(session)
+        ScopeRepository(session).add(engagement.id, scope)
+
+    with session_factory() as session:
+        restored = ScopeRepository(session).get(engagement.id)
+
+    assert restored == EngagementScope.create(
+        allowed_hostnames=("example.test",),
+        allowed_cidrs=("10.10.4.0/24",),
+        allowed_ports=(443, 8443),
+        allowed_paths=("/api/v1",),
+        denied_paths=("/api/v1/admin",),
+        valid_from=NOW,
+        valid_until=NOW + timedelta(days=1),
     )
 
 
