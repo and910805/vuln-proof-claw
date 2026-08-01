@@ -10,6 +10,7 @@ from vuln_proof_claw.config.models import (
     AppConfig,
     AssessmentConfig,
     DockerConfig,
+    EngineGatewayConfig,
     Environment,
 )
 from vuln_proof_claw.config.settings import Settings
@@ -125,7 +126,68 @@ def test_production_worker_runtime_requires_authentication() -> None:
         Settings(
             app=AppConfig(environment=Environment.PRODUCTION),
             docker=DockerConfig(runtime_enabled=True),
+            engine_gateway=EngineGatewayConfig(
+                url="https://engine.example.test",
+                token=SecretStr("g" * 32),
+            ),
         )
+
+
+def test_enabled_worker_runtime_requires_complete_distinct_gateway_credentials() -> None:
+    with pytest.raises(ValidationError, match="authenticated Engine gateway"):
+        Settings(docker=DockerConfig(runtime_enabled=True))
+
+    shared = SecretStr("s" * 32)
+    with pytest.raises(ValidationError, match="distinct from API tokens"):
+        Settings(
+            docker=DockerConfig(runtime_enabled=True),
+            api=ApiConfig(
+                authentication_ready=True,
+                operator_token=shared,
+                approver_token=SecretStr("a" * 32),
+            ),
+            engine_gateway=EngineGatewayConfig(
+                url="https://engine.example.test",
+                token=shared,
+            ),
+        )
+
+
+def test_engine_gateway_requires_safe_origin_and_long_token() -> None:
+    with pytest.raises(ValidationError, match="configured together"):
+        EngineGatewayConfig(url="https://engine.example.test")
+    with pytest.raises(ValidationError, match="32 to 4096"):
+        EngineGatewayConfig(
+            url="https://engine.example.test",
+            token=SecretStr("short"),
+        )
+    with pytest.raises(ValidationError, match="visible ASCII"):
+        EngineGatewayConfig(
+            url="https://engine.example.test",
+            token=SecretStr("g" * 32 + "\n"),
+        )
+    for unsafe_url in (
+        "http://engine.example.test",
+        "http://localhost:8081",
+        "https://user:password@engine.example.test",
+        "https://engine.example.test/api",
+        "https://engine.example.test?token=secret",
+        "https://engine.example.test:invalid",
+    ):
+        with pytest.raises(ValidationError):
+            EngineGatewayConfig(url=unsafe_url, token=SecretStr("g" * 32))
+
+    ipv4 = EngineGatewayConfig(
+        url="http://127.0.0.1:8081/",
+        token=SecretStr("g" * 32),
+    )
+    ipv6 = EngineGatewayConfig(
+        url="http://[::1]:8081",
+        token=SecretStr("g" * 32),
+    )
+    assert ipv4.url == "http://127.0.0.1:8081"
+    assert ipv6.ready
+    assert "g" * 32 not in repr(ipv4)
 
 
 def test_assessment_user_agent_rejects_header_injection() -> None:

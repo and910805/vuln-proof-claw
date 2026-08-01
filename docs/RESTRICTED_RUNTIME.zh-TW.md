@@ -2,8 +2,8 @@
 
 **繁體中文** | [English](RESTRICTED_RUNTIME.md)
 
-0.0.15 版實作在連接任何 privileged Docker transport 前使用、與 runtime transport
-無關的安全政策與完整 `WorkerRuntime` lifecycle。此功能仍預設停用，也不會讓任意
+0.0.16 版實作在連接 privileged gateway server 前使用、與 runtime transport 無關的
+安全政策、完整 `WorkerRuntime` lifecycle 與 authenticated Engine-gateway client。此功能仍預設停用，也不會讓任意
 安全工具直接執行。
 
 ## 信任邊界
@@ -51,6 +51,6 @@ label，才會回傳 janitor resource。
 
 ## 刻意保留的待辦
 
-本版不提供 Docker socket mount、Docker CLI subprocess、TCP Docker API client 或啟動
-wiring。啟用 runtime 前，仍必須實作並安全審查專用 authenticated Engine gateway、
+本版不提供 Docker socket mount、Docker CLI subprocess、直接 TCP Docker API client、
+gateway server 或啟動 wiring。啟用 runtime 前，仍必須實作並安全審查 privileged gateway server、
 scope egress enforcement、digest 發布流程、Worker-side executor 與隔離式端對端目標測試。

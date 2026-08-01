@@ -16,6 +16,7 @@ This document defines the Phase 0 container trust boundaries. It is a security r
 - Safe lifecycle metadata is durable and abandoned in-flight records are reconciled to explicit lost states after restart.
 - Runtime inventory uses immutable Worker/request labels; terminal and orphaned resources are removed with a bounded grace period and safe audit events.
 - The restricted-container adapter requires digest-pinned images, a dedicated network, non-root execution, read-only root, dropped capabilities, no-new-privileges, and bounded resources and protocol I/O.
+- The Engine client requires a distinct Bearer secret, HTTPS or a loopback IP literal, disables redirects and ambient proxies, streams bounded JSON, and revalidates every privileged create field.
 - The default `DisabledWorkerManager` still fails closed and performs no target-facing execution.
 
 The Compose defaults are for local development. The default database password is not suitable for shared or production environments.
@@ -55,8 +56,8 @@ The control plane now defines and tests the lifecycle state machine, durable
 registry, Action binding, approval consumption, response binding, evidence
 validation, audit trail, timeout, cancellation, cleanup, and fail-closed restart
 reconciliation, an orphan-resource janitor, and a complete restricted-container
-policy adapter. It does not yet provide the authenticated privileged Engine
-transport, scoped egress, worker executor, startup wiring, or security tools.
+policy adapter and authenticated Engine client. It does not yet provide the
+privileged gateway server, scoped egress, worker executor, startup wiring, or security tools.
 The internal-only Worker network remains closed until network-policy enforcement,
-the Engine gateway, startup integration, and isolated end-to-end targets are
+the gateway server, startup integration, and isolated end-to-end targets are
 implemented and verified.
