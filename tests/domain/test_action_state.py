@@ -115,6 +115,17 @@ def test_invalid_transition_is_rejected() -> None:
         transition_action(make_action(), ActionState.RUNNING, at=NOW)
 
 
+def test_queued_action_can_close_when_its_created_worker_is_lost() -> None:
+    action = transition_action(make_action(), ActionState.POLICY_CHECK, at=NOW)
+    action = transition_action(action, ActionState.QUEUED, at=NOW)
+
+    lost = transition_action(action, ActionState.WORKER_LOST, at=NOW)
+
+    assert lost.state is ActionState.WORKER_LOST
+    assert lost.started_at is None
+    assert lost.completed_at == NOW
+
+
 def test_execution_timestamps_cannot_move_backwards() -> None:
     action = make_action()
     action = transition_action(action, ActionState.POLICY_CHECK, at=NOW)

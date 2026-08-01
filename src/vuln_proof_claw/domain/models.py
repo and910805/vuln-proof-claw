@@ -6,7 +6,13 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from vuln_proof_claw.domain.enums import ActionState, ArtifactKind, FindingStatus, RiskLevel
+from vuln_proof_claw.domain.enums import (
+    ActionState,
+    ArtifactKind,
+    FindingStatus,
+    RiskLevel,
+    WorkerState,
+)
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import (
     ActionId,
@@ -19,6 +25,7 @@ from vuln_proof_claw.domain.identifiers import (
     FlowId,
     ProjectId,
     TaskId,
+    WorkerId,
     new_action_id,
     new_approval_id,
     new_artifact_id,
@@ -29,6 +36,7 @@ from vuln_proof_claw.domain.identifiers import (
     new_flow_id,
     new_project_id,
     new_task_id,
+    new_worker_id,
 )
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
@@ -159,6 +167,34 @@ class Action:
             and self.completed_at < self.started_at
         ):
             raise DomainValidationError("completed_at must not be earlier than started_at")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerExecution:
+    """Durable, non-secret metadata for one disposable Worker lifecycle."""
+
+    request_id: str
+    engagement_id: EngagementId
+    action_id: ActionId
+    runtime_identity: str
+    state: WorkerState
+    created_at: datetime
+    updated_at: datetime
+    id: WorkerId = field(default_factory=new_worker_id)
+    cleaned_up: bool = False
+    error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.request_id, "request_id")
+        _require_text(self.runtime_identity, "runtime_identity")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+        if self.updated_at < self.created_at:
+            raise DomainValidationError("updated_at must not be earlier than created_at")
+        if self.cleaned_up and not self.state.terminal:
+            raise DomainValidationError("cleaned_up requires a terminal Worker state")
+        if self.error_code is not None:
+            _require_text(self.error_code, "error_code")
 
 
 @dataclass(frozen=True, slots=True)

@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.8-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.9-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -51,7 +51,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Worker | 具稽核的 create／start／collect／cancel／cleanup lifecycle 與可注入 runtime；具體目標執行仍停用 |
+| Worker | 持久化 lifecycle registry、重啟 reconciliation 與可注入 runtime boundary；具體目標執行仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
 目標探索、資安工具執行、LLM orchestration、Planner／Operator／Verifier agents 與

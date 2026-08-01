@@ -12,7 +12,8 @@ This document defines the Phase 0 container trust boundaries. It is a security r
 - Only the API health endpoint is published, on `127.0.0.1:8080`.
 - The worker image has no Docker socket, host home directory, credential-store, or control-plane provider credential mount.
 - Compose reserves an internal-only `vuln-proof-claw-workers` network with no external egress.
-- The process-local lifecycle preview audits create/start/collect/cancel/destroy, enforces timeouts, and always attempts cleanup through an injected runtime boundary.
+- The lifecycle coordinator audits create/start/collect/cancel/destroy, enforces timeouts, and always attempts cleanup through an injected process-local runtime boundary.
+- Safe lifecycle metadata is durable and abandoned in-flight records are reconciled to explicit lost states after restart.
 - The default `DisabledWorkerManager` still fails closed and performs no target-facing execution.
 
 The Compose defaults are for local development. The default database password is not suitable for shared or production environments.
@@ -48,10 +49,11 @@ Every concrete Worker Manager must enforce:
 
 ## Current limitations
 
-The control plane now defines and tests the lifecycle state machine, Action binding,
-approval consumption, response binding, evidence validation, audit trail, timeout,
-cancellation, and cleanup behavior. It does not yet provide a concrete runtime,
-create containers, or execute security tools. The registry is process-local and
-cannot recover after restart. The internal-only Worker network remains closed until
-durable recovery, network-policy enforcement, a restricted runtime adapter, and
-isolated end-to-end targets are implemented and verified.
+The control plane now defines and tests the lifecycle state machine, durable
+registry, Action binding, approval consumption, response binding, evidence
+validation, audit trail, timeout, cancellation, cleanup, and fail-closed restart
+reconciliation. It does not yet provide a concrete runtime, reattach to a surviving
+container, remove orphan runtime resources after restart, or execute security tools.
+The internal-only Worker network remains closed until network-policy enforcement,
+a restricted runtime adapter, an orphan janitor, and isolated end-to-end targets
+are implemented and verified.

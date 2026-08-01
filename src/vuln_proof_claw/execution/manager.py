@@ -6,45 +6,24 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Protocol
 
-from vuln_proof_claw.domain.identifiers import new_identifier
+from vuln_proof_claw.domain.enums import WorkerState
+from vuln_proof_claw.domain.identifiers import WorkerId, new_worker_id
 from vuln_proof_claw.execution.protocol import (
     WorkerRequest,
     WorkerResponse,
     WorkerResultStatus,
 )
 
-
-class WorkerState(StrEnum):
-    """Control-plane view of a disposable worker lifecycle."""
-
-    QUEUED = "queued"
-    STARTING = "starting"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    TIMED_OUT = "timed_out"
-    CANCELLED = "cancelled"
-    LOST = "lost"
-
-    @property
-    def terminal(self) -> bool:
-        return self in {
-            WorkerState.COMPLETED,
-            WorkerState.FAILED,
-            WorkerState.TIMED_OUT,
-            WorkerState.CANCELLED,
-            WorkerState.LOST,
-        }
+__all__ = ["WorkerState"]
 
 
 @dataclass(frozen=True, slots=True)
 class WorkerHandle:
     """Safe lifecycle metadata; the privileged runtime reference stays internal."""
 
-    worker_id: str
+    worker_id: WorkerId
     request_id: str
     state: WorkerState
     created_at: datetime
@@ -165,7 +144,7 @@ class LifecycleWorkerManager:
             if not runtime_reference.strip():
                 raise WorkerManagerError("runtime_returned_empty_reference")
             timestamp = self._clock()
-            worker_id = new_identifier()
+            worker_id = new_worker_id()
             handle = WorkerHandle(
                 worker_id=worker_id,
                 request_id=request.request_id,

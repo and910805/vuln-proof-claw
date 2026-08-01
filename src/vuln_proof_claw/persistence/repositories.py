@@ -8,7 +8,13 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from vuln_proof_claw.domain.enums import ActionState, ArtifactKind, FindingStatus, RiskLevel
+from vuln_proof_claw.domain.enums import (
+    ActionState,
+    ArtifactKind,
+    FindingStatus,
+    RiskLevel,
+    WorkerState,
+)
 from vuln_proof_claw.domain.identifiers import (
     ActionId,
     ApprovalId,
@@ -20,6 +26,7 @@ from vuln_proof_claw.domain.identifiers import (
     FlowId,
     ProjectId,
     TaskId,
+    WorkerId,
 )
 from vuln_proof_claw.domain.models import (
     Action,
@@ -32,6 +39,7 @@ from vuln_proof_claw.domain.models import (
     Flow,
     Project,
     Task,
+    WorkerExecution,
 )
 from vuln_proof_claw.persistence.models import (
     ActionRecord,
@@ -45,6 +53,7 @@ from vuln_proof_claw.persistence.models import (
     FlowRecord,
     ProjectRecord,
     TaskRecord,
+    WorkerExecutionRecord,
     finding_evidence,
 )
 from vuln_proof_claw.policy.scope import EngagementScope
@@ -474,6 +483,102 @@ class ActionRepository:
             created_at=_utc(row.created_at),
             started_at=_utc(row.started_at) if row.started_at else None,
             completed_at=_utc(row.completed_at) if row.completed_at else None,
+        )
+
+
+class WorkerExecutionRepository:
+    """Persist safe Worker lifecycle metadata without privileged runtime references."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, execution: WorkerExecution) -> Stored[WorkerExecution]:
+        row = WorkerExecutionRecord(
+            id=execution.id,
+            request_id=execution.request_id,
+            engagement_id=execution.engagement_id,
+            action_id=execution.action_id,
+            runtime_identity=execution.runtime_identity,
+            state=execution.state.value,
+            cleaned_up=execution.cleaned_up,
+            error_code=execution.error_code,
+            created_at=execution.created_at,
+            updated_at=execution.updated_at,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get(self, worker_id: WorkerId) -> Stored[WorkerExecution] | None:
+        row = self._session.get(WorkerExecutionRecord, worker_id)
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get_for_action(self, action_id: ActionId) -> Stored[WorkerExecution] | None:
+        row = self._session.scalar(
+            select(WorkerExecutionRecord).where(WorkerExecutionRecord.action_id == action_id)
+        )
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get_for_request(self, request_id: str) -> Stored[WorkerExecution] | None:
+        row = self._session.scalar(
+            select(WorkerExecutionRecord).where(
+                WorkerExecutionRecord.request_id == request_id
+            )
+        )
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def list_in_flight(self) -> tuple[Stored[WorkerExecution], ...]:
+        rows = self._session.scalars(
+            select(WorkerExecutionRecord)
+            .where(
+                WorkerExecutionRecord.state.in_(
+                    (WorkerState.STARTING.value, WorkerState.RUNNING.value)
+                )
+            )
+            .order_by(WorkerExecutionRecord.created_at, WorkerExecutionRecord.id)
+        )
+        return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
+
+    def save(
+        self,
+        execution: WorkerExecution,
+        *,
+        expected_version: int,
+    ) -> Stored[WorkerExecution]:
+        row = self._session.scalar(
+            select(WorkerExecutionRecord).where(
+                WorkerExecutionRecord.id == execution.id,
+                WorkerExecutionRecord.version == expected_version,
+            )
+        )
+        if row is None:
+            raise ConcurrentUpdateError
+        row.state = execution.state.value
+        row.cleaned_up = execution.cleaned_up
+        row.error_code = execution.error_code
+        row.updated_at = execution.updated_at
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    @staticmethod
+    def _domain_from_record(row: WorkerExecutionRecord) -> WorkerExecution:
+        return WorkerExecution(
+            id=WorkerId(row.id),
+            request_id=row.request_id,
+            engagement_id=EngagementId(row.engagement_id),
+            action_id=ActionId(row.action_id),
+            runtime_identity=row.runtime_identity,
+            state=WorkerState(row.state),
+            cleaned_up=row.cleaned_up,
+            error_code=row.error_code,
+            created_at=_utc(row.created_at),
+            updated_at=_utc(row.updated_at),
         )
 
 

@@ -12,7 +12,8 @@
 - 只有 API health endpoint 發布於 `127.0.0.1:8080`。
 - Worker image 不掛載 Docker socket、host home directory、credential store 或 control-plane provider credential。
 - Compose 預留不具外部 egress 的 internal-only `vuln-proof-claw-workers` network。
-- process-local 生命週期預覽會稽核 create／start／collect／cancel／destroy、強制 timeout，並透過注入的 runtime 邊界一律嘗試清理。
+- lifecycle coordinator 會稽核 create／start／collect／cancel／destroy、強制 timeout，並透過注入的 process-local runtime boundary 一律嘗試清理。
+- 安全的 lifecycle metadata 會持久化，重啟後 abandoned in-flight 紀錄會 reconcile 成明確的 lost 狀態。
 - 預設 `DisabledWorkerManager` 仍採 fail-closed，不執行任何面向目標的操作。
 
 Compose 預設值只供本機開發使用。預設資料庫密碼不適用於共享或 production 環境。
@@ -48,8 +49,9 @@ Docker socket 存取權實質上等同 host 管理權限。擁有不受限制 so
 
 ## 目前限制
 
-控制平面目前已定義並測試生命週期狀態機、Action 綁定、Approval 消耗、response
-綁定、Evidence 驗證、稽核軌跡、timeout、取消與清理行為，但尚未提供具體 runtime、
-建立 container 或執行安全測試工具。registry 只存在單一 process 內，重啟後無法復原。
-在完成並驗證持久化復原、network policy enforcement、受限 runtime adapter 與隔離式
-端對端目標前，internal-only Worker network 會維持封閉。
+控制平面目前已定義並測試生命週期狀態機、持久化 registry、Action 綁定、Approval
+消耗、response 綁定、Evidence 驗證、稽核軌跡、timeout、取消、清理與 fail-closed
+重啟 reconciliation，但尚未提供具體 runtime、重新接管存活 container、重啟後移除
+orphan runtime resource，或執行安全測試工具。在完成並驗證 network policy
+enforcement、受限 runtime adapter、orphan janitor 與隔離式端對端目標前，
+internal-only Worker network 會維持封閉。

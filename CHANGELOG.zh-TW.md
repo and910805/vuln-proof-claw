@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.9] - 2026-08-01
+
+### 新增
+
+- 加入持久化 Worker execution registry，並強制一對一 Action 與 request 綁定。
+- 加入 Alembic revision `0004_worker_executions` 與 optimistic lifecycle 更新。
+- 加入 abandoned `starting`、`running` Worker 紀錄的重啟 reconciliation。
+
+### 安全性
+
+- 資料庫只保存安全的 lifecycle metadata；privileged runtime reference 不會寫入資料庫。
+- 無法復原的 in-flight Worker 與 Action 會明確轉為 `lost`／`worker_lost` 終止狀態。
+- startup reconciliation 會寫入不可變的 Engagement 稽核軌跡。
+- 預設仍停用具體 runtime attachment 與面向目標的執行。
+
 ## [0.0.8] - 2026-08-01
 
 ### 新增

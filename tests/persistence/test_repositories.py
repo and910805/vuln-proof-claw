@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,7 +12,13 @@ from sqlalchemy import Engine, event
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.domain.action_state import transition_action
-from vuln_proof_claw.domain.enums import ActionState, ArtifactKind, FindingStatus, RiskLevel
+from vuln_proof_claw.domain.enums import (
+    ActionState,
+    ArtifactKind,
+    FindingStatus,
+    RiskLevel,
+    WorkerState,
+)
 from vuln_proof_claw.domain.models import (
     Action,
     Approval,
@@ -22,6 +29,7 @@ from vuln_proof_claw.domain.models import (
     Flow,
     Project,
     Task,
+    WorkerExecution,
 )
 from vuln_proof_claw.persistence.base import Base
 from vuln_proof_claw.persistence.repositories import (
@@ -36,6 +44,7 @@ from vuln_proof_claw.persistence.repositories import (
     ProjectRepository,
     ScopeRepository,
     TaskRepository,
+    WorkerExecutionRepository,
 )
 from vuln_proof_claw.persistence.session import create_engine, create_session_factory
 from vuln_proof_claw.policy.approval import consume_approval
@@ -172,6 +181,63 @@ def test_action_repository_rejects_stale_version(engine: Engine) -> None:
         with pytest.raises(ConcurrentUpdateError):
             ActionRepository(second).save(
                 second_updated,
+                expected_version=second_copy.version,
+            )
+    finally:
+        first.close()
+        second.close()
+
+
+def test_worker_execution_round_trip_and_optimistic_version(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as setup:
+        engagement, task = add_hierarchy(setup)
+        action = make_action(engagement, task)
+        ActionRepository(setup).add(action)
+        execution = WorkerExecution(
+            request_id="request-1",
+            engagement_id=engagement.id,
+            action_id=action.id,
+            runtime_identity="fake-runtime@sha256:test",
+            state=WorkerState.STARTING,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        WorkerExecutionRepository(setup).add(execution)
+
+    first = session_factory()
+    second = session_factory()
+    try:
+        first_copy = WorkerExecutionRepository(first).get(execution.id)
+        second_copy = WorkerExecutionRepository(second).get_for_action(action.id)
+        request_copy = WorkerExecutionRepository(first).get_for_request("request-1")
+        assert first_copy is not None
+        assert second_copy is not None
+        assert request_copy is not None
+        assert first_copy.entity == execution
+        assert WorkerExecutionRepository(first).list_in_flight() == (first_copy,)
+
+        running = replace(
+            first_copy.entity,
+            state=WorkerState.RUNNING,
+            updated_at=NOW + timedelta(seconds=1),
+        )
+        saved = WorkerExecutionRepository(first).save(
+            running,
+            expected_version=first_copy.version,
+        )
+        first.commit()
+        assert saved.version == 2
+
+        lost = replace(
+            second_copy.entity,
+            state=WorkerState.LOST,
+            error_code="worker_lost",
+            updated_at=NOW + timedelta(seconds=2),
+        )
+        with pytest.raises(ConcurrentUpdateError):
+            WorkerExecutionRepository(second).save(
+                lost,
                 expected_version=second_copy.version,
             )
     finally:

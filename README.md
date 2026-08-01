@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.8-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.9-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -53,7 +53,7 @@ vuln-proof-claw is being built around those requirements:
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Workers | Audited create/start/collect/cancel/cleanup lifecycle with an injected runtime; concrete target execution remains disabled |
+| Workers | Durable lifecycle registry, restart reconciliation, and injected runtime boundary; concrete target execution remains disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
 Target discovery, security-tool execution, LLM orchestration, Planner/Operator/Verifier

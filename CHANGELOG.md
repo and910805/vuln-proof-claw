@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.9] - 2026-08-01
+
+### Added
+
+- Added a durable Worker execution registry with one-to-one Action and request bindings.
+- Added Alembic revision `0004_worker_executions` and optimistic lifecycle updates.
+- Added restart reconciliation for abandoned `starting` and `running` Worker records.
+
+### Security
+
+- Persists only safe lifecycle metadata; privileged runtime references remain outside the database.
+- Converts unrecoverable in-flight Workers and their Actions to explicit `lost` / `worker_lost` terminal states.
+- Records startup reconciliation in the immutable engagement audit trail.
+- Keeps concrete runtime attachment and target-facing execution disabled by default.
+
 ## [0.0.8] - 2026-08-01
 
 ### Added

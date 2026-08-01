@@ -149,6 +149,44 @@ class ActionRecord(Base):
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
 
 
+class WorkerExecutionRecord(Base):
+    __tablename__ = "worker_executions"
+    __table_args__ = (
+        UniqueConstraint("request_id"),
+        UniqueConstraint("action_id"),
+        Index("ix_worker_executions_engagement_state", "engagement_id", "state"),
+        CheckConstraint(
+            "state IN ('starting', 'running', 'completed', 'failed', "
+            "'timed_out', 'cancelled', 'lost')",
+            name="state",
+        ),
+        CheckConstraint(
+            "NOT cleaned_up OR state IN "
+            "('completed', 'failed', 'timed_out', 'cancelled', 'lost')",
+            name="cleanup_terminal",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(255))
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"),
+        index=True,
+    )
+    action_id: Mapped[str] = mapped_column(
+        ForeignKey("actions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    runtime_identity: Mapped[str] = mapped_column(String(500))
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    cleaned_up: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
 class EvidenceRecord(Base):
     __tablename__ = "evidence"
     __table_args__ = (

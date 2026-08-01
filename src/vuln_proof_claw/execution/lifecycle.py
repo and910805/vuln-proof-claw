@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.audit import record_audit_event
 from vuln_proof_claw.domain.action_state import transition_action
-from vuln_proof_claw.domain.enums import ActionState
-from vuln_proof_claw.domain.identifiers import ActionId, EngagementId
-from vuln_proof_claw.domain.models import Action
+from vuln_proof_claw.domain.enums import ActionState, WorkerState
+from vuln_proof_claw.domain.identifiers import EngagementId, WorkerId
+from vuln_proof_claw.domain.models import Action, WorkerExecution
 from vuln_proof_claw.execution.authorization import (
     ExecutionAuthorizationError,
     authorize_queued_action,
@@ -20,7 +21,6 @@ from vuln_proof_claw.execution.manager import (
     WorkerHandle,
     WorkerManager,
     WorkerManagerError,
-    WorkerState,
 )
 from vuln_proof_claw.execution.protocol import (
     WorkerRequest,
@@ -32,6 +32,8 @@ from vuln_proof_claw.persistence.repositories import (
     ActionRepository,
     EvidenceRepository,
     ScopeRepository,
+    Stored,
+    WorkerExecutionRepository,
 )
 from vuln_proof_claw.policy.scope import EngagementScope
 
@@ -48,7 +50,6 @@ class ActionWorkerCoordinator:
     def __init__(self, session: Session, manager: WorkerManager) -> None:
         self._session = session
         self._manager = manager
-        self._worker_actions: dict[str, ActionId] = {}
 
     async def start(
         self,
@@ -72,8 +73,31 @@ class ActionWorkerCoordinator:
         except ExecutionAuthorizationError as error:
             raise WorkerLifecycleError(str(error)) from error
 
+        execution_repository = WorkerExecutionRepository(self._session)
+        if execution_repository.get_for_action(request.action_id) is not None:
+            raise WorkerLifecycleError("worker_execution_already_registered")
+        if execution_repository.get_for_request(request.request_id) is not None:
+            raise WorkerLifecycleError("worker_request_already_registered")
+
         handle = await self._manager.submit(request)
-        self._worker_actions[handle.worker_id] = request.action_id
+        try:
+            stored_execution = execution_repository.add(
+                WorkerExecution(
+                    id=handle.worker_id,
+                    request_id=request.request_id,
+                    engagement_id=request.engagement_id,
+                    action_id=request.action_id,
+                    runtime_identity=self._manager.runtime_identity,
+                    state=handle.state,
+                    cleaned_up=handle.cleaned_up,
+                    error_code=handle.error_code,
+                    created_at=handle.created_at,
+                    updated_at=handle.updated_at or timestamp,
+                )
+            )
+        except Exception:
+            await self._manager.cancel(handle.worker_id)
+            raise
         self._audit(
             request.engagement_id,
             "worker.created",
@@ -85,6 +109,7 @@ class ActionWorkerCoordinator:
             running = begin_execution(self._session, authorization, at=timestamp)
         except Exception:
             cancelled = await self._manager.cancel(handle.worker_id)
+            self._save_execution(stored_execution, cancelled, at=timestamp)
             self._audit_destroyed(request.engagement_id, cancelled, at=timestamp)
             raise
 
@@ -105,10 +130,12 @@ class ActionWorkerCoordinator:
                 at=timestamp,
             )
             if terminal is not None:
+                self._save_execution(stored_execution, terminal, at=timestamp)
                 self._audit_destroyed(request.engagement_id, terminal, at=timestamp)
                 return terminal
             raise WorkerLifecycleError(str(error)) from error
 
+        self._save_execution(stored_execution, started, at=timestamp)
         self._audit(
             request.engagement_id,
             "worker.started",
@@ -126,14 +153,15 @@ class ActionWorkerCoordinator:
     ) -> WorkerResponse:
         """Collect one response, verify its evidence, and close the Action."""
         timestamp = at or datetime.now(UTC)
-        action_id = self._worker_actions.get(worker_id)
-        if action_id is None:
+        stored_execution = WorkerExecutionRepository(self._session).get(WorkerId(worker_id))
+        if stored_execution is None:
             raise WorkerLifecycleError("worker_action_binding_not_found")
         response = await self._manager.collect(worker_id)
         handle = await self._manager.status(worker_id)
         if response is None or handle is None:
             raise WorkerLifecycleError("worker_terminal_response_missing")
-        stored_action = ActionRepository(self._session).get(action_id)
+        self._save_execution(stored_execution, handle, at=timestamp)
+        stored_action = ActionRepository(self._session).get(stored_execution.entity.action_id)
         if stored_action is None or stored_action.entity.state is not ActionState.RUNNING:
             raise WorkerLifecycleError("action_not_running")
 
@@ -181,13 +209,14 @@ class ActionWorkerCoordinator:
     ) -> WorkerHandle:
         """Cancel and destroy a bound Worker, then close its Action."""
         timestamp = at or datetime.now(UTC)
-        action_id = self._worker_actions.get(worker_id)
-        if action_id is None:
+        stored_execution = WorkerExecutionRepository(self._session).get(WorkerId(worker_id))
+        if stored_execution is None:
             raise WorkerLifecycleError("worker_action_binding_not_found")
-        stored_action = ActionRepository(self._session).get(action_id)
+        stored_action = ActionRepository(self._session).get(stored_execution.entity.action_id)
         if stored_action is None or stored_action.entity.state is not ActionState.RUNNING:
             raise WorkerLifecycleError("action_not_running")
         handle = await self._manager.cancel(worker_id)
+        self._save_execution(stored_execution, handle, at=timestamp)
         target = (
             ActionState.WORKER_LOST
             if handle.state is WorkerState.LOST
@@ -204,6 +233,59 @@ class ActionWorkerCoordinator:
         )
         self._audit_destroyed(stored_action.entity.engagement_id, handle, at=timestamp)
         return handle
+
+    def reconcile_after_restart(
+        self,
+        *,
+        at: datetime | None = None,
+    ) -> tuple[WorkerExecution, ...]:
+        """Fail closed every in-flight registry row that this process cannot reattach."""
+        timestamp = at or datetime.now(UTC)
+        execution_repository = WorkerExecutionRepository(self._session)
+        action_repository = ActionRepository(self._session)
+        reconciled: list[WorkerExecution] = []
+        for stored_execution in execution_repository.list_in_flight():
+            previous_state = stored_execution.entity.state
+            lost = replace(
+                stored_execution.entity,
+                state=WorkerState.LOST,
+                cleaned_up=False,
+                error_code="worker_recovery_unavailable",
+                updated_at=timestamp,
+            )
+            saved = execution_repository.save(
+                lost,
+                expected_version=stored_execution.version,
+            )
+            stored_action = action_repository.get(lost.action_id)
+            action_state = "missing"
+            if stored_action is not None:
+                action_state = stored_action.entity.state.value
+                if stored_action.entity.state in {ActionState.QUEUED, ActionState.RUNNING}:
+                    terminal = transition_action(
+                        stored_action.entity,
+                        ActionState.WORKER_LOST,
+                        at=timestamp,
+                    )
+                    action_repository.save(
+                        terminal,
+                        expected_version=stored_action.version,
+                    )
+                    action_state = terminal.state.value
+            self._audit(
+                lost.engagement_id,
+                "worker.reconciled_lost",
+                "system:startup-recovery",
+                {
+                    "worker_id": lost.id,
+                    "previous_worker_state": previous_state.value,
+                    "action_state": action_state,
+                    "error_code": lost.error_code,
+                },
+                at=timestamp,
+            )
+            reconciled.append(saved.entity)
+        return tuple(reconciled)
 
     def _verify_request(self, request: WorkerRequest, action: Action) -> None:
         bindings = (
@@ -234,6 +316,30 @@ class ActionWorkerCoordinator:
             (evidence := repository.get(evidence_id)) is not None
             and evidence.action_id == response.action_id
             for evidence_id in response.evidence_ids
+        )
+
+    def _save_execution(
+        self,
+        stored_execution: Stored[WorkerExecution],
+        handle: WorkerHandle,
+        *,
+        at: datetime,
+    ) -> Stored[WorkerExecution]:
+        if (
+            handle.worker_id != stored_execution.entity.id
+            or handle.request_id != stored_execution.entity.request_id
+        ):
+            raise WorkerLifecycleError("worker_handle_registry_binding_mismatch")
+        updated = replace(
+            stored_execution.entity,
+            state=handle.state,
+            cleaned_up=handle.cleaned_up,
+            error_code=handle.error_code,
+            updated_at=handle.updated_at or at,
+        )
+        return WorkerExecutionRepository(self._session).save(
+            updated,
+            expected_version=stored_execution.version,
         )
 
     @staticmethod

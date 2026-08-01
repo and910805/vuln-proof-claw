@@ -9,11 +9,19 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
-from vuln_proof_claw.domain.enums import ActionState, RiskLevel
+from vuln_proof_claw.domain.enums import ActionState, RiskLevel, WorkerState
 from vuln_proof_claw.domain.identifiers import EvidenceId
-from vuln_proof_claw.domain.models import Action, Engagement, Evidence, Flow, Project, Task
+from vuln_proof_claw.domain.models import (
+    Action,
+    Engagement,
+    Evidence,
+    Flow,
+    Project,
+    Task,
+    WorkerExecution,
+)
 from vuln_proof_claw.execution.lifecycle import ActionWorkerCoordinator, WorkerLifecycleError
-from vuln_proof_claw.execution.manager import LifecycleWorkerManager
+from vuln_proof_claw.execution.manager import DisabledWorkerManager, LifecycleWorkerManager
 from vuln_proof_claw.execution.protocol import (
     WorkerLimits,
     WorkerRequest,
@@ -31,6 +39,7 @@ from vuln_proof_claw.persistence.repositories import (
     ProjectRepository,
     ScopeRepository,
     TaskRepository,
+    WorkerExecutionRepository,
 )
 from vuln_proof_claw.persistence.session import create_engine, create_session_factory
 from vuln_proof_claw.policy.scope import EngagementScope
@@ -160,18 +169,24 @@ async def test_success_requires_persisted_evidence_and_records_lifecycle(engine:
     session_factory = create_session_factory(engine)
     with session_factory.begin() as session:
         EvidenceRepository(session).add(evidence)
-        coordinator = ActionWorkerCoordinator(
-            session,
-            LifecycleWorkerManager(runtime, clock=lambda: NOW),
-        )
+        manager = LifecycleWorkerManager(runtime, clock=lambda: NOW)
+        coordinator = ActionWorkerCoordinator(session, manager)
         handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
-        await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+        restarted_coordinator = ActionWorkerCoordinator(session, manager)
+        await restarted_coordinator.collect(
+            handle.worker_id,
+            at=NOW + timedelta(seconds=1),
+        )
 
     with session_factory() as session:
         stored = ActionRepository(session).get(action.id)
+        stored_execution = WorkerExecutionRepository(session).get(handle.worker_id)
         events = AuditEventRepository(session).list_for_engagement(engagement.id)
     assert stored is not None
     assert stored.entity.state is ActionState.SUCCEEDED
+    assert stored_execution is not None
+    assert stored_execution.entity.state is WorkerState.COMPLETED
+    assert stored_execution.entity.cleaned_up
     assert {event.event_type for event in events} >= {
         "worker.created",
         "worker.started",
@@ -263,6 +278,70 @@ async def test_changed_action_binding_is_refused_before_runtime_create(engine: E
         with pytest.raises(WorkerLifecycleError, match="action_binding_mismatch"):
             await coordinator.start(changed, actor="operator:test", at=NOW)
     assert runtime.calls == []
+
+
+async def test_restart_reconciliation_closes_running_action_as_worker_lost(
+    engine: Engine,
+) -> None:
+    engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+
+    with session_factory.begin() as session:
+        recovery = ActionWorkerCoordinator(
+            session,
+            DisabledWorkerManager(),
+        )
+        reconciled = recovery.reconcile_after_restart(at=NOW + timedelta(minutes=1))
+        assert recovery.reconcile_after_restart(at=NOW + timedelta(minutes=2)) == ()
+
+    with session_factory() as session:
+        stored_action = ActionRepository(session).get(action.id)
+        stored_execution = WorkerExecutionRepository(session).get(handle.worker_id)
+        events = AuditEventRepository(session).list_for_engagement(engagement.id)
+    assert len(reconciled) == 1
+    assert stored_action is not None
+    assert stored_action.entity.state is ActionState.WORKER_LOST
+    assert stored_execution is not None
+    assert stored_execution.entity.state is WorkerState.LOST
+    assert not stored_execution.entity.cleaned_up
+    assert stored_execution.entity.error_code == "worker_recovery_unavailable"
+    assert "worker.reconciled_lost" in {event.event_type for event in events}
+    assert runtime.calls == ["create", "start"]
+
+
+def test_restart_reconciliation_closes_action_after_worker_was_created(engine: Engine) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    execution = WorkerExecution(
+        request_id=worker_request.request_id,
+        engagement_id=worker_request.engagement_id,
+        action_id=worker_request.action_id,
+        runtime_identity="previous-runtime@sha256:test",
+        state=WorkerState.STARTING,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        WorkerExecutionRepository(session).add(execution)
+
+    with session_factory.begin() as session:
+        reconciled = ActionWorkerCoordinator(
+            session,
+            DisabledWorkerManager(),
+        ).reconcile_after_restart(at=NOW + timedelta(minutes=1))
+
+    with session_factory() as session:
+        stored_action = ActionRepository(session).get(action.id)
+        stored_execution = WorkerExecutionRepository(session).get(execution.id)
+    assert len(reconciled) == 1
+    assert stored_action is not None
+    assert stored_action.entity.state is ActionState.WORKER_LOST
+    assert stored_execution is not None
+    assert stored_execution.entity.state is WorkerState.LOST
 
 
 def _response(
