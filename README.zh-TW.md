@@ -9,16 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.10-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.11-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0 目前只提供控制平面的基礎建設，不會呼叫 LLM、
-> 啟動掃描工具或對目標執行資安測試。在具備範圍限制的執行層完成並通過驗證前，
-> Worker Manager 會維持 fail-closed。
+> **Pre-alpha 狀態：** Phase 0.0.11 提供一條預設關閉、受 Scope 約束的被動 URL
+> 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
+> crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
+> 全部維持 fail-closed。
 
 ## 為什麼需要 vuln-proof-claw？
 
@@ -42,20 +43,20 @@ vuln-proof-claw 以這些要求作為核心設計：
 | 領域 | Phase 0 已完成 |
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
-| REST API | 版本化 health、project、engagement、workflow、action policy、audit、report contract 與 OpenAPI |
+| REST API | 版本化 health、project、engagement、passive assessment、workflow、audit、report contract 與 OpenAPI |
 | Web 控制台 | 內建 React／TypeScript 儀表板、雙語介面、建立專案與如實能力狀態 |
-| Evidence Core 預覽版 | Transactional raw evidence chain、獨立 reader 存取，以及不可變 JSON／Markdown 報告匯出 |
+| Evidence Core 預覽版 | Scoped passive URL assessment、transactional evidence、deterministic finding 與不可變報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
 | Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator、approver 與 evidence-reader role |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Worker | 持久化 lifecycle registry、重啟 reconciliation 與可注入 runtime boundary；具體目標執行仍停用 |
+| Execution | Opt-in DNS-pinned passive GET capture 與持久化 Worker boundary；任意工具與 exploit execution 仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
-目標探索、資安工具執行、LLM orchestration、Planner／Operator／Verifier agents，以及
-進階 HTML／SARIF 報告仍屬於後續路線圖，並不是目前已提供的功能。
+Crawler 型目標探索、資安工具與 exploit execution、LLM orchestration、
+Planner／Operator／Verifier agents，以及進階 HTML／SARIF 報告仍屬於後續路線圖。
 
 ## 快速開始
 
@@ -203,6 +204,7 @@ orphan-runtime janitor。
 | 控制平面工作流程 API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | Evidence 存取與報告匯出 | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
+| Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
 | 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |

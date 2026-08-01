@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.11] - 2026-08-01
+
+### Added
+
+- Added an opt-in passive URL assessment API that creates a policy-checked Action, captures evidence, derives deterministic findings, and exposes report links.
+- Added a proxy-free HTTP(S) transport with DNS pinning, TLS hostname verification, redirect rejection, streaming response limits, and explicit private-CIDR opt-in.
+- Added response analysis for transport security, browser hardening headers, version disclosure, and sensitive-cookie flags.
+- Added idempotent replay, persisted result lookup, truthful execution readiness, bilingual operating documentation, and end-to-end negative-path tests.
+
+### Security
+
+- Target traffic remains disabled by default and production enablement requires API authentication readiness.
+- Mixed public/private DNS answers, denied networks, unexpected private addresses, invalid content lengths, oversized bodies, and target changes fail closed.
+- The preview sends only GET requests with fixed `Accept` and configured `User-Agent` headers; credentials, cookies, redirects, arbitrary methods, and exploit payloads remain unavailable.
+
 ## [0.0.10] - 2026-08-01
 
 ### Added

@@ -9,16 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.10-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.11-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0 provides the control-plane foundation only. It does
-> not call an LLM, launch scanning tools, or perform target-facing security tests.
-> The worker manager fails closed until scoped execution is implemented and verified.
+> **Pre-alpha status:** Phase 0.0.11 includes one opt-in, scope-checked passive URL
+> assessment that sends a bounded `GET`, stores evidence, and derives conservative
+> findings. It does not crawl, call an LLM, launch external scanners, authenticate to
+> targets, or execute exploit payloads. All broader execution paths fail closed.
 
 ## Why vuln-proof-claw?
 
@@ -44,20 +45,20 @@ vuln-proof-claw is being built around those requirements:
 | Area | Available in Phase 0 |
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
-| REST API | Versioned health, project, engagement, workflow, action-policy, audit, and report contracts with OpenAPI |
+| REST API | Versioned health, project, engagement, passive assessment, workflow, audit, and report contracts with OpenAPI |
 | Web console | Bundled React/TypeScript dashboard, bilingual UI, project creation, and truthful capability status |
-| Evidence Core preview | Transactional raw-evidence chains, dedicated reader access, and immutable JSON/Markdown report exports |
+| Evidence Core preview | Scoped passive URL assessment, transactional evidence, deterministic findings, and immutable reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
 | Authentication | Optional API-wide Bearer boundary with distinct operator, approver, and evidence-reader roles |
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Workers | Durable lifecycle registry, restart reconciliation, and injected runtime boundary; concrete target execution remains disabled |
+| Execution | Opt-in DNS-pinned passive GET capture plus a durable Worker boundary; arbitrary tools and exploit execution remain disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
-Target discovery, security-tool execution, LLM orchestration, Planner/Operator/Verifier
-agents, and advanced HTML/SARIF reporting remain roadmap items—not current features.
+Crawler-based discovery, security-tool and exploit execution, LLM orchestration,
+Planner/Operator/Verifier agents, and advanced HTML/SARIF reporting remain roadmap items.
 
 ## Quick start
 
@@ -207,6 +208,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Control-plane workflow API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication and approvals | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | Evidence access and report exports | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
+| Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
 | Disposable Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |

@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.11] - 2026-08-01
+
+### 新增
+
+- 新增 opt-in passive URL assessment API，會建立經 policy 檢查的 Action、擷取 Evidence、產生 deterministic Finding，並提供報告連結。
+- 新增不使用 proxy 的 HTTP(S) transport，具 DNS pinning、TLS hostname 驗證、redirect 拒絕、串流 response 上限與明確 private CIDR opt-in。
+- 新增 transport security、browser hardening header、版本洩漏與敏感 Cookie flag 分析。
+- 新增 idempotent replay、持久化結果查詢、如實 execution readiness、雙語操作文件與 end-to-end 負面測試。
+
+### 安全性
+
+- Target traffic 預設停用，正式環境啟用前必須先達成 API authentication readiness。
+- 混合 public/private DNS、denied network、未預期私網位址、無效 Content-Length、超大 body 與 target 變更全部 fail closed。
+- 預覽版只會送出固定 `Accept` 與已設定 `User-Agent` 的 GET request；credential、Cookie、redirect、任意 method 與 exploit payload 仍不可用。
+
 ## [0.0.10] - 2026-08-01
 
 ### 新增

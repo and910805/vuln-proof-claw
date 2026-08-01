@@ -54,7 +54,7 @@ const copy = {
     commandCenter: "Security operations console",
     headline: "Evidence first. Every action accountable.",
     subhead:
-      "Create assessment projects and monitor the control plane. Target execution remains locked until scoped workers are implemented.",
+      "Create authorized assessment boundaries and monitor evidence-backed results. Passive URL capture is available only when explicitly enabled.",
     newProject: "New project",
     refresh: "Refresh",
     metrics: {
@@ -86,8 +86,10 @@ const copy = {
     foundation: "Foundation ready",
     evidenceCore: "Scoped evidence API",
     evidenceCoreText: "Engagement scope evaluation and JSON/Markdown reports are online.",
-    locked: "Execution locked",
-    lockedText: "Worker isolation and scoped HTTP execution are the next implementation gate.",
+    passiveReady: "Passive assessment ready",
+    passiveReadyText: "Scoped, DNS-pinned GET capture is enabled; active probes remain locked.",
+    passiveLocked: "Passive assessment disabled",
+    passiveLockedText: "Target traffic is off until an operator explicitly enables it.",
     chain: "Evidence chain",
     chainText: "SHA-256 chaining and persistence primitives are ready.",
     createTitle: "Create a project",
@@ -127,7 +129,7 @@ const copy = {
     commandCenter: "資安作業控制台",
     headline: "證據優先，每個動作都可追溯。",
     subhead:
-      "建立評估專案並監控控制平面。具備範圍限制的隔離 Worker 完成前，目標執行功能維持鎖定。",
+      "建立明確授權的評估邊界並監控證據結果。被動 URL 擷取只有在明確啟用後才會執行。",
     newProject: "新增專案",
     refresh: "重新整理",
     metrics: {
@@ -159,8 +161,10 @@ const copy = {
     foundation: "基礎功能就緒",
     evidenceCore: "範圍與證據 API",
     evidenceCoreText: "評估任務範圍判斷與 JSON／Markdown 報告已可使用。",
-    locked: "執行功能鎖定",
-    lockedText: "下一個實作關卡是 Worker 隔離與具備範圍限制的 HTTP 執行。",
+    passiveReady: "被動評估已就緒",
+    passiveReadyText: "已啟用 Scope 與 DNS pinning 保護的 GET 擷取；主動探測仍維持鎖定。",
+    passiveLocked: "被動評估未啟用",
+    passiveLockedText: "操作人員明確啟用前，系統不會對目標送出流量。",
     chain: "證據鏈",
     chainText: "SHA-256 鏈結與持久化基礎已完成。",
     createTitle: "建立專案",
@@ -356,6 +360,7 @@ function App() {
           {error && <div className="error-banner">{t.error}</div>}
           {view === "overview" && (
             <Overview
+              executionAvailable={summary?.execution_available ?? false}
               language={language}
               metrics={metrics}
               projects={projects.slice(0, 5)}
@@ -428,6 +433,7 @@ function App() {
 type Translation = (typeof copy)[Language];
 
 function Overview({
+  executionAvailable,
   language,
   metrics,
   projects,
@@ -435,6 +441,7 @@ function Overview({
   onCreate,
   onProjects,
 }: {
+  executionAvailable: boolean;
   language: Language;
   metrics: ReadonlyArray<readonly [keyof Translation["metrics"], number]>;
   projects: Project[];
@@ -493,8 +500,13 @@ function Overview({
               <div><strong>{t.evidenceCore}</strong><p>{t.evidenceCoreText}</p></div>
             </div>
             <div className="capability-row">
-              <span className="cap-icon locked">⌁</span>
-              <div><strong>{t.locked}</strong><p>{t.lockedText}</p></div>
+              <span className={`cap-icon ${executionAvailable ? "ready" : "locked"}`}>
+                {executionAvailable ? "✓" : "⌁"}
+              </span>
+              <div>
+                <strong>{executionAvailable ? t.passiveReady : t.passiveLocked}</strong>
+                <p>{executionAvailable ? t.passiveReadyText : t.passiveLockedText}</p>
+              </div>
             </div>
             <div className="capability-row">
               <span className="cap-icon chain">#</span>

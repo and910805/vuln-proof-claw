@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -99,7 +99,7 @@ def _count(session: Session, model: type[Any]) -> int:
     response_model=DashboardSummaryResponse,
     summary="Web console dashboard summary",
 )
-def dashboard_summary(session: SessionDependency) -> DashboardSummaryResponse:
+def dashboard_summary(request: Request, session: SessionDependency) -> DashboardSummaryResponse:
     """Return persisted counts without claiming unavailable execution capabilities."""
     active_states = (
         ActionState.PROPOSED.value,
@@ -135,6 +135,10 @@ def dashboard_summary(session: SessionDependency) -> DashboardSummaryResponse:
             findings=_count(session, FindingRecord),
         ),
         recent_projects=tuple(_project_summary(project) for project in recent_projects),
+        execution_available=(
+            request.app.state.settings.assessment.enabled
+            and request.app.state.assessment_transport_factory is not None
+        ),
     )
 
 

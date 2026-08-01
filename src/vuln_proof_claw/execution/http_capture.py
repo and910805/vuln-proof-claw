@@ -119,14 +119,19 @@ class HttpCaptureResult:
     evidence: EvidenceRecord | None
     action_state: ActionState
     error_code: str | None = None
+    response: HttpCaptureResponse | None = None
 
     def __post_init__(self) -> None:
         if self.action_state is ActionState.SUCCEEDED and self.evidence is None:
             raise DomainValidationError("successful capture requires evidence")
         if self.action_state is ActionState.SUCCEEDED and self.error_code is not None:
             raise DomainValidationError("successful capture must not have an error code")
+        if self.action_state is ActionState.SUCCEEDED and self.response is None:
+            raise DomainValidationError("successful capture requires a response")
         if self.action_state is not ActionState.SUCCEEDED and self.error_code is None:
             raise DomainValidationError("failed capture requires an error code")
+        if self.action_state is not ActionState.SUCCEEDED and self.response is not None:
+            raise DomainValidationError("failed capture must not expose a response")
 
 
 def _normalize_headers(
@@ -148,7 +153,7 @@ def _normalize_headers(
             raise DomainValidationError("HTTP headers must not contain control delimiters")
         if request and normalized_name not in _ALLOWED_REQUEST_HEADERS:
             raise DomainValidationError(f"request header is not allowed: {normalized_name}")
-        if normalized_name in seen:
+        if request and normalized_name in seen:
             raise DomainValidationError(f"duplicate HTTP header: {normalized_name}")
         seen.add(normalized_name)
         total_bytes += len(normalized_name.encode()) + len(normalized_value.encode())
@@ -272,4 +277,8 @@ class HttpCaptureCoordinator:
         evidence = PersistentEvidenceStore(self._session).append(metadata, raw_content)
         succeeded = transition_action(running_stored.entity, ActionState.SUCCEEDED, at=timestamp)
         saved = action_repository.save(succeeded, expected_version=running_stored.version)
-        return HttpCaptureResult(evidence=evidence, action_state=saved.entity.state)
+        return HttpCaptureResult(
+            evidence=evidence,
+            action_state=saved.entity.state,
+            response=response,
+        )

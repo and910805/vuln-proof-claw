@@ -2,22 +2,36 @@
 
 [繁體中文](HTTP_CAPTURE.zh-TW.md) | **English**
 
-The v0.1 capture coordinator is an internal orchestration boundary, not a public scanning endpoint. It accepts only an existing queued Action whose protected parameter digest matches the exact request.
+The capture coordinator is an internal orchestration boundary. It accepts only an
+existing queued Action whose protected parameter digest matches the exact request.
+Version 0.0.11 exposes this boundary through the opt-in passive assessment API.
 
 ## Enforced invariants
 
-- Only `GET` and `HEAD` are accepted.
-- Targets must already be canonical and allowed by the persisted Engagement scope.
-- Request headers are limited to `Accept` and `User-Agent`; credentials and cookies are rejected.
+- Only `GET` and `HEAD` are accepted by the coordinator; the public passive API uses
+  `GET` only.
+- Targets are canonicalized, query strings and fragments are removed, and the result
+  must be allowed by the persisted Engagement scope.
+- Request headers are limited to `Accept` and `User-Agent`; credentials and cookies
+  are rejected.
 - Redirects and final-target changes are rejected.
-- Timeout is limited to 1–60 seconds.
+- Timeouts are limited to 1–60 seconds.
 - Response bodies are limited to 10 MiB, with a 1 MiB default.
 - `HEAD` responses containing a body are rejected.
-- Success stores a canonical request/response envelope in the persistent evidence chain.
-- Transport failures produce a committed `failed` Action result with a safe error code.
+- Success stores a canonical request/response envelope in the persistent evidence
+  chain.
+- Transport failures produce a committed `failed` Action with a stable safe error
+  code recorded in the audit trail.
 
 ## Network boundary
 
-No concrete network transport is enabled in this release. The coordinator receives an injected transport implementing the internal contract. A production transport must run inside the disposable Worker boundary, disable redirects, pin DNS results, enforce CIDR/port/scheme/path scope for every connection, and bound bytes while streaming rather than after buffering.
+The opt-in `pinned-http/v1` transport is proxy-free and resolves every hostname
+before connecting. It validates all DNS answers, rejects denied and unexpected
+non-public addresses, pins the chosen IP to the socket, preserves HTTPS certificate
+and SNI checks against the original hostname, disables redirects, and bounds bytes
+while reading.
 
-This separation is intentional: a generic HTTP client in the control plane cannot safely enforce DNS rebinding and redirect scope by itself.
+This transport is a deliberately narrow passive-preview adapter. It is not the
+future disposable Worker runtime for crawlers, browsers, third-party scanners, or
+active probes. Those capabilities still require container isolation, resource and
+egress controls, cleanup, and independent execution lifecycle monitoring.

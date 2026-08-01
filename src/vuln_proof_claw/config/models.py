@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 class Environment(StrEnum):
@@ -87,6 +87,25 @@ class DockerConfig(FrozenConfigModel):
     worker_image: str = "vuln-proof-claw-worker:dev"
     worker_network: str = "vuln-proof-claw-workers"
     default_timeout_seconds: int = Field(default=300, ge=1, le=10_800)
+
+
+class AssessmentConfig(FrozenConfigModel):
+    """Explicit opt-in limits for the passive URL assessment preview."""
+
+    enabled: bool = False
+    timeout_seconds: int = Field(default=10, ge=1, le=60)
+    max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
+    user_agent: str = Field(default="vuln-proof-claw/0.0.11", min_length=1, max_length=255)
+
+    @field_validator("user_agent")
+    @classmethod
+    def validate_user_agent(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("assessment user agent must not be blank")
+        if any(character in normalized for character in ("\r", "\n", "\x00")):
+            raise ValueError("assessment user agent contains a control delimiter")
+        return normalized
 
 
 class LoggingConfig(FrozenConfigModel):
