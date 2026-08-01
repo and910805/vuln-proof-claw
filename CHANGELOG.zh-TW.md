@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+## [0.0.16] - 2026-08-02
+
+### 新增
+
+- 新增 authenticated bounded HTTP `RestrictedDockerEngine` client，涵蓋 readiness、create、start、wait、stop、強制 remove 與依 ownership 過濾的 inventory。
+- 新增嚴格 gateway wire model，會獨立重新驗證 Worker protocol payload、digest-pinned image、Worker／name／request label、非 root user、硬資源上限、不可變 privilege flag 與必要 tmpfs storage。
+- 新增 fail-closed Engine gateway 設定，包含 HTTPS 或明確 loopback IP origin、獨立 32–4096 字元 Bearer secret、可選 private CA bundle、timeout 與 response ceiling。
+- 新增 24 項 gateway 測試，涵蓋 authentication、lifecycle 整合、HTTPS 與 loopback policy、有界 streaming／decoding、status 分類、異常 response、直接 schema bypass 與不洩漏 secret 的 failure。
+
+### 變更
+
+- Engine reference 現在只會以不透明 JSON value 傳遞，不會進入 URL path；redirect 與環境 proxy discovery 已停用，而且不會盲目 retry mutating operation。
+- 專案與 Web package 版號升至 `0.0.16`，並更新雙語 runtime roadmap 與安全文件。
+
+### 安全性
+
+- 在嚴格 JSON parsing 前，同時限制宣告的 `Content-Length` 與實際串流 response byte；解碼後 Worker output 還會比對獨立上限。
+- Gateway response body 與 HTTP detail 不會進入安全 exception。Authentication、conflict、rejection、invalid response、limit 與 availability failure 使用穩定 code。
+- 任何環境啟用 runtime 都要求完整 gateway credential；production 還要求 API authentication readiness，而且 Engine token 不得與 API role token 相同。
+
 ## [0.0.15] - 2026-08-02
 
 ### 新增

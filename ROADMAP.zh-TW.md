@@ -13,11 +13,11 @@ Roadmap 表達預定方向，不保證 Release 日期。
 
 ## v0.1 — Evidence Core
 
-目前預覽進度：已完成持久化且正規化的評估範圍、Flow／Task／Action API、具 authentication 的 Approval、執行時 Approval 消耗、不可變稽核軌跡、transactional evidence chain、獨立授權的 raw evidence 讀取、不可變報告匯出、具可查詢歷史的 DNS-pinned passive URL assessment pipeline、deterministic response-header finding、具持久化 registry 的拋棄式 Worker lifecycle、有界 orphan cleanup，以及 digest-pinned 受限 container policy adapter。Authenticated privileged Engine gateway、scope egress、Worker-side executor、啟動整合、crawler 與 browser authentication session 仍在進行中。
+目前預覽進度：已完成持久化且正規化的評估範圍、Flow／Task／Action API、具 authentication 的 Approval、執行時 Approval 消耗、不可變稽核軌跡、transactional evidence chain、獨立授權的 raw evidence 讀取、不可變報告匯出、具可查詢歷史的 DNS-pinned passive URL assessment pipeline、deterministic response-header finding、具持久化 registry 的拋棄式 Worker lifecycle、有界 orphan cleanup、digest-pinned 受限 container policy adapter，以及 authenticated bounded Engine-gateway client。Privileged gateway server、scope egress、Worker-side executor、啟動整合、crawler 與 browser authentication session 仍在進行中。
 
 - Project、Engagement、Scope 與 Action persistence。
 - 結構化 HTTP Request/Response capture。
-- 拋棄式 Worker lifecycle（持久化 registry、fail-closed 重啟 reconciliation、不可變 ownership label、orphan cleanup 與受限 container spec enforcement 已完成；privileged Engine transport、scope egress、executor 與啟動 wiring 待完成）。
+- 拋棄式 Worker lifecycle（持久化 registry、fail-closed 重啟 reconciliation、不可變 ownership label、orphan cleanup、受限 container spec enforcement 與 authenticated Engine client 已完成；privileged gateway server、scope egress、executor 與啟動 wiring 待完成）。
 - Evidence hash chain 與 Markdown/JSON report。
 
 ## v0.2 — Autonomous Core

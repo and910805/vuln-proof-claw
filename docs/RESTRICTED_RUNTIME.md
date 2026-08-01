@@ -2,8 +2,9 @@
 
 [繁體中文](RESTRICTED_RUNTIME.zh-TW.md) | **English**
 
-Version 0.0.15 implements the runtime-neutral security policy and complete
-`WorkerRuntime` lifecycle used before any privileged Docker transport is connected.
+Version 0.0.16 implements the runtime-neutral security policy, complete
+`WorkerRuntime` lifecycle, and authenticated Engine-gateway client used before a
+privileged gateway server is connected.
 It remains disabled by default and does not make arbitrary security tools runnable.
 
 ## Trust boundary
@@ -57,8 +58,8 @@ Scope, Approval, or the worker-local network policy.
 
 ## Deliberately pending
 
-This release does not provide a Docker socket mount, Docker CLI subprocess, TCP Docker
-API client, or startup wiring. A dedicated authenticated Engine gateway, scoped
-egress enforcement, digest publication workflow, worker-side executor, and isolated
-end-to-end target tests must be implemented and security-reviewed before the runtime
-can be enabled.
+This release does not provide a Docker socket mount, Docker CLI subprocess, direct
+TCP Docker API client, gateway server, or startup wiring. A dedicated privileged
+gateway server, scoped egress enforcement, digest publication workflow, worker-side
+executor, and isolated end-to-end target tests must be implemented and
+security-reviewed before the runtime can be enabled.

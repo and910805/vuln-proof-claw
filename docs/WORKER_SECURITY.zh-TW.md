@@ -16,6 +16,7 @@
 - 安全的 lifecycle metadata 會持久化，重啟後 abandoned in-flight 紀錄會 reconcile 成明確的 lost 狀態。
 - Runtime inventory 使用不可變的 Worker／request 標籤；終止與 orphan 資源會在有界 grace period 後移除，並留下安全稽核事件。
 - 受限 container adapter 要求 digest-pinned image、專用 network、非 root、唯讀 root、移除 capabilities、no-new-privileges，以及有界資源與 protocol I/O。
+- Engine client 要求獨立 Bearer secret、HTTPS 或 loopback IP literal、停用 redirect 與環境 proxy、串流有界 JSON，並重新驗證每個 privileged create 欄位。
 - 預設 `DisabledWorkerManager` 仍採 fail-closed，不執行任何面向目標的操作。
 
 Compose 預設值只供本機開發使用。預設資料庫密碼不適用於共享或 production 環境。
@@ -53,7 +54,8 @@ Docker socket 存取權實質上等同 host 管理權限。擁有不受限制 so
 
 控制平面目前已定義並測試生命週期狀態機、持久化 registry、Action 綁定、Approval
 消耗、response 綁定、Evidence 驗證、稽核軌跡、timeout、取消、清理與 fail-closed
-重啟 reconciliation、orphan-resource janitor 與完整受限 container policy adapter，
-但尚未提供 authenticated privileged Engine transport、scope egress、Worker executor、
-啟動 wiring 或安全測試工具。在完成並驗證 network policy enforcement、Engine gateway、
-啟動整合與隔離式端對端目標前，internal-only Worker network 會維持封閉。
+重啟 reconciliation、orphan-resource janitor、完整受限 container policy adapter 與
+authenticated Engine client，但尚未提供 privileged gateway server、scope egress、
+Worker executor、啟動 wiring 或安全測試工具。在完成並驗證 network policy
+enforcement、gateway server、啟動整合與隔離式端對端目標前，internal-only Worker
+network 會維持封閉。

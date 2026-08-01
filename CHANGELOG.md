@@ -6,6 +6,26 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.16] - 2026-08-02
+
+### Added
+
+- Added an authenticated, bounded HTTP `RestrictedDockerEngine` client covering readiness, create, start, wait, stop, forced removal, and ownership-filtered inventory.
+- Added strict gateway wire models that independently revalidate the Worker protocol payload, digest-pinned image, Worker/name/request labels, non-root user, hard resource ceilings, immutable privilege flags, and required tmpfs storage.
+- Added fail-closed Engine gateway settings for HTTPS or explicit loopback IP origins, distinct 32–4096 character Bearer secrets, optional private CA bundles, timeouts, and response ceilings.
+- Added 24 focused gateway tests for authentication, lifecycle integration, HTTPS and loopback policy, bounded streaming and decoding, status classification, malformed responses, direct schema bypass attempts, and secret-safe failures.
+
+### Changed
+
+- Engine references now travel only as opaque JSON values rather than URL path components, redirects and ambient proxy discovery are disabled, and no mutating operation is blindly retried.
+- Advanced the project and Web package version to `0.0.16` and updated the bilingual runtime roadmap and security documentation.
+
+### Security
+
+- Both declared `Content-Length` and actual streamed response bytes are bounded before strict JSON parsing; decoded Worker output is checked against its separate limit.
+- Gateway response bodies and HTTP details never enter safe exceptions. Authentication, conflict, rejection, invalid-response, limit, and availability failures use stable codes.
+- Enabling the runtime requires complete gateway credentials in every environment; production additionally requires API authentication readiness, and the Engine token must differ from API role tokens.
+
 ## [0.0.15] - 2026-08-02
 
 ### Added

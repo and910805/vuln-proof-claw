@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+
+_ENGINE_TOKEN_MINIMUM_LENGTH = 32
+_ENGINE_TOKEN_MAXIMUM_LENGTH = 4096
+_VISIBLE_ASCII_MINIMUM = 33
+_VISIBLE_ASCII_MAXIMUM = 126
+_MINIMUM_TCP_PORT = 1
+_MAXIMUM_TCP_PORT = 65_535
 
 
 class Environment(StrEnum):
@@ -98,13 +107,89 @@ class DockerConfig(FrozenConfigModel):
     stop_grace_seconds: int = Field(default=5, ge=1, le=30)
 
 
+class EngineGatewayConfig(FrozenConfigModel):
+    """Authenticated HTTP boundary to the privileged container Engine service."""
+
+    url: str | None = None
+    token: SecretStr | None = None
+    timeout_seconds: int = Field(default=10, ge=1, le=60)
+    maximum_response_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        ge=64 * 1024,
+        le=32 * 1024 * 1024,
+    )
+    ca_bundle: Path | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().rstrip("/")
+        parsed = urlsplit(normalized)
+        try:
+            port = parsed.port
+        except ValueError as error:
+            raise ValueError("engine gateway URL contains an invalid port") from error
+        if port is not None and not _MINIMUM_TCP_PORT <= port <= _MAXIMUM_TCP_PORT:
+            raise ValueError("engine gateway URL contains an invalid port")
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/"}
+        ):
+            raise ValueError("engine gateway URL must be an origin without credentials")
+        if parsed.scheme == "http" and not _is_loopback_literal(parsed.hostname):
+            raise ValueError("unencrypted engine gateway URL requires a loopback IP literal")
+        return normalized
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            secret = value.get_secret_value()
+            if not (
+                _ENGINE_TOKEN_MINIMUM_LENGTH
+                <= len(secret)
+                <= _ENGINE_TOKEN_MAXIMUM_LENGTH
+            ):
+                raise ValueError("engine gateway token must contain 32 to 4096 characters")
+            if any(
+                not _VISIBLE_ASCII_MINIMUM <= ord(character) <= _VISIBLE_ASCII_MAXIMUM
+                for character in secret
+            ):
+                raise ValueError("engine gateway token must use visible ASCII characters")
+        return value
+
+    @model_validator(mode="after")
+    def require_complete_credentials(self) -> EngineGatewayConfig:
+        if (self.url is None) != (self.token is None):
+            raise ValueError("engine gateway URL and token must be configured together")
+        return self
+
+    @property
+    def ready(self) -> bool:
+        return self.url is not None and self.token is not None
+
+
+def _is_loopback_literal(hostname: str) -> bool:
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
 class AssessmentConfig(FrozenConfigModel):
     """Explicit opt-in limits for the passive URL assessment preview."""
 
     enabled: bool = False
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
-    user_agent: str = Field(default="vuln-proof-claw/0.0.15", min_length=1, max_length=255)
+    user_agent: str = Field(default="vuln-proof-claw/0.0.16", min_length=1, max_length=255)
 
     @field_validator("user_agent")
     @classmethod

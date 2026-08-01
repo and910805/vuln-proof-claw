@@ -14,6 +14,7 @@ from vuln_proof_claw.config.models import (
     AssessmentConfig,
     DatabaseConfig,
     DockerConfig,
+    EngineGatewayConfig,
     Environment,
     LoggingConfig,
     ProviderConfig,
@@ -43,12 +44,30 @@ class Settings(BaseSettings):
     web: WebConfig = WebConfig()
     database: DatabaseConfig = DatabaseConfig()
     docker: DockerConfig = DockerConfig()
+    engine_gateway: EngineGatewayConfig = EngineGatewayConfig()
     logging: LoggingConfig = LoggingConfig()
     provider: ProviderConfig = ProviderConfig()
 
     @model_validator(mode="after")
     def validate_production_safety(self) -> Settings:
         """Reject combinations that make an unfinished API publicly reachable."""
+        if self.docker.runtime_enabled:
+            if not self.engine_gateway.ready:
+                msg = "worker runtime requires an authenticated Engine gateway"
+                raise ValueError(msg)
+            engine_token = self.engine_gateway.token
+            api_tokens = (
+                self.api.operator_token,
+                self.api.approver_token,
+                self.api.evidence_reader_token,
+            )
+            if engine_token is not None and any(
+                token is not None
+                and token.get_secret_value() == engine_token.get_secret_value()
+                for token in api_tokens
+            ):
+                msg = "engine gateway token must be distinct from API tokens"
+                raise ValueError(msg)
         if self.app.environment is not Environment.PRODUCTION:
             return self
         if self.app.debug:
