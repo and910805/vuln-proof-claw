@@ -6,6 +6,19 @@
 
 ## Unreleased
 
+## [0.0.5] - 2026-08-01
+
+### Added
+
+- 新增與 transport 實作無關的內部 structured `GET`／`HEAD` Capture Coordinator。
+- 透過 canonical parameter digest 與持久化 Scope policy，把 request 綁定至 queued Action。
+- 新增有大小限制的 canonical HTTP evidence envelope 與明確 transport failure outcome。
+
+### Security
+
+- 拒絕 credential、cookie、redirect、target 變更、過大 body 與不安全 method。
+- 在一次性 Worker DNS 與 egress enforcement 完成前，不啟用具體 network transport。
+
 ## [0.0.4] - 2026-08-01
 
 ### Added

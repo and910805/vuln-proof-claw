@@ -6,6 +6,19 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.5] - 2026-08-01
+
+### Added
+
+- Added an internal, transport-independent coordinator for structured `GET`/`HEAD` capture.
+- Bound requests to queued Actions through canonical parameter digests and persisted Scope policy.
+- Added bounded canonical HTTP evidence envelopes and explicit transport-failure outcomes.
+
+### Security
+
+- Rejected credentials, cookies, redirects, target changes, oversized bodies, and unsafe methods.
+- Kept the concrete network transport disabled until disposable Worker DNS and egress enforcement exists.
+
 ## [0.0.4] - 2026-08-01
 
 ### Added
