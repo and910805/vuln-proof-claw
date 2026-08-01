@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.6-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.7-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -47,6 +47,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Evidence Core 預覽版 | 持久化評估範圍、離線目標政策判斷，以及僅含 metadata 的 JSON／Markdown 報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
+| Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator 與 approver role |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
@@ -199,6 +200,7 @@ Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdo
 | Evidence Core 預覽版 | [docs/EVIDENCE_CORE.md](docs/EVIDENCE_CORE.md) | [docs/EVIDENCE_CORE.zh-TW.md](docs/EVIDENCE_CORE.zh-TW.md) |
 | 受控 HTTP Capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
 | 控制平面工作流程 API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
+| Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

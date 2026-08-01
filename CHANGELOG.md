@@ -6,6 +6,22 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.7] - 2026-08-01
+
+### Added
+
+- Added optional API-wide Bearer authentication with distinct operator and approver roles.
+- Added authenticated single-Action approval and denial decisions with bounded expiry.
+- Added operator cancellation and actor-attributed approval, denial, and cancellation audit events.
+- Added approval lookup and execution-time single-use consumption.
+
+### Security
+
+- Approval mutations remain disabled when authentication readiness is false.
+- Approval identity is derived from deployment configuration rather than client input.
+- Expired, missing, changed, exhausted, or mismatched approvals fail before transport.
+- Health probes remain public while authenticated mode protects every other v1 API route.
+
 ## [0.0.6] - 2026-08-01
 
 ### Added

@@ -11,6 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from vuln_proof_claw.api.audit import record_audit_event
+from vuln_proof_claw.api.auth import AuthenticatedPrincipal, require_operator_if_configured
 from vuln_proof_claw.api.dependencies import get_session
 from vuln_proof_claw.api.schemas.workflow import (
     ActionListResponse,
@@ -35,8 +37,7 @@ from vuln_proof_claw.domain.identifiers import (
     TaskId,
     new_action_id,
 )
-from vuln_proof_claw.domain.models import Action, AuditEvent, Flow, Task
-from vuln_proof_claw.evidence.canonical import canonical_json
+from vuln_proof_claw.domain.models import Action, Flow, Task
 from vuln_proof_claw.execution.http_capture import HttpCaptureRequest, capture_parameter_digest
 from vuln_proof_claw.persistence.models import (
     ActionRecord,
@@ -62,7 +63,10 @@ from vuln_proof_claw.policy.risk import classify_risk, normalize_action_type
 
 router = APIRouter(tags=["workflow"])
 SessionDependency = Annotated[Session, Depends(get_session)]
-_AUDIT_ACTOR = "api:unauthenticated"
+OperatorDependency = Annotated[
+    AuthenticatedPrincipal,
+    Depends(require_operator_if_configured),
+]
 
 
 def _flow_summary(flow: Flow) -> FlowSummary:
@@ -98,6 +102,7 @@ def _action_summary(
         risk_level=action.risk_level,
         idempotency_key=action.idempotency_key,
         state=action.state,
+        approval_id=action.approval_id,
         policy_reason=decision.reason if decision else None,
         requires_dns_recheck=decision.requires_dns_recheck if decision else None,
         created_at=action.created_at,
@@ -111,25 +116,6 @@ def _same_protected_action(current: Action, proposed: Action) -> bool:
         and current.normalized_target == proposed.normalized_target
         and current.parameter_digest == proposed.parameter_digest
         and current.risk_level is proposed.risk_level
-    )
-
-
-def _audit(
-    session: Session,
-    engagement_id: EngagementId,
-    event_type: str,
-    payload: dict[str, object],
-    *,
-    at: datetime | None = None,
-) -> None:
-    AuditEventRepository(session).add(
-        AuditEvent(
-            engagement_id=engagement_id,
-            event_type=event_type,
-            actor=_AUDIT_ACTOR,
-            payload=canonical_json(payload),
-            created_at=at or datetime.now(UTC),
-        )
     )
 
 
@@ -147,13 +133,20 @@ def create_flow(
     engagement_id: str,
     payload: FlowCreate,
     session: SessionDependency,
+    principal: OperatorDependency,
 ) -> FlowSummary:
     normalized_engagement_id = EngagementId(engagement_id)
     if EngagementRepository(session).get(normalized_engagement_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="engagement_not_found")
     flow = Flow(engagement_id=normalized_engagement_id, objective=payload.objective)
     FlowRepository(session).add(flow)
-    _audit(session, normalized_engagement_id, "flow.created", {"flow_id": flow.id})
+    record_audit_event(
+        session,
+        normalized_engagement_id,
+        "flow.created",
+        principal.identity,
+        {"flow_id": flow.id},
+    )
     session.commit()
     return _flow_summary(flow)
 
@@ -185,16 +178,22 @@ def list_flows(
     status_code=status.HTTP_201_CREATED,
     summary="Create a flow task",
 )
-def create_task(flow_id: str, payload: TaskCreate, session: SessionDependency) -> TaskSummary:
+def create_task(
+    flow_id: str,
+    payload: TaskCreate,
+    session: SessionDependency,
+    principal: OperatorDependency,
+) -> TaskSummary:
     stored_flow = FlowRepository(session).get(FlowId(flow_id))
     if stored_flow is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="flow_not_found")
     task = Task(flow_id=stored_flow.entity.id, title=payload.title)
     TaskRepository(session).add(task)
-    _audit(
+    record_audit_event(
         session,
         stored_flow.entity.engagement_id,
         "task.created",
+        principal.identity,
         {"flow_id": flow_id, "task_id": task.id},
     )
     session.commit()
@@ -229,6 +228,7 @@ def create_http_action(
     payload: HttpActionCreate,
     response: Response,
     session: SessionDependency,
+    principal: OperatorDependency,
 ) -> ActionSummary:
     task = TaskRepository(session).get(TaskId(task_id))
     if task is None:
@@ -295,10 +295,11 @@ def create_http_action(
     stored_proposed = repository.get(action.id)
     if stored_proposed is None:  # pragma: no cover - flush/get invariant
         raise RuntimeError("persisted action could not be reloaded")
-    _audit(
+    record_audit_event(
         session,
         engagement_id,
         "action.proposed",
+        principal.identity,
         {
             "action_id": action.id,
             "action_type": action.action_type,
@@ -327,10 +328,11 @@ def create_http_action(
     }[decision.kind]
     evaluated = transition_action(stored_checking.entity, target_state, at=timestamp)
     stored_evaluated = repository.save(evaluated, expected_version=stored_checking.version)
-    _audit(
+    record_audit_event(
         session,
         engagement_id,
         "policy.decision",
+        principal.identity,
         {
             "action_id": action.id,
             "decision": decision.kind,

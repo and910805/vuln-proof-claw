@@ -7,19 +7,21 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from vuln_proof_claw import __version__
+from vuln_proof_claw.api.auth import require_authenticated_if_configured
 from vuln_proof_claw.api.dependencies import (
     DatabaseReadinessProbe,
     ReadinessProbe,
     ReadinessService,
     StaticReadinessProbe,
 )
+from vuln_proof_claw.api.routes.approvals import router as approvals_router
 from vuln_proof_claw.api.routes.console import router as console_router
 from vuln_proof_claw.api.routes.health import router as health_router
 from vuln_proof_claw.api.routes.reports import router as reports_router
@@ -80,9 +82,11 @@ def create_app(
         lifespan=lifespan,
     )
     app.include_router(health_router, prefix="/api/v1")
-    app.include_router(console_router, prefix="/api/v1")
-    app.include_router(reports_router, prefix="/api/v1")
-    app.include_router(workflow_router, prefix="/api/v1")
+    protected = [Depends(require_authenticated_if_configured)]
+    app.include_router(console_router, prefix="/api/v1", dependencies=protected)
+    app.include_router(reports_router, prefix="/api/v1", dependencies=protected)
+    app.include_router(workflow_router, prefix="/api/v1", dependencies=protected)
+    app.include_router(approvals_router, prefix="/api/v1", dependencies=protected)
 
     web_root = app_settings.web.static_directory or (
         Path(__file__).resolve().parents[1] / "web"

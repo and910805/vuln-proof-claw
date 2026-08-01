@@ -46,12 +46,13 @@ request digest，則回傳 HTTP 409。
   risk level。
 - 未知 action type 會保守分類為 L2。
 - 永久禁止的 action type 與 scope 外 target 會持久化為 denied。
-- L2-L4 與預設的 L1 提案會停在 `pending_approval`；本版尚未開放 approval mutation
-  endpoint。
+- L2-L4 與預設的 L1 提案會停在 `pending_approval`；經過 authentication 且獨立設定的
+  approver 可批准或拒絕確切 Action。
 - Audit payload 只包含識別碼、正規化 target、digest 與判斷結果，不包含 request
   header value 或 raw evidence。
-- 目前 pre-alpha API 尚未驗證身分，因此 audit event 會明確記為
-  `api:unauthenticated`；只能部署在可信任的本機介面。
+- Local mode 會記錄 `api:unauthenticated`。Authentication-ready 部署要求 Bearer
+  credential，並記錄設定中的 operator 與 approver identity。
 
 內部執行 contract 請見[受控 HTTP capture](HTTP_CAPTURE.zh-TW.md)，報告完整性行為
 請見 [Evidence Core 預覽版](EVIDENCE_CORE.zh-TW.md)。
+角色與部署要求請見 [Authentication 與單一 Action Approval](AUTH_AND_APPROVALS.zh-TW.md)。

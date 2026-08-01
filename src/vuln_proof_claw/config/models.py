@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 
 class Environment(StrEnum):
@@ -36,6 +36,26 @@ class ApiConfig(FrozenConfigModel):
     host: str = "127.0.0.1"
     port: int = Field(default=8080, ge=1, le=65535)
     authentication_ready: bool = False
+    operator_identity: str = Field(default="local-operator", min_length=1, max_length=320)
+    approver_identity: str = Field(default="local-approver", min_length=1, max_length=320)
+    operator_token: SecretStr | None = Field(default=None, min_length=32)
+    approver_token: SecretStr | None = Field(default=None, min_length=32)
+
+    @model_validator(mode="after")
+    def validate_authentication(self) -> ApiConfig:
+        """Require two distinct credentials before authentication is called ready."""
+        tokens = (self.operator_token, self.approver_token)
+        if self.authentication_ready and any(token is None for token in tokens):
+            raise ValueError("authentication readiness requires operator and approver tokens")
+        operator_token = self.operator_token
+        approver_token = self.approver_token
+        if (
+            operator_token is not None
+            and approver_token is not None
+            and operator_token.get_secret_value() == approver_token.get_secret_value()
+        ):
+            raise ValueError("operator and approver tokens must be distinct")
+        return self
 
 
 class WebConfig(FrozenConfigModel):

@@ -14,7 +14,7 @@ from sqlalchemy import Engine
 from vuln_proof_claw.domain.enums import ActionState, RiskLevel
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import new_action_id
-from vuln_proof_claw.domain.models import Action, Engagement, Flow, Project, Task
+from vuln_proof_claw.domain.models import Action, Approval, Engagement, Flow, Project, Task
 from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
 from vuln_proof_claw.execution.http_capture import (
     CapturePolicyError,
@@ -27,6 +27,7 @@ from vuln_proof_claw.execution.http_capture import (
 from vuln_proof_claw.persistence.base import Base
 from vuln_proof_claw.persistence.repositories import (
     ActionRepository,
+    ApprovalRepository,
     EngagementRepository,
     FlowRepository,
     ProjectRepository,
@@ -120,6 +121,72 @@ def seed_capture_action(engine: Engine) -> tuple[Engagement, Action, HttpCapture
     return engagement, action, request
 
 
+def seed_approved_capture_action(
+    engine: Engine,
+    *,
+    expires_at: datetime,
+) -> tuple[Action, Approval, HttpCaptureRequest]:
+    action_id = new_action_id()
+    request = HttpCaptureRequest(
+        action_id=action_id,
+        method="GET",
+        target="https://example.test/public",
+    )
+    project = Project(name="Approval capture", created_at=NOW - timedelta(hours=1))
+    engagement = Engagement(
+        project_id=project.id,
+        name="Approved active validation",
+        starts_at=NOW - timedelta(hours=1),
+        ends_at=NOW + timedelta(days=1),
+        maximum_risk=RiskLevel.L2,
+        created_at=NOW - timedelta(hours=1),
+    )
+    flow = Flow(engagement_id=engagement.id, objective="Validate", created_at=NOW)
+    task = Task(flow_id=flow.id, title="Approved request", created_at=NOW)
+    approval = Approval(
+        engagement_id=engagement.id,
+        action_type="exploit_attempt",
+        normalized_target=request.target,
+        parameter_digest=capture_parameter_digest(request),
+        risk_level=RiskLevel.L2,
+        expires_at=expires_at,
+        permitted_executions=1,
+        approver="security-lead@example.test",
+        approved_at=NOW - timedelta(minutes=10),
+    )
+    action = Action(
+        id=action_id,
+        engagement_id=engagement.id,
+        task_id=task.id,
+        action_type=approval.action_type,
+        normalized_target=request.target,
+        parameter_digest=approval.parameter_digest,
+        risk_level=approval.risk_level,
+        idempotency_key="approved-capture",
+        state=ActionState.QUEUED,
+        approval_id=approval.id,
+        created_at=NOW - timedelta(minutes=5),
+    )
+    scope = EngagementScope.create(
+        allowed_hostnames=("example.test",),
+        allowed_ports=(443,),
+        allowed_schemes=("https",),
+        allowed_paths=("/public",),
+        valid_from=engagement.starts_at,
+        valid_until=engagement.ends_at,
+    )
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        ProjectRepository(session).add(project)
+        EngagementRepository(session).add(engagement)
+        ScopeRepository(session).add(engagement.id, scope)
+        FlowRepository(session).add(flow)
+        TaskRepository(session).add(task)
+        ApprovalRepository(session).add(approval)
+        ActionRepository(session).add(action)
+    return action, approval, request
+
+
 def test_capture_persists_bounded_structured_evidence(engine: Engine) -> None:
     engagement, action, request = seed_capture_action(engine)
     transport = FakeTransport()
@@ -183,6 +250,48 @@ def test_capture_rejects_redirect_and_marks_action_failed(engine: Engine) -> Non
     assert result.action_state is ActionState.FAILED
     assert stored is not None
     assert stored.entity.state is ActionState.FAILED
+
+
+def test_approved_capture_consumes_single_use_approval_at_execution_start(
+    engine: Engine,
+) -> None:
+    action, approval, request = seed_approved_capture_action(
+        engine,
+        expires_at=NOW + timedelta(minutes=10),
+    )
+    transport = FakeTransport()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        result = HttpCaptureCoordinator(session, transport).capture(request, at=NOW)
+
+    with session_factory() as session:
+        stored_action = ActionRepository(session).get(action.id)
+        stored_approval = ApprovalRepository(session).get(approval.id)
+    assert result.action_state is ActionState.SUCCEEDED
+    assert transport.calls == 1
+    assert stored_action is not None
+    assert stored_action.entity.approval_id == approval.id
+    assert stored_approval is not None
+    assert stored_approval.entity.consumed_executions == 1
+
+
+def test_expired_approval_is_rejected_before_transport_and_not_consumed(
+    engine: Engine,
+) -> None:
+    _action, approval, request = seed_approved_capture_action(engine, expires_at=NOW)
+    transport = FakeTransport()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session, pytest.raises(
+        CapturePolicyError,
+        match="approval_invalid",
+    ):
+        HttpCaptureCoordinator(session, transport).capture(request, at=NOW)
+
+    with session_factory() as session:
+        stored_approval = ApprovalRepository(session).get(approval.id)
+    assert transport.calls == 0
+    assert stored_approval is not None
+    assert stored_approval.entity.consumed_executions == 0
 
 
 def test_capture_contract_rejects_unsafe_method_and_headers() -> None:

@@ -13,7 +13,7 @@ from pydantic import SecretStr
 from vuln_proof_claw import __version__
 from vuln_proof_claw.api.app import create_app
 from vuln_proof_claw.api.dependencies import ProbeResult
-from vuln_proof_claw.config.models import DatabaseConfig, ProviderConfig
+from vuln_proof_claw.config.models import ApiConfig, DatabaseConfig, ProviderConfig
 from vuln_proof_claw.config.settings import Settings
 from vuln_proof_claw.domain.identifiers import new_identifier
 
@@ -122,8 +122,15 @@ async def test_invalid_database_configuration_keeps_liveness_available() -> None
 def test_openapi_is_stable_and_does_not_expose_secrets() -> None:
     database_marker = new_identifier()
     provider_secret = new_identifier()
+    operator_secret = new_identifier()
+    approver_secret = new_identifier()
     database_secret = f"postgresql+psycopg://private-user:{database_marker}@db/private"
     settings = Settings(
+        api=ApiConfig(
+            authentication_ready=True,
+            operator_token=SecretStr(operator_secret),
+            approver_token=SecretStr(approver_secret),
+        ),
         database=DatabaseConfig(url=SecretStr(database_secret)),
         provider=ProviderConfig(api_key=SecretStr(provider_secret)),
     )
@@ -140,4 +147,8 @@ def test_openapi_is_stable_and_does_not_expose_secrets() -> None:
     assert "/api/v1/health/ready" in document["paths"]
     assert database_secret not in serialized
     assert provider_secret not in serialized
+    assert operator_secret not in serialized
+    assert approver_secret not in serialized
     assert database_marker not in serialized
+    assert document["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    assert "security" not in document["paths"]["/api/v1/health/live"]["get"]

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
-from vuln_proof_claw.config.models import Environment
+from vuln_proof_claw.config.models import ApiConfig, Environment
 from vuln_proof_claw.config.settings import Settings
 
 
@@ -68,3 +68,23 @@ def test_worker_runtime_has_no_provider_credentials(
 
     assert all("provider" not in key and "key" not in key for key in worker)
     assert "top-secret" not in repr(worker)
+
+
+def test_authentication_readiness_requires_distinct_long_tokens() -> None:
+    with pytest.raises(ValidationError, match="requires operator and approver tokens"):
+        ApiConfig(authentication_ready=True)
+
+    repeated = SecretStr("x" * 32)
+    with pytest.raises(ValidationError, match="must be distinct"):
+        ApiConfig(
+            authentication_ready=True,
+            operator_token=repeated,
+            approver_token=repeated,
+        )
+
+    configured = ApiConfig(
+        authentication_ready=True,
+        operator_token=SecretStr("o" * 32),
+        approver_token=SecretStr("a" * 32),
+    )
+    assert configured.authentication_ready

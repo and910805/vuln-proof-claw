@@ -48,12 +48,14 @@ risk, or protected request digest returns HTTP 409.
   policy result or risk level.
 - Unknown action types conservatively classify as L2.
 - Permanent-deny action types and out-of-scope targets are persisted as denied.
-- L2-L4 and default L1 proposals stop at `pending_approval`; this release does not
-  expose an approval mutation endpoint.
+- L2-L4 and default L1 proposals stop at `pending_approval`; an authenticated,
+  separately configured approver may grant or deny the exact Action.
 - Audit payloads contain identifiers, normalized targets, digests, and decisions,
   but not request header values or raw evidence.
-- The current pre-alpha API is unauthenticated, so audit events explicitly record
-  `api:unauthenticated`. Deploy it only on a trusted local interface.
+- Local mode records `api:unauthenticated`. Authentication-ready deployments require
+  Bearer credentials and record configured operator and approver identities.
 
 See [Controlled HTTP capture](HTTP_CAPTURE.md) for the separate internal execution
 contract and [Evidence Core preview](EVIDENCE_CORE.md) for report integrity behavior.
+See [Authentication and single-action approvals](AUTH_AND_APPROVALS.md) for role and
+deployment requirements.

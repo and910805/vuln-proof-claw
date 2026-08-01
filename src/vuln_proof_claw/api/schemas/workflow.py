@@ -104,6 +104,7 @@ class ActionSummary(BaseModel):
     risk_level: RiskLevel
     idempotency_key: str
     state: ActionState
+    approval_id: str | None
     policy_reason: str | None = None
     requires_dns_recheck: bool | None = None
     created_at: datetime

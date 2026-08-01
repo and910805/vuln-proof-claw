@@ -30,6 +30,8 @@ Web UI / CLI / REST API
 - Domain code does not depend on FastAPI, SQLAlchemy, Docker, or LLM SDKs.
 - Target-facing actions require a scope decision before execution.
 - High-risk actions require action-bound approval.
+- Authentication-ready deployments separate operator mutations from approval authority.
+- Health probes are public; every other v1 API route requires authentication when enabled.
 - Workers do not receive provider credentials or host home-directory mounts.
 - Raw evidence is stored separately from redacted reports.
 - Only the Verifier can promote a finding to `verified`.

@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+## [0.0.7] - 2026-08-01
+
+### 新增
+
+- 新增可選的 API-wide Bearer authentication，以及分離的 operator／approver role。
+- 新增具 authentication 的單一 Action 批准／拒絕 decision 與期限限制。
+- 新增 operator cancellation，以及包含 actor 的批准、拒絕、取消 audit event。
+- 新增 Approval 查詢與執行時單次消耗。
+
+### 安全性
+
+- Authentication readiness 為 false 時，approval mutation 維持停用。
+- Approval identity 由部署設定推導，不接受 client 輸入。
+- 過期、遺失、遭修改、已耗盡或不符的 Approval 會在 transport 前 fail closed。
+- Health probe 維持公開；authenticated mode 會保護其餘所有 v1 API route。
+
 ## [0.0.6] - 2026-08-01
 
 ### 新增

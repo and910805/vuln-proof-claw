@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from vuln_proof_claw.api.auth import AuthenticatedPrincipal, require_operator_if_configured
 from vuln_proof_claw.api.dependencies import get_session
 from vuln_proof_claw.api.schemas.console import (
     DashboardCounts,
@@ -43,6 +44,10 @@ from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope
 
 router = APIRouter(tags=["console"])
 SessionDependency = Annotated[Session, Depends(get_session)]
+OperatorDependency = Annotated[
+    AuthenticatedPrincipal,
+    Depends(require_operator_if_configured),
+]
 
 
 def _project_summary(project: Project) -> ProjectSummary:
@@ -157,7 +162,11 @@ def list_projects(
     status_code=status.HTTP_201_CREATED,
     summary="Create a project",
 )
-def create_project(payload: ProjectCreate, session: SessionDependency) -> ProjectSummary:
+def create_project(
+    payload: ProjectCreate,
+    session: SessionDependency,
+    _principal: OperatorDependency,
+) -> ProjectSummary:
     """Create a project through the domain model and commit it atomically."""
     project = Project(name=payload.name)
     ProjectRepository(session).add(project)
@@ -175,6 +184,7 @@ def create_engagement(
     project_id: str,
     payload: EngagementCreate,
     session: SessionDependency,
+    _principal: OperatorDependency,
 ) -> EngagementSummary:
     project = ProjectRepository(session).get(ProjectId(project_id))
     if project is None:

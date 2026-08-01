@@ -15,7 +15,7 @@ Web 基礎版本目前提供：
 - 系統強制執行的 L0-L4 風險政策參考。
 - 如實標示已運作與仍鎖定的能力。
 
-目前還不能啟動 Flow、執行面向目標的工具、批准 Action、顯示原始 Evidence 或驗證 Finding。在對應 API、授權與執行邊界檢查完成前，這些控制項會明確維持不可用。
+目前還不能透過 Browser 啟動 Flow、執行面向目標的工具、批准 Action、顯示原始 Evidence 或驗證 Finding。Workflow 與具 Authentication 的 Approval API 已存在，但 Web credential session 與上述控制項仍刻意維持不可用。
 
 ## 開啟控制台
 

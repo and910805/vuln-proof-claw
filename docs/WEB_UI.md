@@ -15,7 +15,7 @@ The Web foundation currently provides:
 - The enforced L0-L4 risk-policy reference.
 - Explicit status for capabilities that are operational or still locked.
 
-It does not yet start flows, execute target-facing tools, approve actions, render raw evidence, or verify findings. Those controls stay visibly unavailable until their backing API, authorization, and execution-boundary enforcement are implemented.
+It does not yet start flows, execute target-facing tools, approve actions, render raw evidence, or verify findings through the browser. Workflow and authenticated approval APIs now exist, but the Web credential session and those controls remain intentionally unavailable.
 
 ## Open the console
 
