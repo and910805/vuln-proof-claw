@@ -88,3 +88,17 @@ def test_authentication_readiness_requires_distinct_long_tokens() -> None:
         approver_token=SecretStr("a" * 32),
     )
     assert configured.authentication_ready
+    assert not configured.evidence_access_ready
+
+    with pytest.raises(ValidationError, match="must be distinct"):
+        ApiConfig(
+            authentication_ready=True,
+            operator_token=SecretStr("o" * 32),
+            approver_token=SecretStr("a" * 32),
+            evidence_reader_token=SecretStr("o" * 32),
+        )
+
+    evidence_ready = configured.model_copy(
+        update={"evidence_reader_token": SecretStr("e" * 32)}
+    )
+    assert evidence_ready.evidence_access_ready

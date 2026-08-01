@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+## [0.0.10] - 2026-08-01
+
+### 新增
+
+- 新增獨立設定的 `evidence_reader` Bearer role，專門控管敏感內容存取。
+- 新增具稽核紀錄、綁定 Engagement，且會驗證完整 Evidence chain 的 raw evidence 下載。
+- 新增具 idempotency 的不可變 JSON／Markdown 報告匯出，以及 Alembic revision `0005_report_exports`。
+- 新增報告匯出清單與下載前完整性驗證 API。
+
+### 安全性
+
+- Operator 與 approver 無法取得 raw evidence 或報告快照內容。
+- 未設定 reader 憑證或 Evidence chain 無效時，raw evidence 存取會 fail closed。
+- 報告下載前會重新驗證內容大小與 SHA-256。
+- 敏感內容讀取成功時會記錄綁定 actor 的 audit event，不會把 payload 寫入稽核紀錄。
+
 ## [0.0.9] - 2026-08-01
 
 ### 新增

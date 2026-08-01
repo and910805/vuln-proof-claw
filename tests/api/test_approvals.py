@@ -19,8 +19,10 @@ from vuln_proof_claw.persistence.session import create_engine
 
 OPERATOR_TOKEN = "operator-token-00000000000000000001"  # noqa: S105 - test credential
 APPROVER_TOKEN = "approver-token-00000000000000000001"  # noqa: S105 - test credential
+EVIDENCE_READER_TOKEN = "evidence-reader-00000000000000000001"  # noqa: S105
 OPERATOR_HEADERS = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
 APPROVER_HEADERS = {"Authorization": f"Bearer {APPROVER_TOKEN}"}
+EVIDENCE_READER_HEADERS = {"Authorization": f"Bearer {EVIDENCE_READER_TOKEN}"}
 
 
 def authenticated_settings(database_path: Path) -> Settings:
@@ -29,8 +31,10 @@ def authenticated_settings(database_path: Path) -> Settings:
             authentication_ready=True,
             operator_identity="operator@example.test",
             approver_identity="security-lead@example.test",
+            evidence_reader_identity="evidence-reader@example.test",
             operator_token=SecretStr(OPERATOR_TOKEN),
             approver_token=SecretStr(APPROVER_TOKEN),
+            evidence_reader_token=SecretStr(EVIDENCE_READER_TOKEN),
         ),
         database=DatabaseConfig(url=SecretStr(f"sqlite:///{database_path}")),
         web=WebConfig(enabled=False),
@@ -83,6 +87,11 @@ async def test_authentication_protects_api_and_separates_roles(tmp_path: Path) -
             json={"name": "Unauthorized mutation"},
             headers=APPROVER_HEADERS,
         )
+        evidence_reader_create = await client.post(
+            "/api/v1/projects",
+            json={"name": "Unauthorized evidence-reader mutation"},
+            headers=EVIDENCE_READER_HEADERS,
+        )
 
     assert health.status_code == 200
     assert anonymous.status_code == 401
@@ -91,6 +100,8 @@ async def test_authentication_protects_api_and_separates_roles(tmp_path: Path) -
     assert approver_read.status_code == 200
     assert approver_create.status_code == 401
     assert approver_create.json()["detail"] == "operator_authentication_required"
+    assert evidence_reader_create.status_code == 401
+    assert evidence_reader_create.json()["detail"] == "operator_authentication_required"
 
 
 async def test_approver_can_grant_single_use_bound_approval(tmp_path: Path) -> None:

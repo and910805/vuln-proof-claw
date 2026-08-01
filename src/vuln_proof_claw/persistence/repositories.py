@@ -12,6 +12,7 @@ from vuln_proof_claw.domain.enums import (
     ActionState,
     ArtifactKind,
     FindingStatus,
+    ReportFormat,
     RiskLevel,
     WorkerState,
 )
@@ -25,6 +26,7 @@ from vuln_proof_claw.domain.identifiers import (
     FindingId,
     FlowId,
     ProjectId,
+    ReportExportId,
     TaskId,
     WorkerId,
 )
@@ -38,6 +40,7 @@ from vuln_proof_claw.domain.models import (
     Finding,
     Flow,
     Project,
+    ReportExport,
     Task,
     WorkerExecution,
 )
@@ -52,6 +55,7 @@ from vuln_proof_claw.persistence.models import (
     FindingRecord,
     FlowRecord,
     ProjectRecord,
+    ReportExportRecord,
     TaskRecord,
     WorkerExecutionRecord,
     finding_evidence,
@@ -525,9 +529,7 @@ class WorkerExecutionRepository:
 
     def get_for_request(self, request_id: str) -> Stored[WorkerExecution] | None:
         row = self._session.scalar(
-            select(WorkerExecutionRecord).where(
-                WorkerExecutionRecord.request_id == request_id
-            )
+            select(WorkerExecutionRecord).where(WorkerExecutionRecord.request_id == request_id)
         )
         if row is None:
             return None
@@ -658,6 +660,86 @@ class ArtifactRepository:
             digest=row.digest,
             created_at=_utc(row.created_at),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class StoredReportExport:
+    """Report snapshot metadata paired with immutable serialized content."""
+
+    entity: ReportExport
+    content: bytes
+
+
+class ReportExportRepository:
+    """Persist immutable engagement reports and enforce idempotent creation."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, export: ReportExport, content: bytes) -> None:
+        immutable_content = bytes(content)
+        if len(immutable_content) != export.size:
+            raise ValueError("report export size does not match content")
+        self._session.add(
+            ReportExportRecord(
+                id=export.id,
+                engagement_id=export.engagement_id,
+                format=export.format.value,
+                media_type=export.media_type,
+                digest=export.digest,
+                size=export.size,
+                idempotency_key=export.idempotency_key,
+                content=immutable_content,
+                created_by=export.created_by,
+                created_at=export.created_at,
+            )
+        )
+        self._session.flush()
+
+    def get(self, export_id: ReportExportId) -> StoredReportExport | None:
+        row = self._session.get(ReportExportRecord, export_id)
+        return None if row is None else self._stored(row)
+
+    def get_by_idempotency_key(
+        self, engagement_id: EngagementId, idempotency_key: str
+    ) -> StoredReportExport | None:
+        row = self._session.scalar(
+            select(ReportExportRecord).where(
+                ReportExportRecord.engagement_id == engagement_id,
+                ReportExportRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return None if row is None else self._stored(row)
+
+    def list_for_engagement(
+        self, engagement_id: EngagementId, *, limit: int = 100, offset: int = 0
+    ) -> tuple[ReportExport, ...]:
+        rows = self._session.scalars(
+            select(ReportExportRecord)
+            .where(ReportExportRecord.engagement_id == engagement_id)
+            .order_by(ReportExportRecord.created_at.desc(), ReportExportRecord.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(self._entity(row) for row in rows)
+
+    @staticmethod
+    def _entity(row: ReportExportRecord) -> ReportExport:
+        return ReportExport(
+            id=ReportExportId(row.id),
+            engagement_id=EngagementId(row.engagement_id),
+            format=ReportFormat(row.format),
+            media_type=row.media_type,
+            digest=row.digest,
+            size=row.size,
+            idempotency_key=row.idempotency_key,
+            created_by=row.created_by,
+            created_at=_utc(row.created_at),
+        )
+
+    @classmethod
+    def _stored(cls, row: ReportExportRecord) -> StoredReportExport:
+        return StoredReportExport(cls._entity(row), bytes(row.content))
 
 
 class FindingRepository:

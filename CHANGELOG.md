@@ -6,6 +6,22 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.10] - 2026-08-01
+
+### Added
+
+- Added a separately configured `evidence_reader` Bearer role for sensitive content access.
+- Added audited, engagement-bound raw-evidence downloads that verify the full evidence chain.
+- Added idempotent, immutable JSON and Markdown report exports with Alembic revision `0005_report_exports`.
+- Added report export listing and integrity-checked download APIs.
+
+### Security
+
+- Operators and approvers cannot retrieve raw evidence or report snapshot content.
+- Raw evidence access fails closed when the reader credential is absent or the evidence chain is invalid.
+- Report downloads recompute content size and SHA-256 before returning bytes.
+- Successful sensitive-content reads append actor-bound audit events without logging payloads.
+
 ## [0.0.9] - 2026-08-01
 
 ### Added

@@ -53,6 +53,7 @@ TaskId = NewType("TaskId", str)
 ActionId = NewType("ActionId", str)
 EvidenceId = NewType("EvidenceId", str)
 ArtifactId = NewType("ArtifactId", str)
+ReportExportId = NewType("ReportExportId", str)
 ApprovalId = NewType("ApprovalId", str)
 FindingId = NewType("FindingId", str)
 AuditEventId = NewType("AuditEventId", str)
@@ -110,6 +111,10 @@ def new_evidence_id() -> EvidenceId:
 
 def new_artifact_id() -> ArtifactId:
     return ArtifactId(new_identifier())
+
+
+def new_report_export_id() -> ReportExportId:
+    return ReportExportId(new_identifier())
 
 
 def new_approval_id() -> ApprovalId:

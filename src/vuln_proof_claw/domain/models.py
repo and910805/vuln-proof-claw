@@ -10,6 +10,7 @@ from vuln_proof_claw.domain.enums import (
     ActionState,
     ArtifactKind,
     FindingStatus,
+    ReportFormat,
     RiskLevel,
     WorkerState,
 )
@@ -24,6 +25,7 @@ from vuln_proof_claw.domain.identifiers import (
     FindingId,
     FlowId,
     ProjectId,
+    ReportExportId,
     TaskId,
     WorkerId,
     new_action_id,
@@ -35,6 +37,7 @@ from vuln_proof_claw.domain.identifiers import (
     new_finding_id,
     new_flow_id,
     new_project_id,
+    new_report_export_id,
     new_task_id,
     new_worker_id,
 )
@@ -278,6 +281,30 @@ class Artifact:
         _require_text(self.media_type, "media_type")
         _require_text(self.storage_reference, "storage_reference")
         _require_sha256(self.digest, "digest")
+        _require_aware(self.created_at, "created_at")
+
+
+@dataclass(frozen=True, slots=True)
+class ReportExport:
+    """Immutable, engagement-scoped report snapshot metadata."""
+
+    engagement_id: EngagementId
+    format: ReportFormat
+    media_type: str
+    digest: str
+    size: int
+    idempotency_key: str
+    created_by: str
+    id: ReportExportId = field(default_factory=new_report_export_id)
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        _require_text(self.media_type, "media_type")
+        _require_sha256(self.digest, "digest")
+        if self.size < 0:
+            raise DomainValidationError("size must not be negative")
+        _require_text(self.idempotency_key, "idempotency_key")
+        _require_text(self.created_by, "created_by")
         _require_aware(self.created_at, "created_at")
 
 

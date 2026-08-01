@@ -38,6 +38,11 @@ token。Token 不可放入 URL、提交到設定檔、寫入 evidence 或嵌入 
 內建 Web console 目前尚未實作 credential-entry session。啟用 authentication 後，
 請先使用具認證能力的 API client，等待 v0.4 session UI 完成。
 
+0.0.10 版可額外設定第三組且不得重複的 evidence-reader identity 與 token。設定後，
+此 token 可進行唯讀 API 存取，且是 raw evidence 與不可變報告內容下載 endpoint
+唯一接受的 role。Operator 可以建立報告匯出，但不能下載其內容。詳見
+[Evidence 存取與報告匯出](EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md)。
+
 ## Approval decision
 
 `POST /api/v1/actions/{action_id}/approval-decision` 接受：

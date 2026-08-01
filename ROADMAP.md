@@ -13,7 +13,7 @@ Roadmap items describe intent, not guaranteed release dates.
 
 ## v0.1 — Evidence Core
 
-Current preview: persisted normalized engagement scopes, Flow/Task/Action proposal APIs, authenticated single-action approval decisions, execution-time approval consumption, an immutable audit trail, transactional raw evidence chains, integrity-aware reports, database re-verification, a fail-closed HTTP capture contract, and a durable disposable Worker lifecycle registry with restart reconciliation are implemented. A concrete restricted runtime, orphan-runtime janitor, raw-evidence authorization, browser authentication sessions, and export artifacts remain in progress.
+Current preview: persisted normalized engagement scopes, Flow/Task/Action proposal APIs, authenticated single-action approval decisions, execution-time approval consumption, an immutable audit trail, transactional raw evidence chains, separately authorized and audited raw-evidence reads, integrity-aware reports, immutable report exports, database re-verification, a fail-closed HTTP capture contract, and a durable disposable Worker lifecycle registry with restart reconciliation are implemented. A concrete restricted runtime, orphan-runtime janitor, and browser authentication sessions remain in progress.
 
 - Project, Engagement, Scope, and Action persistence.
 - Structured HTTP request/response capture.

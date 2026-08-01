@@ -75,3 +75,10 @@ class ArtifactKind(StrEnum):
     DOWNLOAD = "download"
     REPORT = "report"
     OTHER = "other"
+
+
+class ReportFormat(StrEnum):
+    """Stable formats for immutable engagement report snapshots."""
+
+    JSON = "json"
+    MARKDOWN = "markdown"

@@ -21,6 +21,7 @@ BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Depends(beare
 class PrincipalRole(StrEnum):
     OPERATOR = "operator"
     APPROVER = "approver"
+    EVIDENCE_READER = "evidence_reader"
     LOCAL = "local"
 
 
@@ -61,6 +62,11 @@ def require_authenticated_if_configured(
         return AuthenticatedPrincipal(config.operator_identity, PrincipalRole.OPERATOR)
     if _matches(credentials, config.approver_token):
         return AuthenticatedPrincipal(config.approver_identity, PrincipalRole.APPROVER)
+    if config.evidence_access_ready and _matches(credentials, config.evidence_reader_token):
+        return AuthenticatedPrincipal(
+            config.evidence_reader_identity,
+            PrincipalRole.EVIDENCE_READER,
+        )
     raise _unauthorized()
 
 
@@ -91,3 +97,22 @@ def require_approver(
     if not _matches(credentials, config.approver_token):
         raise _unauthorized("approver_authentication_required")
     return AuthenticatedPrincipal(config.approver_identity, PrincipalRole.APPROVER)
+
+
+def require_evidence_reader(
+    request: Request,
+    credentials: BearerCredentials,
+) -> AuthenticatedPrincipal:
+    """Require a dedicated reader credential before releasing sensitive evidence."""
+    config = _api_config(request)
+    if not config.evidence_access_ready:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="evidence_access_not_ready",
+        )
+    if not _matches(credentials, config.evidence_reader_token):
+        raise _unauthorized("evidence_reader_authentication_required")
+    return AuthenticatedPrincipal(
+        config.evidence_reader_identity,
+        PrincipalRole.EVIDENCE_READER,
+    )

@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.9-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.10-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
@@ -44,18 +44,18 @@ vuln-proof-claw 以這些要求作為核心設計：
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
 | REST API | 版本化 health、project、engagement、workflow、action policy、audit、report contract 與 OpenAPI |
 | Web 控制台 | 內建 React／TypeScript 儀表板、雙語介面、建立專案與如實能力狀態 |
-| Evidence Core 預覽版 | 持久化評估範圍、離線目標政策判斷，以及僅含 metadata 的 JSON／Markdown 報告 |
+| Evidence Core 預覽版 | Transactional raw evidence chain、獨立 reader 存取，以及不可變 JSON／Markdown 報告匯出 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
-| Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator 與 approver role |
+| Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator、approver 與 evidence-reader role |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
 | Worker | 持久化 lifecycle registry、重啟 reconciliation 與可注入 runtime boundary；具體目標執行仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
-目標探索、資安工具執行、LLM orchestration、Planner／Operator／Verifier agents 與
-報告產生都屬於後續路線圖，並不是目前 Phase 0 已提供的功能。
+目標探索、資安工具執行、LLM orchestration、Planner／Operator／Verifier agents，以及
+進階 HTML／SARIF 報告仍屬於後續路線圖，並不是目前已提供的功能。
 
 ## 快速開始
 
@@ -178,9 +178,10 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 
 ## 專案狀態與路線圖
 
-Phase 0 基礎建設已完成。下一個里程碑 v0.1 將聚焦 Evidence Core：持久化
-Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdown／JSON
-報告。
+Phase 0 基礎建設已完成。v0.1 預覽版目前包含持久化 Engagement、結構化 HTTP
+capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱，以及不可變的
+Markdown／JSON 報告匯出。Evidence Core 里程碑仍待完成具體受限 runtime 與
+orphan-runtime janitor。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。
@@ -201,6 +202,7 @@ Engagement、結構化 HTTP capture、一次性 Worker lifecycle，以及 Markdo
 | 受控 HTTP Capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
 | 控制平面工作流程 API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
+| Evidence 存取與報告匯出 | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
 | 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |

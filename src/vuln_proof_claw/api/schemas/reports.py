@@ -71,3 +71,25 @@ class EngagementReport(ReportSchema):
     findings: tuple[FindingReportItem, ...]
     raw_evidence_included: Literal[False] = False
     execution_available: Literal[False] = False
+
+
+class ReportExportCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    format: Literal["json", "markdown"]
+
+
+class ReportExportSummary(ReportSchema):
+    id: str
+    engagement_id: str
+    format: Literal["json", "markdown"]
+    media_type: str
+    digest: str
+    size: int
+    created_by: str
+    created_at: datetime
+
+
+class ReportExportList(ReportSchema):
+    items: tuple[ReportExportSummary, ...]
+    total: int

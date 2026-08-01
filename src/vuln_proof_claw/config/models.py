@@ -38,8 +38,17 @@ class ApiConfig(FrozenConfigModel):
     authentication_ready: bool = False
     operator_identity: str = Field(default="local-operator", min_length=1, max_length=320)
     approver_identity: str = Field(default="local-approver", min_length=1, max_length=320)
+    evidence_reader_identity: str = Field(
+        default="local-evidence-reader", min_length=1, max_length=320
+    )
     operator_token: SecretStr | None = Field(default=None, min_length=32)
     approver_token: SecretStr | None = Field(default=None, min_length=32)
+    evidence_reader_token: SecretStr | None = Field(default=None, min_length=32)
+
+    @property
+    def evidence_access_ready(self) -> bool:
+        """Return whether the separately authenticated raw-evidence path is enabled."""
+        return self.authentication_ready and self.evidence_reader_token is not None
 
     @model_validator(mode="after")
     def validate_authentication(self) -> ApiConfig:
@@ -47,14 +56,11 @@ class ApiConfig(FrozenConfigModel):
         tokens = (self.operator_token, self.approver_token)
         if self.authentication_ready and any(token is None for token in tokens):
             raise ValueError("authentication readiness requires operator and approver tokens")
-        operator_token = self.operator_token
-        approver_token = self.approver_token
-        if (
-            operator_token is not None
-            and approver_token is not None
-            and operator_token.get_secret_value() == approver_token.get_secret_value()
-        ):
-            raise ValueError("operator and approver tokens must be distinct")
+        configured = [
+            token.get_secret_value() for token in (*tokens, self.evidence_reader_token) if token
+        ]
+        if len(configured) != len(set(configured)):
+            raise ValueError("operator, approver, and evidence-reader tokens must be distinct")
         return self
 
 

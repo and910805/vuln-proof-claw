@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from vuln_proof_claw.domain.identifiers import ActionId, EvidenceId
+from vuln_proof_claw.domain.identifiers import ActionId, EngagementId, EvidenceId
 from vuln_proof_claw.domain.models import Evidence
 from vuln_proof_claw.evidence.canonical import canonical_json
 from vuln_proof_claw.evidence.hash_chain import (
@@ -41,6 +43,21 @@ class EvidenceTooLargeError(EvidenceStoreError):
     """Raised before oversized raw evidence can enter a transaction."""
 
 
+@dataclass(frozen=True, slots=True)
+class StoredEvidencePayload:
+    """Raw evidence plus the minimum metadata needed for guarded delivery."""
+
+    evidence: Evidence
+    engagement_id: EngagementId
+    chain_index: int
+    media_type: str
+    raw_content: bytes
+
+    @property
+    def raw_size(self) -> int:
+        return len(self.raw_content)
+
+
 class PersistentEvidenceStore:
     """Append and verify per-engagement evidence chains in one database transaction."""
 
@@ -59,9 +76,7 @@ class PersistentEvidenceStore:
         """Append evidence after locking and validating its engagement boundary."""
         raw = bytes(raw_content)
         if len(raw) > self._max_raw_bytes:
-            raise EvidenceTooLargeError(
-                f"raw evidence exceeds {self._max_raw_bytes} byte limit"
-            )
+            raise EvidenceTooLargeError(f"raw evidence exceeds {self._max_raw_bytes} byte limit")
         if self._session.get(EvidenceMetadataRecord, metadata.evidence_id) is not None:
             raise DuplicateEvidenceError
 
@@ -120,6 +135,49 @@ class PersistentEvidenceStore:
         """Return raw bytes to trusted internal callers; no public API exposes this method."""
         payload = self._session.get(EvidencePayloadRecord, evidence_id)
         return None if payload is None else bytes(payload.raw_content)
+
+    def get_for_engagement(
+        self, engagement_id: EngagementId, evidence_id: EvidenceId
+    ) -> StoredEvidencePayload | None:
+        """Read one payload only when it belongs to the requested engagement."""
+        row = self._session.execute(
+            select(EvidencePayloadRecord, EvidenceMetadataRecord)
+            .join(
+                EvidenceMetadataRecord,
+                EvidenceMetadataRecord.id == EvidencePayloadRecord.evidence_id,
+            )
+            .where(
+                EvidencePayloadRecord.engagement_id == engagement_id,
+                EvidencePayloadRecord.evidence_id == evidence_id,
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        payload, metadata = row
+        try:
+            canonical = json.loads(bytes(payload.canonical_metadata))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise InvalidEvidenceError("persisted evidence metadata is invalid") from error
+        if not isinstance(canonical, dict):
+            raise InvalidEvidenceError("persisted evidence metadata is invalid")
+        media_type = canonical.get("media_type", "application/octet-stream")
+        if not isinstance(media_type, str):
+            raise InvalidEvidenceError("persisted evidence media type is invalid")
+        return StoredEvidencePayload(
+            evidence=Evidence(
+                id=EvidenceId(metadata.id),
+                action_id=ActionId(metadata.action_id),
+                tool_name=metadata.tool_name,
+                tool_version=metadata.tool_version,
+                digest=metadata.digest,
+                previous_digest=metadata.previous_digest,
+                captured_at=_utc(metadata.captured_at),
+            ),
+            engagement_id=EngagementId(payload.engagement_id),
+            chain_index=payload.chain_index,
+            media_type=media_type,
+            raw_content=bytes(payload.raw_content),
+        )
 
     def verify_engagement(self, engagement_id: str) -> ChainVerification:
         """Recompute every link from persisted canonical metadata and raw bytes."""

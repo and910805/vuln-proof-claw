@@ -44,6 +44,12 @@ The bundled Web console does not yet implement a credential-entry session. With
 authentication enabled, use an authenticated API client until the v0.4 session UI is
 implemented.
 
+Version 0.0.10 optionally adds a third, distinct evidence-reader identity and token.
+When configured, this token can authenticate read-only API requests and is the only
+role accepted by raw-evidence and immutable report-content download endpoints.
+Operators create report exports but cannot download their content. See
+[Evidence access and report exports](EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md).
+
 ## Approval decision
 
 `POST /api/v1/actions/{action_id}/approval-decision` accepts:

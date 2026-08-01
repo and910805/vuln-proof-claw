@@ -98,9 +98,7 @@ class TaskRecord(Base):
 
 class ApprovalRecord(Base):
     __tablename__ = "approvals"
-    __table_args__ = (
-        Index("ix_approvals_engagement_expires", "engagement_id", "expires_at"),
-    )
+    __table_args__ = (Index("ix_approvals_engagement_expires", "engagement_id", "expires_at"),)
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
     engagement_id: Mapped[str] = mapped_column(
         ForeignKey("engagements.id", ondelete="CASCADE"),
@@ -161,8 +159,7 @@ class WorkerExecutionRecord(Base):
             name="state",
         ),
         CheckConstraint(
-            "NOT cleaned_up OR state IN "
-            "('completed', 'failed', 'timed_out', 'cancelled', 'lost')",
+            "NOT cleaned_up OR state IN ('completed', 'failed', 'timed_out', 'cancelled', 'lost')",
             name="cleanup_terminal",
         ),
     )
@@ -240,6 +237,29 @@ class ArtifactRecord(Base):
     media_type: Mapped[str] = mapped_column(String(255))
     storage_reference: Mapped[str] = mapped_column(Text)
     digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ReportExportRecord(Base):
+    __tablename__ = "report_exports"
+    __table_args__ = (
+        UniqueConstraint("engagement_id", "idempotency_key"),
+        Index("ix_report_exports_engagement_created", "engagement_id", "created_at"),
+        CheckConstraint("size >= 0", name="size"),
+        CheckConstraint("format IN ('json', 'markdown')", name="format"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    format: Mapped[str] = mapped_column(String(16))
+    media_type: Mapped[str] = mapped_column(String(255))
+    digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
+    size: Mapped[int] = mapped_column(Integer)
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_by: Mapped[str] = mapped_column(String(320))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
