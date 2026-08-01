@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -165,6 +166,28 @@ class EvidenceRecord(Base):
     digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
     previous_digest: Mapped[str | None] = mapped_column(String(DIGEST_LENGTH), nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvidencePayloadRecord(Base):
+    __tablename__ = "evidence_payloads"
+    __table_args__ = (
+        UniqueConstraint("engagement_id", "chain_index"),
+        Index("ix_evidence_payloads_engagement_chain", "engagement_id", "chain_index"),
+        CheckConstraint("raw_size >= 0", name="raw_size"),
+    )
+
+    evidence_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"),
+        index=True,
+    )
+    chain_index: Mapped[int] = mapped_column(Integer)
+    canonical_metadata: Mapped[bytes] = mapped_column(LargeBinary)
+    raw_content: Mapped[bytes] = mapped_column(LargeBinary)
+    raw_size: Mapped[int] = mapped_column(Integer)
 
 
 class ArtifactRecord(Base):

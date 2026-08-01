@@ -47,6 +47,14 @@ class ReportCounts(BaseModel):
     findings: int
 
 
+class EvidenceIntegrity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["valid", "invalid", "not_available"]
+    checked_records: int
+    reason: str | None = None
+
+
 class EngagementReport(ReportSchema):
     report_version: Literal["v1"] = "v1"
     generated_at: datetime
@@ -58,6 +66,7 @@ class EngagementReport(ReportSchema):
     scope: ScopeDefinition
     counts: ReportCounts
     action_states: dict[str, int]
+    evidence_integrity: EvidenceIntegrity
     evidence: tuple[EvidenceReportItem, ...]
     findings: tuple[FindingReportItem, ...]
     raw_evidence_included: Literal[False] = False

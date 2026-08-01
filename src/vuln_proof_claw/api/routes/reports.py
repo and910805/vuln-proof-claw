@@ -14,12 +14,19 @@ from vuln_proof_claw.api.dependencies import get_session
 from vuln_proof_claw.api.schemas.console import ScopeDefinition
 from vuln_proof_claw.api.schemas.reports import (
     EngagementReport,
+    EvidenceIntegrity,
     EvidenceReportItem,
     FindingReportItem,
     ReportCounts,
 )
 from vuln_proof_claw.domain.identifiers import EngagementId
-from vuln_proof_claw.persistence.models import ActionRecord, EvidenceRecord, FindingRecord
+from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
+from vuln_proof_claw.persistence.models import (
+    ActionRecord,
+    EvidencePayloadRecord,
+    EvidenceRecord,
+    FindingRecord,
+)
 from vuln_proof_claw.persistence.repositories import EngagementRepository, ScopeRepository
 from vuln_proof_claw.policy.scope import EngagementScope
 
@@ -75,6 +82,27 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
     for action in actions:
         action_states[action.state] = action_states.get(action.state, 0) + 1
     engagement = stored.entity
+    payload_count = sum(
+        1
+        for _item in session.scalars(
+            select(EvidencePayloadRecord.evidence_id).where(
+                EvidencePayloadRecord.engagement_id == normalized_id
+            )
+        )
+    )
+    if payload_count != len(evidence_rows):
+        integrity = EvidenceIntegrity(
+            status="not_available",
+            checked_records=payload_count,
+            reason="raw_payload_unavailable",
+        )
+    else:
+        verification = PersistentEvidenceStore(session).verify_engagement(normalized_id)
+        integrity = EvidenceIntegrity(
+            status="valid" if verification.valid else "invalid",
+            checked_records=verification.checked_records,
+            reason=verification.reason,
+        )
     return EngagementReport(
         generated_at=datetime.now(UTC),
         engagement_id=engagement.id,
@@ -89,6 +117,7 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             findings=len(finding_rows),
         ),
         action_states=action_states,
+        evidence_integrity=integrity,
         evidence=tuple(
             EvidenceReportItem(
                 id=row.id,
@@ -143,6 +172,7 @@ def render_markdown(report: EngagementReport) -> str:
         f"- Actions: {report.counts.actions}",
         f"- Evidence records: {report.counts.evidence}",
         f"- Findings: {report.counts.findings}",
+        f"- Evidence integrity: {report.evidence_integrity.status}",
         "",
         "## Findings",
         "",

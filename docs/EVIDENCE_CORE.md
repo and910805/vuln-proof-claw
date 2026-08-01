@@ -27,4 +27,4 @@ Scope creation requires at least one allowed hostname or CIDR. Hostnames, networ
 
 Scope evaluation is a pure control-plane decision. It does not resolve DNS, send an HTTP request, follow redirects, or create a worker. A hostname result is marked `requires_dns_recheck`; a future execution adapter must re-resolve and enforce the approved network boundary for every connection and redirect.
 
-Reports exclude raw evidence by design. Durable raw HTTP capture, evidence-chain verification against stored bytes, worker lifecycle, and report export artifacts remain v0.1 implementation gates.
+Raw evidence and canonical metadata can now be persisted transactionally and re-verified from stored bytes. Raw payloads remain internal and reports expose only their integrity status and safe metadata. Target-facing HTTP capture, worker lifecycle, authenticated evidence access, and report export artifacts remain v0.1 implementation gates.

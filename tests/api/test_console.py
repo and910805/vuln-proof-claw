@@ -132,6 +132,11 @@ async def test_scoped_engagement_can_be_created_listed_and_reported(tmp_path: Pa
     assert denied.json()["reason"] == "path_denied"
     assert report.status_code == 200
     assert report.json()["counts"] == {"actions": 0, "evidence": 0, "findings": 0}
+    assert report.json()["evidence_integrity"] == {
+        "status": "valid",
+        "checked_records": 0,
+        "reason": None,
+    }
     assert report.json()["raw_evidence_included"] is False
     assert markdown.status_code == 200
     assert "# Engagement report: Production API assessment" in markdown.text

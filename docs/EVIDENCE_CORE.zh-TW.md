@@ -27,4 +27,4 @@ v0.1 預覽版把持久化且正規化的評估範圍連接到控制平面 API�
 
 範圍判斷是純控制平面決策，不會解析 DNS、傳送 HTTP 請求、跟隨 redirect 或建立 Worker。Hostname 判斷結果會標示 `requires_dns_recheck`；未來的執行 adapter 必須在每次連線與 redirect 時重新解析並強制套用核准的網路邊界。
 
-報告刻意不包含原始證據。持久化原始 HTTP capture、依儲存 bytes 驗證 evidence chain、Worker lifecycle 與報告匯出 artifact，仍是 v0.1 後續實作關卡。
+系統目前可 transactional 保存原始證據與 canonical metadata，並由資料庫內容重新驗證完整性。原始 payload 維持內部使用，報告只呈現完整性狀態與安全 metadata。面向目標的 HTTP capture、Worker lifecycle、具備身分驗證的證據存取與報告匯出 artifact，仍是 v0.1 後續實作關卡。

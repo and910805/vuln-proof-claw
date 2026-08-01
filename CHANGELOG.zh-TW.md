@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+## [0.0.4] - 2026-08-01
+
+### Added
+
+- 新增 transactional raw evidence 持久化、canonical metadata 與每個 Engagement 的 chain index。
+- 新增預設 10 MiB payload 限制，以及嚴格的 Action／Engagement 綁定。
+- 新增資料庫 evidence chain 重算驗證，並在 Engagement 報告呈現完整性狀態。
+- 新增 Alembic revision `0003_evidence_payloads`。
+
+### Security
+
+- 原始證據維持內部使用，不會透過尚未驗證身分的 pre-alpha API 對外提供。
+- 資料庫驗證可偵測內容竄改、chain link 中斷、index 缺漏與 payload size 不符。
+
 ## [0.0.3] - 2026-08-01
 
 ### Added

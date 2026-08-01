@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "engagements",
     "engagement_scopes",
     "evidence",
+    "evidence_payloads",
     "finding_evidence",
     "findings",
     "flows",
@@ -69,6 +70,7 @@ def test_postgresql_migration_can_render_offline_sql(capsys: pytest.CaptureFixtu
     assert "CREATE TABLE projects" in output
     assert "CREATE TABLE actions" in output
     assert "CREATE TABLE engagement_scopes" in output
+    assert "CREATE TABLE evidence_payloads" in output
     assert "CREATE INDEX ix_evidence_action_captured" in output
 
 

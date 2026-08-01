@@ -6,6 +6,20 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.4] - 2026-08-01
+
+### Added
+
+- Added transactional raw evidence persistence with canonical metadata and per-engagement chain indexes.
+- Added a 10 MiB default payload limit and strict Action-to-Engagement binding.
+- Added database-backed evidence-chain recomputation and integrity status in engagement reports.
+- Added Alembic revision `0003_evidence_payloads`.
+
+### Security
+
+- Raw evidence remains internal and is not exposed through the unauthenticated pre-alpha API.
+- Database verification detects modified content, broken links, missing indexes, and size mismatches.
+
 ## [0.0.3] - 2026-08-01
 
 ### Added
