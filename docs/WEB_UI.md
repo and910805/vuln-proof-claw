@@ -14,15 +14,16 @@ The Web foundation currently provides:
 - Project listing and project creation.
 - A deep-linkable authorized URL assessment workspace.
 - Automatic creation of a narrow 24-hour L0 Engagement from the confirmed target.
-- Passive assessment status, Evidence/Finding counts, and JSON/Markdown report downloads.
+- Safe/Fast/Deep same-origin discovery, page/Evidence/Finding counts, prioritized
+  remediation, and JSON/Markdown/HTML reporting.
 - Persistent newest-first assessment history with project filtering, failure status, and repeat report downloads after refresh.
 - Optional operator Bearer-token input for authenticated deployments.
 - The enforced L0-L4 risk-policy reference.
 - Explicit status for capabilities that are operational or still locked.
 
-The browser can start only the bounded passive URL assessment. It does not crawl,
-authenticate to targets, run external tools or payloads, approve risky actions, render
-raw Evidence, or independently verify Findings.
+The browser can start only bounded, credential-free, GET-only discovery. It does not
+authenticate to targets, submit forms, run external tools or payloads, approve risky
+actions, render raw Evidence, or independently verify Findings.
 
 ## Open the console
 

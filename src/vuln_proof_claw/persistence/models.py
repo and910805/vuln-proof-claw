@@ -293,6 +293,15 @@ class FindingRecord(Base):
     vulnerability_class: Mapped[str] = mapped_column(String(255))
     affected_target: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), index=True)
+    severity: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="informational"
+    )
+    confidence: Mapped[str] = mapped_column(String(32), nullable=False, server_default="medium")
+    remediation: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="Review the evidence and apply the relevant security control.",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012

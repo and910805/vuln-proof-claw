@@ -34,10 +34,15 @@ status, persistent history, and JSON/Markdown reports.
 
 ## v0.2 — Useful Web Discovery
 
-- Bounded same-origin crawler with page/request/time budgets.
-- `robots.txt`, sitemap, JavaScript URL, OpenAPI, GraphQL, and common security-file discovery.
-- Deduplicated findings with severity, remediation, confidence, and HTML report preview.
-- Safe/Fast/Deep presets; detailed limits remain optional advanced settings.
+Version 0.2.0 delivers the first bounded multi-page workflow: same-origin extraction,
+scope and DNS re-evaluation for every request, per-page Evidence, aggregate Findings,
+and fixed Safe (5), Fast (15), and Deep (30) page/request/time budgets.
+
+- Discovery from HTML links, assets and forms, `robots.txt`, sitemap locations,
+  JavaScript API paths, OpenAPI/Swagger, GraphQL, and common security files.
+- Findings include severity, remediation, confidence, and an escaped HTML preview.
+- Remaining v0.2.x depth: semantic OpenAPI operation inventory, richer sitemap index
+  handling, content-aware duplicate suppression, and crawl progress streaming.
 
 ## v0.3 — Authorized Active Testing
 
@@ -52,6 +57,9 @@ status, persistent history, and JSON/Markdown reports.
 - Live progress, interactive approvals, evidence viewer, finding review, and exports
   for HTML, SARIF, and bug-bounty workflows.
 - Multi-provider registry and capability detection.
+- A local ProofClaw MCP server for Codex, Claude Code, and other clients following
+  [AI Driver Architecture](docs/AI_DRIVER.md); managed automation continues to use
+  provider APIs or approved enterprise access tokens.
 
 ## v1.0 — Stable Open Source
 

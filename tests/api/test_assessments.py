@@ -53,6 +53,27 @@ class FakeAssessmentTransport:
         )
 
 
+class LinkedAssessmentTransport(FakeAssessmentTransport):
+    def send(
+        self, request: HttpCaptureRequest, limits: HttpCaptureLimits
+    ) -> HttpCaptureResponse:
+        self.calls.append((request, limits))
+        links = {
+            "/v1": '<a href="/v1/one">One</a><a href="/v1/two">Two</a>',
+            "/v1/one": '<a href="/v1/three">Three</a>',
+            "/v1/two": '<a href="/v1">Root</a>',
+            "/v1/three": "<title>Done</title>",
+        }
+        path = request.target.removeprefix("https://api.example.test:443")
+        return HttpCaptureResponse(
+            status_code=200,
+            final_target=request.target,
+            headers=(("Content-Type", "text/html"),),
+            body=links[path].encode(),
+            duration_ms=2,
+        )
+
+
 @asynccontextmanager
 async def assessment_client(
     database_path: Path,
@@ -172,7 +193,11 @@ async def test_assessment_creates_evidence_findings_report_and_audit_idempotentl
     assert report.json()["counts"] == {"actions": 1, "evidence": 1, "findings": 8}
     assert dashboard.json()["execution_available"] is True
     event_types = [item["event_type"] for item in audit.json()["items"]]
-    assert event_types[:2] == ["assessment.completed", "assessment.created"]
+    assert event_types[:3] == [
+        "assessment.discovery_completed",
+        "assessment.completed",
+        "assessment.created",
+    ]
 
 
 async def test_assessment_rejects_wrong_role_scope_and_disabled_execution(tmp_path: Path) -> None:
@@ -205,6 +230,44 @@ async def test_assessment_rejects_wrong_role_scope_and_disabled_execution(tmp_pa
         )
     assert disabled.status_code == 503
     assert disabled.json()["detail"] == "assessment_execution_not_ready"
+
+
+async def test_safe_preset_crawls_same_origin_links_and_aggregates_report(tmp_path: Path) -> None:
+    transport = LinkedAssessmentTransport()
+    async with assessment_client(tmp_path / "crawl.db", transport) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        created = await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={"target": "https://api.example.test/v1", "preset": "safe"},
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "crawl-safe"},
+        )
+        report = await client.get(
+            f"/api/v1/engagements/{engagement_id}/report",
+            headers=OPERATOR_HEADERS,
+        )
+        html_report = await client.get(
+            f"/api/v1/engagements/{engagement_id}/report.html",
+            headers=OPERATOR_HEADERS,
+        )
+        history = await client.get("/api/v1/assessments", headers=OPERATOR_HEADERS)
+
+    assert created.status_code == 201
+    assert created.json()["pages_scanned"] == 4
+    assert created.json()["crawl_truncated"] is False
+    assert len(created.json()["evidence_ids"]) == 4
+    assert len(transport.calls) == 4
+    assert report.json()["discovery"]["pages_scanned"] == 4
+    assert report.json()["discovery"]["scanned_targets"] == [
+        "https://api.example.test:443/v1",
+        "https://api.example.test:443/v1/one",
+        "https://api.example.test:443/v1/two",
+        "https://api.example.test:443/v1/three",
+    ]
+    assert history.json()["items"][0]["evidence_count"] == 4
+    assert html_report.status_code == 200
+    assert "Content-Security-Policy" in html_report.headers
+    assert "Pages scanned" in html_report.text
 
 
 async def test_assessment_commits_safe_failed_state_when_transport_fails(tmp_path: Path) -> None:

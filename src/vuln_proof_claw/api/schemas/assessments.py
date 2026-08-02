@@ -14,6 +14,7 @@ class AssessmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     target: str = Field(min_length=1, max_length=2048)
+    preset: Literal["safe", "fast", "deep"] = "safe"
 
 
 class AssessmentSummary(BaseModel):
@@ -28,8 +29,11 @@ class AssessmentSummary(BaseModel):
     findings_count: int
     error_code: str | None
     replayed: bool
+    pages_scanned: int
+    crawl_truncated: bool
     report_url: str
     markdown_report_url: str
+    html_report_url: str
 
 
 class AssessmentHistoryItem(BaseModel):

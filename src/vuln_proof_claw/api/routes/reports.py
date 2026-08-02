@@ -1,13 +1,16 @@
-"""Metadata-only JSON and Markdown engagement reports."""
+"""Metadata-only JSON, Markdown, and escaped HTML engagement reports."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import html
+import json
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,6 +24,7 @@ from vuln_proof_claw.api.auth import (
 from vuln_proof_claw.api.dependencies import get_session
 from vuln_proof_claw.api.schemas.console import ScopeDefinition
 from vuln_proof_claw.api.schemas.reports import (
+    DiscoverySummary,
     EngagementReport,
     EvidenceIntegrity,
     EvidenceReportItem,
@@ -30,11 +34,13 @@ from vuln_proof_claw.api.schemas.reports import (
     ReportExportList,
     ReportExportSummary,
 )
+from vuln_proof_claw.assessment.discovery import discover_targets
 from vuln_proof_claw.domain.enums import ReportFormat
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId, ReportExportId
 from vuln_proof_claw.domain.models import ReportExport
 from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
 from vuln_proof_claw.evidence.store import InvalidEvidenceError
+from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
 from vuln_proof_claw.persistence.models import (
     ActionRecord,
     EvidencePayloadRecord,
@@ -104,6 +110,43 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
     for action in actions:
         action_states[action.state] = action_states.get(action.state, 0) + 1
     engagement = stored.entity
+    assessment_actions = tuple(
+        action
+        for action in actions
+        if action.action_type in {"passive_fingerprint", "passive_discovery"}
+    )
+    scanned_targets = tuple(
+        dict.fromkeys(
+            action.normalized_target
+            for action in assessment_actions
+            if action.state == "succeeded"
+        )
+    )
+    candidates: dict[str, None] = {}
+    evidence_store = PersistentEvidenceStore(session)
+    for row in evidence_rows:
+        try:
+            stored_payload = evidence_store.get_for_engagement(normalized_id, EvidenceId(row.id))
+        except InvalidEvidenceError:
+            continue
+        if stored_payload is None:
+            continue
+        try:
+            capture = json.loads(stored_payload.raw_content)
+            request_target = capture["request"]["target"]
+            response_payload = capture["response"]
+            response = HttpCaptureResponse(
+                status_code=response_payload["status_code"],
+                final_target=response_payload["final_target"],
+                headers=tuple(tuple(item) for item in response_payload["headers"]),
+                body=base64.b64decode(response_payload["body_base64"], validate=True),
+                duration_ms=0,
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        for discovered in discover_targets(request_target, response):
+            if discovered.url not in scanned_targets:
+                candidates.setdefault(discovered.url, None)
     payload_count = sum(
         1
         for _item in session.scalars(
@@ -140,6 +183,11 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
         ),
         action_states=action_states,
         evidence_integrity=integrity,
+        discovery=DiscoverySummary(
+            pages_scanned=len(scanned_targets),
+            scanned_targets=scanned_targets,
+            candidate_targets=tuple(candidates),
+        ),
         evidence=tuple(
             EvidenceReportItem(
                 id=row.id,
@@ -159,6 +207,9 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
                 vulnerability_class=row.vulnerability_class,
                 affected_target=row.affected_target,
                 status=row.status,
+                severity=row.severity,
+                confidence=row.confidence,
+                remediation=row.remediation,
                 created_at=row.created_at,
             )
             for row in finding_rows
@@ -194,22 +245,30 @@ def render_markdown(report: EngagementReport) -> str:
         f"- Actions: {report.counts.actions}",
         f"- Evidence records: {report.counts.evidence}",
         f"- Findings: {report.counts.findings}",
+        f"- Pages scanned: {report.discovery.pages_scanned}",
         f"- Evidence integrity: {report.evidence_integrity.status}",
         "",
         "## Findings",
         "",
     ]
     if report.findings:
-        lines.extend(("| Status | Class | Title | Target |", "| --- | --- | --- | --- |"))
+        lines.extend(
+            (
+                "| Severity | Confidence | Class | Title | Target | Remediation |",
+                "| --- | --- | --- | --- | --- | --- |",
+            )
+        )
         lines.extend(
             "| "
             + " | ".join(
                 _markdown_cell(value)
                 for value in (
-                    item.status,
+                    item.severity,
+                    item.confidence,
                     item.vulnerability_class,
                     item.title,
                     item.affected_target,
+                    item.remediation,
                 )
             )
             + " |"
@@ -228,6 +287,53 @@ def render_markdown(report: EngagementReport) -> str:
     else:
         lines.append("No evidence has been recorded.")
     return "\n".join(lines) + "\n"
+
+
+def render_html(report: EngagementReport) -> str:
+    """Render a standalone, escaped HTML preview without active content."""
+    escape = html.escape
+    finding_rows = "".join(
+        "<tr>"
+        f'<td><span class="severity {escape(item.severity)}">{escape(item.severity)}</span></td>'
+        f"<td>{escape(item.confidence)}</td><td>{escape(item.vulnerability_class)}</td>"
+        f"<td><strong>{escape(item.title)}</strong><br><small>{escape(item.affected_target)}</small></td>"
+        f"<td>{escape(item.remediation)}</td></tr>"
+        for item in report.findings
+    ) or '<tr><td colspan="5">No findings recorded.</td></tr>'
+    target_rows = "".join(
+        f"<li><code>{escape(item)}</code></li>" for item in report.discovery.scanned_targets
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>ProofClaw report — {escape(report.engagement_name)}</title>
+<style>
+:root {{ color-scheme: dark; font-family: Inter, system-ui, sans-serif;
+background:#07100f; color:#eef5ef; }}
+body {{ margin:0; padding:40px 24px; }} main {{ max-width:1100px; margin:auto; }}
+h1 {{ font-size:clamp(2rem,5vw,4rem); margin:.2em 0; }}
+.kicker {{ color:#b9ff37; letter-spacing:.12em; }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+gap:12px; margin:28px 0; }}
+.card {{ background:#111b1a; border:1px solid #293937; border-radius:12px; padding:18px; }}
+.value {{ font-size:2rem; font-weight:700; }} table {{ width:100%; border-collapse:collapse; }}
+th,td {{ padding:12px; text-align:left; vertical-align:top; border-bottom:1px solid #293937; }}
+small,code {{ color:#a9bab7; }} .severity {{ text-transform:uppercase; font-weight:700; }}
+.high,.critical {{ color:#ff776f; }} .medium {{ color:#ffc75f; }} .low {{ color:#77d9ff; }}
+@media(max-width:700px) {{ body {{ padding:24px 12px; }}
+table {{ display:block; overflow:auto; }} }}
+</style></head><body><main>
+<p class="kicker">PROOFCLAW EVIDENCE REPORT</p><h1>{escape(report.engagement_name)}</h1>
+<p>Generated {escape(report.generated_at.isoformat())} · Evidence integrity:
+<strong>{escape(report.evidence_integrity.status)}</strong></p>
+<section class="grid"><div class="card">
+<div class="value">{report.discovery.pages_scanned}</div>Pages scanned</div>
+<div class="card"><div class="value">{report.counts.findings}</div>Findings</div>
+<div class="card"><div class="value">{report.counts.evidence}</div>Evidence records</div></section>
+<h2>Findings</h2><div class="card"><table><thead><tr><th>Severity</th>
+<th>Confidence</th><th>Class</th><th>Finding</th><th>Remediation</th></tr></thead>
+<tbody>{finding_rows}</tbody></table></div>
+<h2>Scanned targets</h2><div class="card"><ul>{target_rows}</ul></div>
+</main></body></html>"""
 
 
 def _export_summary(export: ReportExport) -> ReportExportSummary:
@@ -279,6 +385,23 @@ def engagement_report(engagement_id: str, session: SessionDependency) -> Engagem
 )
 def engagement_report_markdown(engagement_id: str, session: SessionDependency) -> str:
     return render_markdown(build_engagement_report(session, engagement_id))
+
+
+@router.get(
+    "/engagements/{engagement_id}/report.html",
+    response_class=HTMLResponse,
+    summary="Preview an escaped HTML engagement report",
+)
+def engagement_report_html(engagement_id: str, session: SessionDependency) -> HTMLResponse:
+    content = render_html(build_engagement_report(session, engagement_id))
+    return HTMLResponse(
+        content,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post(

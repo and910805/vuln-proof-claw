@@ -48,3 +48,17 @@ export async function downloadApiFile(path: string, token: string, filename: str
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
+
+export async function openApiFile(path: string, token: string) {
+  const preview = window.open("about:blank", "_blank");
+  if (preview) preview.opener = null;
+  const response = await fetch(path, { headers: authorizedHeaders(token) });
+  if (!response.ok) {
+    preview?.close();
+    throw new ApiError(response.status, `${response.status} ${response.statusText}`);
+  }
+  const objectUrl = URL.createObjectURL(await response.blob());
+  if (preview) preview.location.replace(objectUrl);
+  else window.open(objectUrl, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}

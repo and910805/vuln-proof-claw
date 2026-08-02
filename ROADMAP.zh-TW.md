@@ -31,10 +31,15 @@ Evidence 完整性狀態、持久化歷史，以及 JSON／Markdown 報告。
 
 ## v0.2 — 實用 Web Discovery
 
-- 具 page／request／time budget 的同源有界 crawler。
-- `robots.txt`、sitemap、JavaScript URL、OpenAPI、GraphQL 與常見 security file discovery。
-- Finding 去重，加入 severity、remediation、confidence 與 HTML report preview。
-- Safe／Fast／Deep preset；詳細限制維持可選的進階設定。
+0.2.0 交付第一條有界多頁流程：同源解析、每個 Request 重新進行 Scope 與 DNS Policy、
+逐頁 Evidence、聚合 Finding，以及固定 Safe（5）、Fast（15）、Deep（30）頁／Request／
+Time Budget。
+
+- 從 HTML Link、Asset、Form、`robots.txt`、Sitemap Location、JavaScript API Path、
+  OpenAPI／Swagger、GraphQL 與常見 Security File 進行 Discovery。
+- Finding 包含 Severity、Remediation、Confidence 與安全轉義 HTML Preview。
+- v0.2.x 後續深度：語意化 OpenAPI Operation Inventory、更完整 Sitemap Index、
+  Content-aware Duplicate Suppression 與 Crawl Progress Streaming。
 
 ## v0.3 — 已授權的 Active Testing
 
@@ -49,6 +54,8 @@ Evidence 完整性狀態、持久化歷史，以及 JSON／Markdown 報告。
 - 即時進度、互動式 Approval、Evidence viewer、Finding review，以及 HTML、SARIF 與
   bug-bounty workflow export。
 - Multi-provider Registry 與 capability detection。
+- 依 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)提供 Codex、Claude Code 與其他 Client 使用的
+  本機 ProofClaw MCP Server；受管自動化仍使用 Provider API 或經核准的企業 Access Token。
 
 ## v1.0 — 穩定開源版本
 

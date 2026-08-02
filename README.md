@@ -9,17 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha status:** Version 0.1.0 provides one usable, scope-checked passive URL
-> assessment that sends a bounded `GET`, stores evidence, and derives conservative
-> findings. It does not crawl, call an LLM, launch external scanners, authenticate to
-> targets, or execute exploit payloads. All broader execution paths fail closed.
+> **Alpha status:** Version 0.2.0 provides scope-checked, same-origin Web discovery
+> with Safe, Fast, and Deep budgets. Every captured page has evidence, prioritized
+> findings, and JSON, Markdown, or escaped HTML reporting. It does not authenticate to
+> targets, submit forms, run external scanners, or execute exploit payloads.
 
 ## Why vuln-proof-claw?
 
@@ -46,8 +46,8 @@ vuln-proof-claw is being built around those requirements:
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
 | REST API | Versioned health, project, engagement, passive assessment, workflow, audit, and report contracts with OpenAPI |
-| Web console | Bilingual dashboard, tab-scoped operator authentication, authorized URL assessment wizard, persistent project-filtered history, report downloads, and truthful capability status |
-| Evidence Core preview | Scoped passive URL assessment, transactional evidence, deterministic findings, and immutable reports |
+| Web console | Bilingual URL-first discovery, Safe/Fast/Deep presets, progress, prioritized findings, persistent history, and report preview/downloads |
+| Evidence Core | Scoped multi-page passive discovery, transactional evidence, deterministic findings, and immutable reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
 | Authentication | Optional API-wide Bearer boundary with distinct operator, approver, and evidence-reader roles |
@@ -57,8 +57,9 @@ vuln-proof-claw is being built around those requirements:
 | Execution | Opt-in DNS-pinned passive GET capture plus durable Worker, orphan cleanup, restricted-container policy, authenticated Engine gateway, and fixed-field Unix-socket Docker adapter; runtime startup and arbitrary tools remain disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
-Crawler-based discovery, security-tool and exploit execution, LLM orchestration,
-Planner/Operator/Verifier agents, and advanced HTML/SARIF reporting remain roadmap items.
+Authenticated discovery, security-tool and exploit execution, LLM orchestration,
+Planner/Operator/Verifier agents, and SARIF reporting remain roadmap items. The proposed
+provider-neutral AI driver is documented in [AI Driver Architecture](docs/AI_DRIVER.md).
 
 ## Quick start
 
@@ -76,8 +77,10 @@ docker compose up --build -d
 
 Open <http://127.0.0.1:8080/>, select **Assess a URL**, enter a public HTTP(S)
 URL you are authorized to test, acknowledge authorization once, and run it. The
-first run creates its private workspace automatically. The result view shows
-findings and evidence integrity and offers JSON and Markdown reports.
+first run creates its private workspace automatically. Safe mode discovers up to five
+same-origin pages; Fast and Deep modes are available under advanced options. The result
+view shows prioritized findings and evidence integrity and offers JSON, Markdown, and
+escaped HTML reports.
 
 Check the service:
 
@@ -190,13 +193,11 @@ provider keys, customer credentials, or captured target data.
 
 ## Project status and roadmap
 
-Phase 0 is the completed foundation. The v0.1.0 alpha now includes persisted
-engagements, structured HTTP capture, durable disposable-worker state, guarded raw
-evidence review, immutable Markdown/JSON report exports, a tested orphan-runtime
-cleanup contract, a complete restricted-container policy adapter, an authenticated
-bounded Engine-gateway boundary, and a fixed-field Unix-socket Docker Engine adapter.
-Worker HTTP capture ingestion and a narrow DNS-pinned GET/HEAD executor now exist. Controlled container egress, registry digest publication, and startup integration remain before
-the Evidence Core milestone is complete.
+Phase 0 is the completed foundation. Version 0.2.0 adds a usable bounded crawler,
+same-origin discovery, per-request scope and DNS enforcement, aggregate Evidence and
+Findings, severity/confidence/remediation, and JSON, Markdown, or HTML reports. Worker
+isolation and Engine-gateway foundations remain available; authenticated browser and
+active testing workflows are later milestones.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
 not guaranteed release dates.
@@ -219,6 +220,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Authentication and approvals | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | Evidence access and report exports | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
 | Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
+| AI driver architecture | [docs/AI_DRIVER.md](docs/AI_DRIVER.md) | [docs/AI_DRIVER.zh-TW.md](docs/AI_DRIVER.zh-TW.md) |
 | Disposable Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | Runtime resource janitor | [docs/RUNTIME_JANITOR.md](docs/RUNTIME_JANITOR.md) | [docs/RUNTIME_JANITOR.zh-TW.md](docs/RUNTIME_JANITOR.zh-TW.md) |
 | Restricted Docker runtime boundary | [docs/RESTRICTED_RUNTIME.md](docs/RESTRICTED_RUNTIME.md) | [docs/RESTRICTED_RUNTIME.zh-TW.md](docs/RESTRICTED_RUNTIME.zh-TW.md) |

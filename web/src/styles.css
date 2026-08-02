@@ -453,9 +453,17 @@ main { min-width: 0; }
 .finding-results > p { color: #829095; font-size: 11px; line-height: 1.55; }
 .finding-results ul { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
 .finding-results li { padding: 11px 12px; display: grid; gap: 5px; border: 1px solid #2b373c; border-radius: 7px; background: #0d1316; }
+.finding-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .finding-results strong { color: #e5ebe9; font-size: 11px; line-height: 1.45; }
 .finding-results code { width: fit-content; color: #bfd56f; font-size: 9px; overflow-wrap: anywhere; }
 .finding-results span { color: #77868b; font: 9px ui-monospace, monospace; overflow-wrap: anywhere; }
+.finding-results p { margin: 3px 0 0; color: #a9b6b3; font-size: 10px; line-height: 1.5; }
+.severity-badge { flex: 0 0 auto; padding: 3px 6px; border: 1px solid currentColor; border-radius: 999px; text-transform: uppercase; letter-spacing: .06em; }
+.severity-critical, .severity-high { color: #ff776f !important; }
+.severity-medium { color: #ffc75f !important; }
+.severity-low { color: #77d9ff !important; }
+.severity-informational { color: #91a29f !important; }
+.crawl-limited { margin: 0 20px 14px; padding: 8px 10px; border-left: 2px solid #ffc75f; color: #c6b277; font-size: 10px; }
 .empty-state.compact { min-height: 330px; }
 
 .assessment-history { margin-top: 17px; overflow: hidden; }

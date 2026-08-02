@@ -16,6 +16,7 @@ ACTION_RISK_LEVELS: Final = MappingProxyType(
         "public_page_read": RiskLevel.L0,
         "robots_read": RiskLevel.L0,
         "passive_fingerprint": RiskLevel.L0,
+        "passive_discovery": RiskLevel.L0,
         "directory_enumeration": RiskLevel.L1,
         "port_scan": RiskLevel.L1,
         "active_api_probe": RiskLevel.L1,

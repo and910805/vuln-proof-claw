@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from vuln_proof_claw.domain.enums import (
     ActionState,
     ArtifactKind,
+    FindingConfidence,
+    FindingSeverity,
     FindingStatus,
     ReportFormat,
     RiskLevel,
@@ -755,6 +757,9 @@ class FindingRepository:
                 vulnerability_class=finding.vulnerability_class,
                 affected_target=finding.affected_target,
                 status=finding.status.value,
+                severity=finding.severity.value,
+                confidence=finding.confidence.value,
+                remediation=finding.remediation,
                 created_at=finding.created_at,
             )
         )
@@ -789,6 +794,9 @@ class FindingRepository:
                 affected_target=row.affected_target,
                 evidence_ids=evidence_ids,
                 status=FindingStatus(row.status),
+                severity=FindingSeverity(row.severity),
+                confidence=FindingConfidence(row.confidence),
+                remediation=row.remediation,
                 created_at=_utc(row.created_at),
             ),
             row.version,

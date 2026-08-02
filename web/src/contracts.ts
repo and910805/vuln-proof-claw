@@ -46,8 +46,11 @@ export type AssessmentSummary = {
   findings_count: number;
   error_code: string | null;
   replayed: boolean;
+  pages_scanned: number;
+  crawl_truncated: boolean;
   report_url: string;
   markdown_report_url: string;
+  html_report_url: string;
 };
 
 export type AssessmentHistoryItem = {
@@ -88,12 +91,20 @@ export type EngagementReport = {
     checked_records: number;
     reason: string | null;
   };
+  discovery: {
+    pages_scanned: number;
+    scanned_targets: string[];
+    candidate_targets: string[];
+  };
   findings: Array<{
     id: string;
     title: string;
     vulnerability_class: string;
     affected_target: string;
     status: string;
+    severity: string;
+    confidence: string;
+    remediation: string;
     created_at: string;
   }>;
 };

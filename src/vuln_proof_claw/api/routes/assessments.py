@@ -16,6 +16,7 @@ from vuln_proof_claw.api.schemas.assessments import (
     AssessmentListResponse,
     AssessmentSummary,
 )
+from vuln_proof_claw.assessment.discovery import DISCOVERY_PRESETS
 from vuln_proof_claw.assessment.service import (
     AssessmentConflictError,
     AssessmentError,
@@ -49,8 +50,11 @@ def _summary(result: PassiveAssessmentResult) -> AssessmentSummary:
         findings_count=len(result.finding_ids),
         error_code=result.error_code,
         replayed=result.replayed,
+        pages_scanned=result.pages_scanned,
+        crawl_truncated=result.crawl_truncated,
         report_url=f"{prefix}/report",
         markdown_report_url=f"{prefix}/report.md",
+        html_report_url=f"{prefix}/report.html",
     )
 
 
@@ -126,17 +130,30 @@ def create_assessment(  # noqa: PLR0913, PLR0917 - explicit HTTP dependencies
         raise HTTPException(status_code=404, detail="engagement_not_found")
     transport = cast("AssessmentTransportFactory", factory)(scope)
     try:
-        result = PassiveAssessmentService(session).run(
+        limits = HttpCaptureLimits(
+            timeout_seconds=settings.assessment.timeout_seconds,
+            max_response_bytes=settings.assessment.max_response_bytes,
+        )
+        service = PassiveAssessmentService(session)
+        result = service.run(
             normalized_id,
             payload.target,
             normalized_key,
             principal.identity,
             transport,
-            limits=HttpCaptureLimits(
-                timeout_seconds=settings.assessment.timeout_seconds,
-                max_response_bytes=settings.assessment.max_response_bytes,
-            ),
+            limits=limits,
             user_agent=settings.assessment.user_agent,
+            include_conventional=DISCOVERY_PRESETS[payload.preset].include_conventional,
+        )
+        result = service.crawl(
+            normalized_id,
+            result,
+            normalized_key,
+            principal.identity,
+            transport,
+            limits=limits,
+            user_agent=settings.assessment.user_agent,
+            preset_name=payload.preset,
         )
     except DomainValidationError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

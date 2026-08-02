@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from vuln_proof_claw.assessment.analyzer import analyze_passive_response
+from vuln_proof_claw.domain.enums import FindingConfidence, FindingSeverity
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId
 from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
 
@@ -87,3 +88,28 @@ def test_cookie_values_cannot_impersonate_security_attributes() -> None:
         "Sensitive cookie sessionid is missing HttpOnly",
         "Sensitive cookie sessionid is missing SameSite",
     )
+
+
+def test_findings_include_priority_guidance_and_are_deduplicated() -> None:
+    findings = analyze_passive_response(
+        EngagementId("00000000-0000-7000-8000-000000000001"),
+        "https://example.test/",
+        EvidenceId("00000000-0000-7000-8000-000000000002"),
+        HttpCaptureResponse(
+            status_code=200,
+            final_target="https://example.test/",
+            headers=(
+                ("Content-Type", "application/json"),
+                ("Set-Cookie", "sessionid=one"),
+                ("Set-Cookie", "sessionid=two"),
+            ),
+            body=b"{}",
+            duration_ms=1,
+        ),
+    )
+
+    secure = [item for item in findings if item.title.endswith("missing Secure")]
+    assert len(secure) == 1
+    assert secure[0].severity is FindingSeverity.HIGH
+    assert secure[0].confidence is FindingConfidence.HIGH
+    assert "Secure" in secure[0].remediation

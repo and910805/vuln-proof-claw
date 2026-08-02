@@ -6,6 +6,28 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.2.0] - 2026-08-02
+
+### Added
+
+- Added bounded same-origin crawling with Safe (5), Fast (15), and Deep (30) page/request presets and hard time budgets.
+- Added deterministic discovery from HTML links, assets and forms, robots and sitemap references, JavaScript API paths, and conventional security/OpenAPI/GraphQL locations.
+- Added Finding severity, confidence, and actionable remediation fields with an Alembic migration.
+- Added discovery summaries and a standalone escaped HTML report protected by a restrictive Content Security Policy.
+- Added a provider-neutral AI driver architecture for future Codex, Claude Code, and other MCP clients.
+
+### Changed
+
+- Assessment results and history now aggregate every captured discovery page into one Engagement report and evidence chain.
+- The Web console now offers discovery presets, pages-scanned status, severity badges, remediation guidance, and HTML preview.
+- Advanced the Python and Web package versions to `0.2.0`.
+
+### Security
+
+- Every discovered URL must remain same-origin, match the persisted Engagement scope, pass DNS/private-address policy again, and stay inside fixed page, request, time, response-size, and timeout budgets.
+- Crawling remains credential-free, GET-only, redirect-disabled, and form-submission-disabled.
+- AI agents remain outside the security boundary and cannot grant authorization or widen scope.
+
 ## [0.1.0] - 2026-08-02
 
 ### Added

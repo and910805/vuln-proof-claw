@@ -1,13 +1,14 @@
-# Passive URL assessment 預覽版
+# 有界網站探索評估
 
 **繁體中文** | [English](PASSIVE_ASSESSMENT.md)
 
-0.0.11 版是第一條完整的 target-facing MVP 流程。輸入已授權 Engagement 內的 URL
-後，系統會建立低風險 Action、執行一次有界 GET request、保存 tamper-evident
-Evidence、產生保守的 Finding，並回傳既有 JSON 與 Markdown 報告連結。
+0.2.0 將 target-facing MVP 擴充成有界同源網站探索。輸入已授權 Engagement 內的 URL
+後，系統會擷取起始頁、解析同源 Candidate、在選定的固定 Budget 內跟進、為每頁保存
+tamper-evident Evidence、產生具優先順序的 Finding，並回傳 JSON、Markdown 與安全
+轉義 HTML 報告。
 
-這不是 autonomous penetration-testing engine。目前不會 crawl、提交 form、登入目標、
-跟隨 redirect、傳送 payload 或呼叫外部資安工具。
+這不是 autonomous penetration-testing engine。目前不會提交 form、登入目標、跟隨
+redirect、傳送 active payload 或呼叫外部資安工具。
 
 ## 啟用方式
 
@@ -18,7 +19,7 @@ Evidence、產生保守的 Finding，並回傳既有 JSON 與 Markdown 報告連
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.1.0
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.2.0
 ```
 
 Docker Compose 會把四個有界限的 assessment 設定傳入 container。若要關閉 target
@@ -35,9 +36,10 @@ port、path 與時間範圍。
 啟動。聲明會保存在該瀏覽器，不必每次重新勾選。第一次執行會自動建立私有工作區；
 Project 選擇仍可在進階整理選項內使用。
 
-精靈會在背景建立只允許確切 hostname、scheme、port 與 path 的 24 小時 L0
-Engagement。結果頁會顯示 Finding 明細、Action 終態、Evidence 數量與 chain 完整性，
-並可下載目前的 JSON 或 Markdown Engagement report。
+精靈會在背景建立只允許正規化 hostname、scheme、port 與選定 path prefix 的 24 小時
+L0 Engagement。Safe、Fast、Deep 分別限制 5、15、30 個 Request／頁面。結果會顯示
+Severity、Confidence、Remediation、Evidence Integrity，以及 JSON、Markdown 或 HTML
+報告。
 
 啟用 authentication 的 deployment 可透過「操作員權限」輸入 Operator Token。憑證只
 保存在分頁範圍的 `sessionStorage`，也能在相同對話框清除。精靈不會自動替 IP literal
@@ -51,7 +53,7 @@ Authorization: Bearer <operator token>
 Idempotency-Key: baseline-homepage-1
 Content-Type: application/json
 
-{"target":"https://app.example.test/"}
+{"target":"https://app.example.test/","preset":"safe"}
 ```
 
 Response 會包含 Action state、Evidence／Finding ID 與報告 URL。使用相同 key 與受保護
@@ -85,12 +87,11 @@ GET /api/v1/assessments?project_id={project_id}&limit=50&offset=0
 
 Deterministic analyzer 目前檢查 cleartext HTTP、HSTS、`X-Content-Type-Options`、HTML
 CSP／Referrer Policy、含版本的 Server header，以及名稱疑似敏感 Cookie 的
-Secure／HttpOnly／SameSite flag。每筆 Finding 都會引用擷取到的 Evidence。這些檢查
-刻意維持保守，不能取代人工驗證。
+Secure／HttpOnly／SameSite flag。每筆 Finding 都會引用擷取到的 Evidence，並包含
+Severity、Confidence 與 Remediation。這些檢查刻意維持保守，不能取代人工驗證。
 
 ## 邁向 autonomous assessment 的剩餘工作
 
-後續里程碑包括 container-isolated runtime、orphan cleanup、有界 crawl 與 endpoint
-discovery、OpenAPI analysis、獨立 verifier、authenticated browser session，以及更完整
-的 severity／remediation report contract。Active probe 與 exploit validation 仍需要
-另外的 approval 與 safety design。
+後續里程碑包括語意化 OpenAPI analysis、獨立 verifier、authenticated browser session
+與 SARIF export。Active probe 與 exploit validation 仍需要另外的 approval 與 safety
+design。選配 AI 互動層記錄於 [AI 驅動架構](AI_DRIVER.zh-TW.md)。

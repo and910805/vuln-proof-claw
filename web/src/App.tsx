@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiError, apiRequest, downloadApiFile } from "./api";
+import { ApiError, apiRequest, downloadApiFile, openApiFile } from "./api";
 import {
   assessmentHistoryPath,
   assessmentIdempotencyKey,
@@ -37,7 +37,7 @@ const copy = {
       findings: "Findings",
       policy: "Safety policy",
     },
-    webFoundation: "PASSIVE ASSESSMENT ALPHA",
+    webFoundation: "BOUNDED WEB DISCOVERY",
     phaseText: "Scoped engagements online",
     apiReady: "API ready",
     apiUnavailable: "API unavailable",
@@ -98,10 +98,14 @@ const copy = {
     clearToken: "Clear token",
     tokenActive: "Token configured",
     assessmentTitle: "Quick URL assessment",
-    assessmentHint: "Checks one public response, records evidence, and builds a report. Safety limits are applied automatically.",
+    assessmentHint: "Discovers same-origin pages, records evidence, and builds a prioritized report. Safety limits are applied automatically.",
     chooseProject: "Project",
     chooseProjectPlaceholder: "Automatic workspace",
     advancedOptions: "Advanced organization options",
+    scanPreset: "Discovery preset",
+    presetSafe: "Safe · up to 5 pages",
+    presetFast: "Fast · up to 15 pages + common security files",
+    presetDeep: "Deep · up to 30 pages + common security files",
     automaticProject: "The first run creates a private “Quick assessments” workspace automatically.",
     targetUrl: "Target URL",
     targetPlaceholder: "https://app.example.com/",
@@ -109,7 +113,7 @@ const copy = {
     runAssessment: "Start assessment",
     assessing: "Assessing…",
     preparingScope: "Preparing an exact target scope",
-    contactingTarget: "Capturing the bounded public response",
+    contactingTarget: "Discovering and capturing same-origin pages",
     buildingReport: "Verifying evidence and building the report",
     assessmentDisabled: "Passive target traffic is disabled in server settings.",
     assessmentResult: "Latest assessment result",
@@ -117,10 +121,13 @@ const copy = {
     findingCount: "Findings",
     evidenceCount: "Evidence records",
     evidenceIntegrity: "Evidence integrity",
+    pagesScanned: "Pages scanned",
+    crawlLimited: "Stopped at the selected discovery budget",
     findingDetails: "Finding details",
     noFindings: "No conservative header findings were produced for this response.",
     downloadJson: "Download JSON report",
     downloadMarkdown: "Download Markdown report",
+    previewHtml: "Preview HTML report",
     viewResult: "View result",
     assessmentSuccess: "Assessment completed and persisted.",
     assessmentError: "Assessment could not be completed.",
@@ -171,7 +178,7 @@ const copy = {
       findings: "漏洞發現",
       policy: "安全政策",
     },
-    webFoundation: "被動評估 Alpha",
+    webFoundation: "有界網站探索",
     phaseText: "授權範圍評估已上線",
     apiReady: "API 正常",
     apiUnavailable: "API 無法連線",
@@ -232,10 +239,14 @@ const copy = {
     clearToken: "清除 Token",
     tokenActive: "Token 已設定",
     assessmentTitle: "快速網址評估",
-    assessmentHint: "檢查一次公開 Response、保存 Evidence 並產生報告；安全限制會在背景自動套用。",
+    assessmentHint: "探索同源頁面、保存 Evidence 並產生有優先順序的報告；安全限制會在背景自動套用。",
     chooseProject: "所屬專案",
     chooseProjectPlaceholder: "自動建立工作區",
     advancedOptions: "進階整理選項",
+    scanPreset: "探索模式",
+    presetSafe: "Safe · 最多 5 頁",
+    presetFast: "Fast · 最多 15 頁及常見安全檔案",
+    presetDeep: "Deep · 最多 30 頁及常見安全檔案",
     automaticProject: "第一次執行會自動建立私有的「快速評估」工作區。",
     targetUrl: "目標網址",
     targetPlaceholder: "https://app.example.com/",
@@ -243,7 +254,7 @@ const copy = {
     runAssessment: "開始評估",
     assessing: "評估中…",
     preparingScope: "建立精確的目標 Scope",
-    contactingTarget: "擷取有界的公開 Response",
+    contactingTarget: "探索並擷取同源頁面",
     buildingReport: "驗證 Evidence 並產生報告",
     assessmentDisabled: "伺服器設定目前未啟用被動目標流量。",
     assessmentResult: "最近一次評估結果",
@@ -251,10 +262,13 @@ const copy = {
     findingCount: "Finding 數量",
     evidenceCount: "Evidence 數量",
     evidenceIntegrity: "Evidence 完整性",
+    pagesScanned: "已掃描頁面",
+    crawlLimited: "已在所選探索預算處停止",
     findingDetails: "Finding 明細",
     noFindings: "這次 Response 沒有產生保守的 Header Finding。",
     downloadJson: "下載 JSON 報告",
     downloadMarkdown: "下載 Markdown 報告",
+    previewHtml: "預覽 HTML 報告",
     viewResult: "查看結果",
     assessmentSuccess: "評估已完成並保存。",
     assessmentError: "無法完成評估。",
@@ -312,6 +326,7 @@ function App() {
   const [authenticationRequired, setAuthenticationRequired] = useState(false);
   const [assessmentProjectId, setAssessmentProjectId] = useState("");
   const [assessmentTarget, setAssessmentTarget] = useState("");
+  const [assessmentPreset, setAssessmentPreset] = useState<"safe" | "fast" | "deep">("safe");
   const [authorizationConfirmed, setAuthorizationConfirmed] = useState(
     () => localStorage.getItem("proofclaw.authorizationAcknowledged") === "true",
   );
@@ -457,7 +472,7 @@ function App() {
             "Content-Type": "application/json",
             "Idempotency-Key": assessmentIdempotencyKey(),
           },
-          body: JSON.stringify({ target: prepared.displayTarget }),
+          body: JSON.stringify({ target: prepared.displayTarget, preset: assessmentPreset }),
         },
       );
       setAssessmentStage("reporting");
@@ -501,6 +516,14 @@ function App() {
         downloadError instanceof Error ? downloadError.message : t.assessmentError,
       );
     }
+  };
+
+  const previewHtmlReport = async () => {
+    if (!latestAssessment) return;
+    const path = "html_report_url" in latestAssessment
+      ? latestAssessment.html_report_url
+      : `/api/v1/engagements/${latestAssessment.engagement_id}/report.html`;
+    await openApiFile(path, operatorToken);
   };
 
   const viewPersistedReport = async (assessment: AssessmentHistoryItem) => {
@@ -567,7 +590,7 @@ function App() {
             <span className="phase-kicker">{t.webFoundation}</span>
             <strong>{t.phaseText}</strong>
             <div className="phase-progress"><span /></div>
-            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.1 alpha</small>
+            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.2 alpha</small>
           </div>
         </div>
       </aside>
@@ -650,6 +673,7 @@ function App() {
               message={assessmentMessage}
               projectId={assessmentProjectId}
               projects={projects}
+              preset={assessmentPreset}
               target={assessmentTarget}
               stage={assessmentStage}
               t={t}
@@ -665,6 +689,8 @@ function App() {
               onHistoryDownload={(assessment, format) => void downloadReport(format, assessment)}
               onHistoryProjectChange={setHistoryProjectId}
               onHistoryView={(assessment) => void viewPersistedReport(assessment)}
+              onPreviewHtml={() => void previewHtmlReport()}
+              onPresetChange={setAssessmentPreset}
               onProjectChange={setAssessmentProjectId}
               onSubmit={(event) => void runAssessment(event)}
               onTargetChange={setAssessmentTarget}
