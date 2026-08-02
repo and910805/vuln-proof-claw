@@ -36,6 +36,7 @@ def test_compose_has_hardened_local_api_and_unpublished_database() -> None:
     assert database["security_opt"] == ["no-new-privileges:true"]
     assert compose["networks"]["worker-isolated"]["internal"] is True
     assert compose["networks"]["worker-isolated"]["name"] == "vuln-proof-claw-workers"
+    assert api["environment"]["VULN_PROOF_CLAW_ASSESSMENT__ENABLED"].endswith(":-true}")
 
 
 def test_compose_and_images_never_mount_sensitive_host_boundaries() -> None:

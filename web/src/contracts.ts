@@ -70,3 +70,30 @@ export type AssessmentList = {
   items: AssessmentHistoryItem[];
   total: number;
 };
+
+export type EngagementReport = {
+  schema_version: "v1";
+  report_version: "v1";
+  generated_at: string;
+  engagement_id: string;
+  project_id: string;
+  engagement_name: string;
+  counts: {
+    actions: number;
+    evidence: number;
+    findings: number;
+  };
+  evidence_integrity: {
+    status: "valid" | "invalid" | "not_available";
+    checked_records: number;
+    reason: string | null;
+  };
+  findings: Array<{
+    id: string;
+    title: string;
+    vulnerability_class: string;
+    affected_target: string;
+    status: string;
+    created_at: string;
+  }>;
+};

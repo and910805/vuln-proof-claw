@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.21-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Status](https://img.shields.io/badge/status-pre--alpha-orange)
+![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0.0.21 includes one opt-in, scope-checked passive URL
+> **Alpha status:** Version 0.1.0 provides one usable, scope-checked passive URL
 > assessment that sends a bounded `GET`, stores evidence, and derives conservative
 > findings. It does not crawl, call an LLM, launch external scanners, authenticate to
 > targets, or execute exploit payloads. All broader execution paths fail closed.
@@ -74,6 +74,11 @@ cd vuln-proof-claw
 docker compose up --build -d
 ```
 
+Open <http://127.0.0.1:8080/>, select **Assess a URL**, enter a public HTTP(S)
+URL you are authorized to test, acknowledge authorization once, and run it. The
+first run creates its private workspace automatically. The result view shows
+findings and evidence integrity and offers JSON and Markdown reports.
+
 Check the service:
 
 ```bash
@@ -93,8 +98,10 @@ Stop the stack without deleting database data:
 docker compose down
 ```
 
-The Compose defaults are for local development only. Set your own PostgreSQL
-credentials before using the stack in a shared environment.
+The Compose defaults are for local development only. They enable only the bounded
+passive assessment path and bind the UI to loopback. Set your own PostgreSQL
+credentials and enable API authentication before using the stack in a shared
+environment. The application default remains fail-closed outside this local profile.
 
 ### Option B: Local CLI
 
@@ -183,7 +190,7 @@ provider keys, customer credentials, or captured target data.
 
 ## Project status and roadmap
 
-Phase 0 is the completed foundation. The v0.1 preview now includes persisted
+Phase 0 is the completed foundation. The v0.1.0 alpha now includes persisted
 engagements, structured HTTP capture, durable disposable-worker state, guarded raw
 evidence review, immutable Markdown/JSON report exports, a tested orphan-runtime
 cleanup contract, a complete restricted-container policy adapter, an authenticated

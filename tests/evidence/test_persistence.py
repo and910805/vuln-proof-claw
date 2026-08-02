@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, event
 
 from vuln_proof_claw.domain.enums import RiskLevel
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId
@@ -36,6 +36,13 @@ NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 @pytest.fixture
 def engine(tmp_path: Path) -> Generator[Engine, None, None]:
     result = create_engine(f"sqlite:///{tmp_path / 'evidence.db'}", pool_pre_ping=False)
+
+    @event.listens_for(result, "connect")
+    def enable_foreign_keys(dbapi_connection: object, _connection_record: object) -> None:
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(result)
     yield result
     result.dispose()

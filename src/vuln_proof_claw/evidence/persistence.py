@@ -118,6 +118,10 @@ class PersistentEvidenceStore:
                 captured_at=metadata.captured_at,
             )
         )
+        # The payload has a database foreign key to this metadata row. Flush the
+        # parent explicitly because the two mappers intentionally have no ORM
+        # relationship and PostgreSQL must never observe the child insert first.
+        self._session.flush()
         self._session.add(
             EvidencePayloadRecord(
                 evidence_id=metadata.evidence_id,

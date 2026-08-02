@@ -4,6 +4,12 @@
 
 Roadmap 表達預定方向，不保證 Release 日期。
 
+## 交付原則
+
+每個里程碑都必須完成一條使用者能從頭走到尾的流程，而不只是新增內部模組。安全預設
+由控制平面在背景強制執行；一般使用者只看到一個主要動作與可選的進階設定。只有會
+直接解除下一條可用流程阻塞的 Infrastructure 工作，才提前實作。
+
 ## Phase 0 — 基礎建設
 
 - Python 專案、CLI、API health contract、PostgreSQL、Docker Compose。
@@ -11,31 +17,38 @@ Roadmap 表達預定方向，不保證 Release 日期。
 - Web 控制台基礎：React／TypeScript 外殼、儀表板摘要、建立專案、分頁範圍 Operator access、授權被動評估精靈、可依專案篩選的持久化歷史、報告下載與雙語 UI。
 - 雙語治理、CI、Supply-chain check 與 Worker protocol。
 
-## v0.1 — Evidence Core
+## v0.1 — 可用的被動評估 MVP
 
-目前預覽進度：已完成持久化且正規化的評估範圍、Flow／Task／Action API、具 authentication 的 Approval、執行時 Approval 消耗、不可變稽核軌跡、transactional evidence chain、獨立授權的 raw evidence 讀取、不可變報告匯出、具可查詢歷史的 DNS-pinned passive URL assessment pipeline、deterministic response-header finding、具持久化 registry 的拋棄式 Worker lifecycle、有界 orphan cleanup、digest-pinned 受限 container policy adapter、authenticated bounded Engine-gateway client/server 邊界、固定欄位 local Unix-socket Docker Engine adapter、有界 Worker protocol verification、綁定原始碼的 image identity artifact、opt-in live Worker lifecycle test、將 inline Worker HTTP capture 可信匯入 Evidence chain 的邊界，以及窄範圍、無憑證的 DNS-pinned GET／HEAD Worker executor。受控 container egress、registry digest publication、啟動整合、crawler 與 browser authentication session 仍在進行中。
+0.1.0 是第一個使用者可完成的版本：一個本機 Compose 指令、一個 URL 欄位、只需一次
+的授權聲明、自動建立 Project 與 Engagement、有界 DNS-pinned capture、Finding 明細、
+Evidence 完整性狀態、持久化歷史，以及 JSON／Markdown 報告。
 
-- Project、Engagement、Scope 與 Action persistence。
-- 結構化 HTTP Request/Response capture。
-- 拋棄式 Worker lifecycle（持久化 registry、fail-closed 重啟 reconciliation、不可變 ownership label、orphan cleanup、受限 container spec enforcement、authenticated Engine client/server 邊界、固定欄位 Docker adapter、protocol verification、image identity artifact、opt-in live lifecycle test、可信 HTTP capture ingestion 與窄範圍 GET／HEAD executor 已完成；受控 container egress、registry digest publication 與啟動 wiring 待完成）。
-- Evidence hash chain 與 Markdown/JSON report。
+- 一般流程：輸入已授權的公開 URL、執行、查看、下載。
+- 進階流程：選擇 Project，或由 API 定義明確 Scope。
+- 背景控制：精確 Target Scope、DNS pinning、不使用 Proxy、有界 byte 與 timeout、
+  不跟隨 redirect、保守的 GET-only 分析與 Evidence hash chain。
+- 明確限制：尚不支援 crawl、登入、提交 form、active payload、exploit 或自動漏洞確認。
 
-## v0.2 — Autonomous Core
+## v0.2 — 實用 Web Discovery
 
-- Planner、Operator 與獨立 Verifier。
+- 具 page／request／time budget 的同源有界 crawler。
+- `robots.txt`、sitemap、JavaScript URL、OpenAPI、GraphQL 與常見 security file discovery。
+- Finding 去重，加入 severity、remediation、confidence 與 HTML report preview。
+- Safe／Fast／Deep preset；詳細限制維持可選的進階設定。
+
+## v0.3 — 已授權的 Active Testing
+
+- 受控 container egress、registry 發布的 Worker digest 與啟動整合。
+- 精選且非破壞性的 active check、隔離 Browser、authenticated session、OpenAPI
+  parameter test 與基礎 service discovery。
+- 對可能影響目標狀態的 Action 提供可重用 Approval preset。
+
+## v0.4 — Autonomous Core
+
+- 具 budget 與 stopping condition 的 Planner、Operator 與獨立 Verifier。
+- 即時進度、互動式 Approval、Evidence viewer、Finding review，以及 HTML、SARIF 與
+  bug-bounty workflow export。
 - Multi-provider Registry 與 capability detection。
-- Approval workflow、budget、stopping condition 與 audit trail。
-
-## v0.3 — Web/API 能力基準
-
-- Crawl、directory、JavaScript、OpenAPI 與 GraphQL discovery。
-- Authentication differential testing、隔離 Browser 與基礎 nmap。
-- Restricted shell/Python、精選 Playbook、HTML/SARIF/bug-bounty report。
-
-## v0.4 — Web Experience
-
-- 即時 Flow、互動式批准決策、Evidence viewer、Finding review 與 Report preview。
-- Authentication、Session hardening、Accessibility audit 與正式環境 UI 部署控制。
 
 ## v1.0 — 穩定開源版本
 

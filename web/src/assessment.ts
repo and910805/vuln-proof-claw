@@ -68,3 +68,13 @@ export function assessmentHistoryPath(projectId: string): string {
   if (projectId) parameters.set("project_id", projectId);
   return `/api/v1/assessments?${parameters.toString()}`;
 }
+
+export async function resolveAssessmentProjectId(
+  selectedProjectId: string,
+  projects: ReadonlyArray<{ id: string }>,
+  createProject: () => Promise<{ id: string }>,
+): Promise<string> {
+  if (selectedProjectId) return selectedProjectId;
+  if (projects[0]) return projects[0].id;
+  return (await createProject()).id;
+}

@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## [0.1.0] - 2026-08-02
+
+### 新增
+
+- 交付第一條使用者可完成的流程：啟動本機 Compose、輸入一個已授權的公開 URL、執行有界評估、查看 Finding 明細與 Evidence 完整性，並下載 JSON 或 Markdown 報告。
+- 新增第一次執行自動建立 Project、瀏覽器記住授權聲明、可見的三階段進度、行內錯誤復原，以及可選的進階 Project 整理。
+- 新增以產品結果為中心的 Roadmap；每個里程碑必須先完成一條可用的垂直流程，才擴張 Infrastructure。
+
+### 變更
+
+- 只綁定 loopback 的本機 Compose profile 現在預設啟用有界被動評估；應用程式層級與非本機預設仍停用。
+- Dashboard 主要動作改為直接開始評估，不再要求使用者先理解或建立內部 Project 與 Engagement record。
+- 進階 Scope、持久化、DNS pinning、限制與 Evidence chain 控制仍在簡化介面背後強制執行。
+- Python 與 Web package 版本前進至 `0.1.0`，專案狀態由 pre-alpha 前進至 alpha。
+
+### 安全性
+
+- 簡單流程仍只會針對提交 URL 衍生的確切 hostname、scheme、port 與 path，執行一次無憑證 GET。
+- DNS candidate、private-address policy、proxy、redirect、response size、timeout、report metadata 與 Evidence chain 完整性仍各自獨立強制執行。
+- 共用或 production deployment 仍須明確啟用並設定 authentication；crawler、form、login、active payload、exploit 與任意工具仍不可用。
+
 ## [0.0.21] - 2026-08-02
 
 ### 新增

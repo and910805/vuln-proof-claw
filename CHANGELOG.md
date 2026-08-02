@@ -6,6 +6,27 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.1.0] - 2026-08-02
+
+### Added
+
+- Delivered the first user-completable workflow: start the local Compose stack, enter one authorized public URL, run a bounded assessment, review Finding details and Evidence integrity, and download JSON or Markdown reports.
+- Added automatic first-run Project setup, a remembered browser authorization acknowledgement, visible three-stage progress, inline failure recovery, and optional advanced Project organization.
+- Added a product-outcome roadmap that requires every milestone to finish a usable vertical workflow before expanding infrastructure.
+
+### Changed
+
+- The loopback-only local Compose profile now enables the bounded passive assessment path by default; the application-level and non-local default remains disabled.
+- The dashboard primary action now starts an assessment instead of requiring users to understand or create internal Project and Engagement records first.
+- Advanced Scope, persistence, DNS pinning, limits, and evidence-chain controls remain enforced behind the simplified interface.
+- Advanced the Python and Web package versions to `0.1.0` and moved the project status from pre-alpha to alpha.
+
+### Security
+
+- The simple path still performs only one credential-free GET against the exact hostname, scheme, port, and path derived from the submitted URL.
+- DNS candidates, private-address policy, proxies, redirects, response size, timeout, report metadata, and Evidence-chain integrity remain independently enforced.
+- Shared or production deployments still require explicit enablement and authentication; crawling, forms, login, active payloads, exploitation, and arbitrary tools remain unavailable.
+
 ## [0.0.21] - 2026-08-02
 
 ### Added

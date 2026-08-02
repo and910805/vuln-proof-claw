@@ -1,6 +1,11 @@
 import { FormEvent } from "react";
 
-import { AssessmentHistoryItem, AssessmentSummary, Project } from "./contracts";
+import {
+  AssessmentHistoryItem,
+  AssessmentSummary,
+  EngagementReport,
+  Project,
+} from "./contracts";
 
 type AssessmentCopy = {
   pageHints: { assessments: string };
@@ -9,17 +14,26 @@ type AssessmentCopy = {
   assessmentDisabled: string;
   chooseProject: string;
   chooseProjectPlaceholder: string;
+  advancedOptions: string;
+  automaticProject: string;
   targetUrl: string;
   targetPlaceholder: string;
   authorizationConfirm: string;
   assessing: string;
+  preparingScope: string;
+  contactingTarget: string;
+  buildingReport: string;
   runAssessment: string;
   assessmentResult: string;
   actionState: string;
   findingCount: string;
   evidenceCount: string;
+  evidenceIntegrity: string;
+  findingDetails: string;
+  noFindings: string;
   downloadJson: string;
   downloadMarkdown: string;
+  viewResult: string;
   emptyPendingHint: string;
   assessmentHistory: string;
   assessmentHistoryHint: string;
@@ -40,15 +54,18 @@ export function AssessmentWorkspace({
   historyTotal,
   executionAvailable,
   latestAssessment,
+  latestReport,
   message,
   projectId,
   projects,
   target,
+  stage,
   t,
   onAuthorizationChange,
   onDownload,
   onHistoryDownload,
   onHistoryProjectChange,
+  onHistoryView,
   onProjectChange,
   onSubmit,
   onTargetChange,
@@ -61,26 +78,33 @@ export function AssessmentWorkspace({
   historyProjectId: string;
   historyTotal: number;
   executionAvailable: boolean;
-  latestAssessment: AssessmentSummary | null;
+  latestAssessment: AssessmentSummary | AssessmentHistoryItem | null;
+  latestReport: EngagementReport | null;
   message: string;
   projectId: string;
   projects: Project[];
   target: string;
+  stage: "preparing" | "capturing" | "reporting" | null;
   t: AssessmentCopy;
   onAuthorizationChange: (value: boolean) => void;
   onDownload: (format: "json" | "markdown") => void;
   onHistoryDownload: (assessment: AssessmentHistoryItem, format: "json" | "markdown") => void;
   onHistoryProjectChange: (value: string) => void;
+  onHistoryView: (assessment: AssessmentHistoryItem) => void;
   onProjectChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
   onTargetChange: (value: string) => void;
   formatTimestamp: (value: string) => string;
 }) {
   const canRun = executionAvailable
-    && Boolean(projectId)
     && Boolean(target.trim())
     && authorizationConfirmed
     && !assessing;
+  const evidenceCount = latestAssessment
+    ? "evidence_ids" in latestAssessment
+      ? latestAssessment.evidence_ids.length
+      : latestAssessment.evidence_count
+    : 0;
   return (
     <>
       <div className="page-intro"><p>{t.pageHints.assessments}</p></div>
@@ -91,19 +115,6 @@ export function AssessmentWorkspace({
           </div>
           {!executionAvailable && <div className="locked-notice">⌁ {t.assessmentDisabled}</div>}
           <form onSubmit={onSubmit}>
-            <label htmlFor="assessment-project">{t.chooseProject}</label>
-            <select
-              aria-describedby="assessment-hint"
-              id="assessment-project"
-              onChange={(event) => onProjectChange(event.target.value)}
-              required
-              value={projectId}
-            >
-              <option value="">{t.chooseProjectPlaceholder}</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
             <label htmlFor="assessment-target">{t.targetUrl}</label>
             <input
               autoComplete="url"
@@ -115,6 +126,22 @@ export function AssessmentWorkspace({
               type="url"
               value={target}
             />
+            <details className="assessment-advanced">
+              <summary>{t.advancedOptions}</summary>
+              <p>{t.automaticProject}</p>
+              <label htmlFor="assessment-project">{t.chooseProject}</label>
+              <select
+                aria-describedby="assessment-hint"
+                id="assessment-project"
+                onChange={(event) => onProjectChange(event.target.value)}
+                value={projectId}
+              >
+                <option value="">{t.chooseProjectPlaceholder}</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+            </details>
             <label className="authorization-check" htmlFor="authorization-confirmed">
               <input
                 checked={authorizationConfirmed}
@@ -128,21 +155,52 @@ export function AssessmentWorkspace({
             <button className="primary-button assessment-submit" disabled={!canRun}>
               {assessing ? t.assessing : t.runAssessment}
             </button>
+            {assessing && (
+              <ol aria-live="polite" className="assessment-progress">
+                <ProgressStep active={stage === "preparing"} complete={stage !== "preparing"} label={t.preparingScope} />
+                <ProgressStep active={stage === "capturing"} complete={stage === "reporting"} label={t.contactingTarget} />
+                <ProgressStep active={stage === "reporting"} complete={false} label={t.buildingReport} />
+              </ol>
+            )}
           </form>
           {message && (
             <div aria-live="polite" className="assessment-message" role="status">{message}</div>
           )}
         </section>
 
-        <section className="panel assessment-result">
+        <section className="panel assessment-result" id="assessment-result">
           <div className="panel-heading"><div><h3>{t.assessmentResult}</h3></div></div>
           {latestAssessment ? (
             <>
               <dl>
                 <div><dt>{t.actionState}</dt><dd>{latestAssessment.state}</dd></div>
                 <div><dt>{t.findingCount}</dt><dd>{latestAssessment.findings_count}</dd></div>
-                <div><dt>{t.evidenceCount}</dt><dd>{latestAssessment.evidence_ids.length}</dd></div>
+                <div><dt>{t.evidenceCount}</dt><dd>{evidenceCount}</dd></div>
+                {latestReport && (
+                  <div>
+                    <dt>{t.evidenceIntegrity}</dt>
+                    <dd>{latestReport.evidence_integrity.status}</dd>
+                  </div>
+                )}
               </dl>
+              {latestReport && (
+                <div className="finding-results">
+                  <h4>{t.findingDetails}</h4>
+                  {latestReport.findings.length === 0 ? (
+                    <p>{t.noFindings}</p>
+                  ) : (
+                    <ul>
+                      {latestReport.findings.map((finding) => (
+                        <li key={finding.id}>
+                          <strong>{finding.title}</strong>
+                          <code>{finding.vulnerability_class}</code>
+                          <span>{finding.affected_target}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               <code className="action-reference">{latestAssessment.action_id}</code>
               <div className="report-actions">
                 <button className="quiet-button" onClick={() => onDownload("json")} type="button">
@@ -216,6 +274,14 @@ export function AssessmentWorkspace({
                   </div>
                   <div className="history-actions">
                     <button
+                      aria-label={`${t.viewResult}: ${item.target}`}
+                      className="quiet-button"
+                      onClick={() => onHistoryView(item)}
+                      type="button"
+                    >
+                      {t.viewResult}
+                    </button>
+                    <button
                       aria-label={`${t.downloadJson}: ${item.target}`}
                       className="quiet-button"
                       onClick={() => onHistoryDownload(item, "json")}
@@ -240,4 +306,17 @@ export function AssessmentWorkspace({
       </section>
     </>
   );
+}
+
+function ProgressStep({
+  active,
+  complete,
+  label,
+}: {
+  active: boolean;
+  complete: boolean;
+  label: string;
+}) {
+  const className = active ? "active" : complete ? "complete" : "";
+  return <li aria-current={active ? "step" : undefined} className={className}>{label}</li>;
 }

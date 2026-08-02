@@ -4,6 +4,13 @@
 
 Roadmap items describe intent, not guaranteed release dates.
 
+## Delivery rule
+
+Each milestone must end in a user-completable workflow, not only an internal
+module. Safe defaults stay enforced in the control plane while common users see
+one primary action and optional advanced settings. Infrastructure work is pulled
+forward only when it unblocks the next usable workflow.
+
 ## Phase 0 — Foundation
 
 - Python project, CLI, API health contracts, PostgreSQL, Docker Compose.
@@ -11,31 +18,40 @@ Roadmap items describe intent, not guaranteed release dates.
 - Web console foundation: React/TypeScript shell, dashboard summary, project creation, tab-scoped operator access, authorized passive assessment wizard, persistent project-filtered history, report downloads, and bilingual UI.
 - Bilingual governance, CI, supply-chain checks, and worker protocol.
 
-## v0.1 — Evidence Core
+## v0.1 — Usable Passive MVP
 
-Current preview: persisted normalized engagement scopes, Flow/Task/Action APIs, authenticated approvals, execution-time approval consumption, an immutable audit trail, transactional evidence chains, separately authorized raw-evidence reads, immutable report exports, a DNS-pinned passive URL assessment pipeline with queryable history, deterministic response-header findings, a durable disposable Worker lifecycle registry, bounded orphan cleanup, a digest-pinned restricted-container policy adapter, both sides of an authenticated bounded Engine-gateway boundary, a fixed-field local Unix-socket Docker Engine adapter, bounded Worker protocol verification, source-bound image identity artifacts, an opt-in live Worker lifecycle test, trusted inline Worker HTTP capture ingestion into the Evidence chain, and a narrow credential-free DNS-pinned GET/HEAD Worker executor are implemented. Controlled container egress, registry digest publication, startup integration, crawler, and browser authentication sessions remain in progress.
+Version 0.1.0 is the first user-completable release: one local Compose command,
+one URL field, a remembered authorization acknowledgement, automatic Project and
+Engagement setup, bounded DNS-pinned capture, Finding details, evidence-integrity
+status, persistent history, and JSON/Markdown reports.
 
-- Project, Engagement, Scope, and Action persistence.
-- Structured HTTP request/response capture.
-- Disposable Worker lifecycle (durable registry, fail-closed restart reconciliation, immutable ownership labels, orphan cleanup, restricted-container spec enforcement, authenticated Engine client/server boundary, fixed-field Docker adapter, protocol verification, image identity artifacts, opt-in live lifecycle test, trusted HTTP capture ingestion, and narrow GET/HEAD executor complete; controlled container egress, registry digest publication, and startup wiring pending).
-- Evidence hash chain and Markdown/JSON reports.
+- Common path: enter an authorized public URL, run, review, download.
+- Advanced path: choose Projects and use explicit API Scope definitions.
+- Background controls: exact target Scope, DNS pinning, no proxy, bounded bytes and
+  timeout, no redirects, conservative GET-only analysis, and evidence hash chains.
+- Explicit limitation: no crawl, login, form submission, active payload, exploit,
+  or automatic vulnerability confirmation yet.
 
-## v0.2 — Autonomous Core
+## v0.2 — Useful Web Discovery
 
-- Planner, Operator, and independent Verifier.
+- Bounded same-origin crawler with page/request/time budgets.
+- `robots.txt`, sitemap, JavaScript URL, OpenAPI, GraphQL, and common security-file discovery.
+- Deduplicated findings with severity, remediation, confidence, and HTML report preview.
+- Safe/Fast/Deep presets; detailed limits remain optional advanced settings.
+
+## v0.3 — Authorized Active Testing
+
+- Controlled container egress, registry-published Worker digest, and startup integration.
+- Curated non-destructive active checks, isolated browser, authenticated sessions,
+  OpenAPI parameter tests, and basic service discovery.
+- Reusable approval presets for actions that can affect target state.
+
+## v0.4 — Autonomous Core
+
+- Planner, Operator, and independent Verifier with budgets and stopping conditions.
+- Live progress, interactive approvals, evidence viewer, finding review, and exports
+  for HTML, SARIF, and bug-bounty workflows.
 - Multi-provider registry and capability detection.
-- Approval workflow, budgets, stopping conditions, and audit trail.
-
-## v0.3 — Web/API Capability Baseline
-
-- Crawl, directory, JavaScript, OpenAPI, and GraphQL discovery.
-- Authentication differential testing, isolated browser, and basic nmap.
-- Restricted shell/Python, curated playbooks, HTML/SARIF/bug-bounty reports.
-
-## v0.4 — Web Experience
-
-- Live flows, interactive approval decisions, evidence viewer, finding review, and report preview.
-- Authentication, session hardening, accessibility audit, and production UI deployment controls.
 
 ## v1.0 — Stable Open Source
 
