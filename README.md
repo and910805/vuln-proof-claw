@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
@@ -42,7 +42,7 @@ vuln-proof-claw is being built around those requirements:
 
 ## Current capabilities
 
-| Area | Available in Phase 0 |
+| Area | Current release |
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
 | REST API | Versioned health, project, engagement, automated assessment, workflow, audit, and report contracts with OpenAPI |
@@ -61,6 +61,21 @@ Authenticated browser testing, security-tool and exploit execution, LLM orchestr
 Planner/Operator/Verifier agents, and SARIF reporting remain roadmap items. The proposed
 provider-neutral AI driver is documented in [AI Driver Architecture](docs/AI_DRIVER.md).
 
+## Release highlights
+
+The project is intentionally delivered in small, auditable milestones. Each version
+adds a user-completable capability while keeping the execution boundary explicit.
+
+| Version | Major additions | What it still does not do |
+| --- | --- | --- |
+| **v0.1.0** | First usable passive assessment: URL-first Web console, automatic Project/Engagement setup, exact Scope, DNS-pinned GET capture, deterministic header/cookie Findings, Evidence integrity, JSON/Markdown reports, and persisted history. | No crawl, login, form submission, active payload, or automatic vulnerability confirmation. |
+| **v0.2.0** | Bounded same-origin discovery with Safe/Fast/Deep budgets, per-page Evidence, aggregate Findings, severity/confidence/remediation, and escaped HTML reports. | No authentication, browser session, external scanner, parameter mutation, or exploit validation. |
+| **v0.3.0** | OpenAPI 3.x/Swagger 2.0 operation inventory and `active-safe` verification of parameterless GET/HEAD operations, including evidence-backed declared-authentication candidates. | No write methods, required parameters, login, browser automation, exploit payloads, or arbitrary tools. |
+| **v0.3.1** | Documentation and release metadata update: this version history, corrected Quick Start guidance, and synchronized package/user-agent versions. | No new target-facing capability; the security boundary is unchanged from v0.3.0. |
+
+For implementation details and the next milestones, see [ROADMAP.md](ROADMAP.md) and the
+versioned entries in [CHANGELOG.md](CHANGELOG.md).
+
 ## Quick start
 
 ### Option A: Docker Compose
@@ -77,10 +92,11 @@ docker compose up --build -d
 
 Open <http://127.0.0.1:8080/>, select **Assess a URL**, enter a public HTTP(S)
 URL you are authorized to test, acknowledge authorization once, and run it. The
-first run creates its private workspace automatically. Safe mode discovers up to five
-same-origin pages; Fast and Deep modes are available under advanced options. The result
-view shows prioritized findings and evidence integrity and offers JSON, Markdown, and
-escaped HTML reports.
+first run creates its private workspace automatically. Safe automated mode discovers
+same-origin pages and verifies eligible read-only API operations; discovery-only mode,
+Fast mode, and Deep mode are available in the form. The result view shows prioritized
+findings, API inventory, active-probe counts, evidence integrity, and JSON, Markdown,
+and escaped HTML reports.
 
 Check the service:
 
@@ -102,7 +118,7 @@ docker compose down
 ```
 
 The Compose defaults are for local development only. They enable only the bounded
-passive assessment path and bind the UI to loopback. Set your own PostgreSQL
+safe assessment path and bind the UI to loopback. Set your own PostgreSQL
 credentials and enable API authentication before using the stack in a shared
 environment. The application default remains fail-closed outside this local profile.
 

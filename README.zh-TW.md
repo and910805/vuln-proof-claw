@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
@@ -39,7 +39,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 
 ## 目前具備的能力
 
-| 領域 | Phase 0 已完成 |
+| 領域 | 目前版本 |
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
 | REST API | 版本化 health、project、engagement、自動評估、workflow、audit、report contract 與 OpenAPI |
@@ -58,6 +58,21 @@ Authenticated Browser 測試、資安工具與 Exploit Execution、LLM orchestra
 Planner／Operator／Verifier agents，以及 SARIF 報告仍屬於後續路線圖。Provider-neutral
 AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 
+## 版本重大更新
+
+專案刻意拆成可審查的小里程碑。每一版都新增一條使用者可以完成的流程，並清楚
+保留執行邊界。
+
+| 版本 | 重大新增 | 目前仍不會做的事 |
+| --- | --- | --- |
+| **v0.1.0** | 第一條可使用的被動評估流程：URL-first Web Console、自動建立 Project／Engagement、精確 Scope、DNS-pinned GET Capture、Header／Cookie Finding、Evidence 完整性、JSON／Markdown 報告與持久化歷史。 | 不會 Crawl、登入、提交 Form、送出 Active Payload 或自動確認漏洞。 |
+| **v0.2.0** | 有界同源 Discovery、Safe／Fast／Deep Budget、逐頁 Evidence、聚合 Finding、Severity／Confidence／Remediation 與安全轉義 HTML 報告。 | 不會 Authentication、Browser Session、外部 Scanner、參數變異或 Exploit 驗證。 |
+| **v0.3.0** | OpenAPI 3.x／Swagger 2.0 Operation Inventory，以及 `active-safe` 無必要參數 GET／HEAD 驗證；包含具 Evidence 的宣告式 Authentication 異常 Candidate。 | 不會送出寫入 Method、必要參數、登入、Browser Automation、Exploit Payload 或任意工具。 |
+| **v0.3.1** | 文件與 Release Metadata 更新：版本歷史、修正 Quick Start 說明，以及同步 Package／User-Agent 版本。 | 沒有新增目標流量能力；安全邊界與 v0.3.0 相同。 |
+
+實作細節與下一階段請參閱 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) 及
+[CHANGELOG.zh-TW.md](CHANGELOG.zh-TW.md) 的版本記錄。
+
 ## 快速開始
 
 ### 方案 A：Docker Compose
@@ -73,9 +88,10 @@ docker compose up --build -d
 ```
 
 開啟 <http://127.0.0.1:8080/>，選擇「評估網址」，輸入你確實獲得授權的公開
-HTTP(S) 網址、完成一次授權聲明並開始。第一次執行會自動建立私有工作區；結果頁會
-顯示具優先順序的 Finding 與 Evidence 完整性，並提供 JSON、Markdown 與安全轉義
-HTML 報告。Safe 模式最多探索五個同源頁面；Fast 與 Deep 可在進階選項切換。
+HTTP(S) 網址、完成一次授權聲明並開始。第一次執行會自動建立私有工作區；安全自動
+模式會探索同源頁面並驗證符合條件的唯讀 API，也可在表單切換成僅 Discovery、Fast
+或 Deep。結果頁會顯示 Finding、API Inventory、Active Probe 數量、Evidence 完整性，
+並提供 JSON、Markdown 與安全轉義 HTML 報告。
 
 檢查服務：
 
@@ -96,7 +112,7 @@ curl --fail http://127.0.0.1:8080/api/v1/health/ready
 docker compose down
 ```
 
-Compose 的預設值只適用本機開發，只啟用有界的被動評估，且 UI 綁定 loopback。
+Compose 的預設值只適用本機開發，只啟用有界的安全評估，且 UI 綁定 loopback。
 在共用環境使用前，請自行設定 PostgreSQL 憑證並啟用 API authentication；本機
 profile 以外的應用程式預設仍維持 fail closed。
 

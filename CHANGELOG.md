@@ -6,6 +6,16 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.3.1] - 2026-08-02
+
+### Changed
+
+- Expanded both README files with a version-by-version major update table covering v0.1.0 through v0.3.1.
+- Corrected Quick Start and current-capability wording to describe the v0.3 safe automated mode accurately.
+- Synchronized release metadata, package versions, and the default assessment User-Agent to `0.3.1`.
+
+This is a documentation and release-metadata patch; target-facing behavior remains the same as v0.3.0.
+
 ## [0.3.0] - 2026-08-02
 
 ### Added
