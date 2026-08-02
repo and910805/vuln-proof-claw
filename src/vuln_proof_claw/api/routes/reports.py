@@ -24,6 +24,8 @@ from vuln_proof_claw.api.auth import (
 from vuln_proof_claw.api.dependencies import get_session
 from vuln_proof_claw.api.schemas.console import ScopeDefinition
 from vuln_proof_claw.api.schemas.reports import (
+    ApiInventorySummary,
+    ApiOperationSummary,
     DiscoverySummary,
     EngagementReport,
     EvidenceIntegrity,
@@ -35,6 +37,7 @@ from vuln_proof_claw.api.schemas.reports import (
     ReportExportSummary,
 )
 from vuln_proof_claw.assessment.discovery import discover_targets
+from vuln_proof_claw.assessment.openapi import OpenApiDocument, parse_openapi_document
 from vuln_proof_claw.domain.enums import ReportFormat
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId, ReportExportId
 from vuln_proof_claw.domain.models import ReportExport
@@ -123,6 +126,7 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
         )
     )
     candidates: dict[str, None] = {}
+    api_documents: list[OpenApiDocument] = []
     evidence_store = PersistentEvidenceStore(session)
     for row in evidence_rows:
         try:
@@ -147,6 +151,9 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
         for discovered in discover_targets(request_target, response):
             if discovered.url not in scanned_targets:
                 candidates.setdefault(discovered.url, None)
+        api_document = parse_openapi_document(request_target, response)
+        if api_document is not None:
+            api_documents.append(api_document)
     payload_count = sum(
         1
         for _item in session.scalars(
@@ -168,6 +175,18 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             checked_records=verification.checked_records,
             reason=verification.reason,
         )
+    api_documents = list({item.source_url: item for item in api_documents}.values())
+    unique_operations = {
+        (operation.method, operation.target): operation
+        for document in api_documents
+        for operation in document.operations
+    }
+    operations = tuple(unique_operations.values())
+    active_probes_run = sum(
+        1
+        for action in actions
+        if action.action_type == "active_safe_api_read" and action.state == "succeeded"
+    )
     return EngagementReport(
         generated_at=datetime.now(UTC),
         engagement_id=engagement.id,
@@ -187,6 +206,26 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             pages_scanned=len(scanned_targets),
             scanned_targets=scanned_targets,
             candidate_targets=tuple(candidates),
+        ),
+        api_inventory=ApiInventorySummary(
+            documents_found=len(api_documents),
+            operations_total=len(operations),
+            read_operations=sum(item.method in {"GET", "HEAD"} for item in operations),
+            write_operations=sum(item.method not in {"GET", "HEAD"} for item in operations),
+            safe_probe_operations=sum(item.safe_to_probe for item in operations),
+            active_probes_run=active_probes_run,
+            inventory_truncated=any(item.truncated for item in api_documents),
+            operations=tuple(
+                ApiOperationSummary(
+                    method=item.method,
+                    path=item.path,
+                    target=item.target,
+                    operation_id=item.operation_id,
+                    requires_authentication=item.requires_authentication,
+                    safe_to_probe=item.safe_to_probe,
+                )
+                for item in operations
+            ),
         ),
         evidence=tuple(
             EvidenceReportItem(
@@ -214,6 +253,7 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             )
             for row in finding_rows
         ),
+        execution_available=active_probes_run > 0,
     )
 
 
@@ -230,7 +270,7 @@ def render_markdown(report: EngagementReport) -> str:
         f"- Project ID: `{report.project_id}`",
         f"- Window: {report.starts_at.isoformat()} to {report.ends_at.isoformat()}",
         "- Raw evidence included: no",
-        "- Target execution available: no",
+        f"- Safe active execution used: {'yes' if report.execution_available else 'no'}",
         "",
         "## Authorized scope",
         "",
@@ -246,6 +286,9 @@ def render_markdown(report: EngagementReport) -> str:
         f"- Evidence records: {report.counts.evidence}",
         f"- Findings: {report.counts.findings}",
         f"- Pages scanned: {report.discovery.pages_scanned}",
+        f"- OpenAPI documents: {report.api_inventory.documents_found}",
+        f"- API operations: {report.api_inventory.operations_total}",
+        f"- Safe active API probes: {report.api_inventory.active_probes_run}",
         f"- Evidence integrity: {report.evidence_integrity.status}",
         "",
         "## Findings",
@@ -276,6 +319,22 @@ def render_markdown(report: EngagementReport) -> str:
         )
     else:
         lines.append("No findings have been recorded.")
+    lines.extend(("", "## API operation inventory", ""))
+    if report.api_inventory.operations:
+        lines.extend(
+            (
+                "| Method | Path | Authentication | Safe probe |",
+                "| --- | --- | --- | --- |",
+            )
+        )
+        lines.extend(
+            f"| {item.method} | {_markdown_cell(item.path)} | "
+            f"{'required' if item.requires_authentication else 'not declared'} | "
+            f"{'yes' if item.safe_to_probe else 'no'} |"
+            for item in report.api_inventory.operations
+        )
+    else:
+        lines.append("No OpenAPI operations were discovered.")
     lines.extend(("", "## Evidence", ""))
     if report.evidence:
         lines.extend(("| Captured | Tool | Digest |", "| --- | --- | --- |"))
@@ -303,6 +362,13 @@ def render_html(report: EngagementReport) -> str:
     target_rows = "".join(
         f"<li><code>{escape(item)}</code></li>" for item in report.discovery.scanned_targets
     )
+    operation_rows = "".join(
+        "<tr>"
+        f"<td><strong>{escape(item.method)}</strong></td><td><code>{escape(item.path)}</code></td>"
+        f"<td>{'required' if item.requires_authentication else 'not declared'}</td>"
+        f"<td>{'yes' if item.safe_to_probe else 'no'}</td></tr>"
+        for item in report.api_inventory.operations
+    ) or '<tr><td colspan="4">No OpenAPI operations discovered.</td></tr>'
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>ProofClaw report — {escape(report.engagement_name)}</title>
@@ -329,9 +395,16 @@ table {{ display:block; overflow:auto; }} }}
 <div class="value">{report.discovery.pages_scanned}</div>Pages scanned</div>
 <div class="card"><div class="value">{report.counts.findings}</div>Findings</div>
 <div class="card"><div class="value">{report.counts.evidence}</div>Evidence records</div></section>
+<section class="grid"><div class="card"><div class="value">
+{report.api_inventory.operations_total}</div>API operations</div>
+<div class="card"><div class="value">
+{report.api_inventory.active_probes_run}</div>Safe active probes</div></section>
 <h2>Findings</h2><div class="card"><table><thead><tr><th>Severity</th>
 <th>Confidence</th><th>Class</th><th>Finding</th><th>Remediation</th></tr></thead>
 <tbody>{finding_rows}</tbody></table></div>
+<h2>API operation inventory</h2><div class="card"><table><thead><tr><th>Method</th>
+<th>Path</th><th>Authentication</th><th>Safe probe</th></tr></thead>
+<tbody>{operation_rows}</tbody></table></div>
 <h2>Scanned targets</h2><div class="card"><ul>{target_rows}</ul></div>
 </main></body></html>"""
 

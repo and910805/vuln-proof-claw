@@ -16,13 +16,16 @@ Web 基礎版本目前提供：
 - 根據已確認目標，自動建立範圍縮到最小的 24 小時 L0 Engagement。
 - Safe／Fast／Deep 同源 Discovery、Page／Evidence／Finding 數量、具優先順序的
   Remediation，以及 JSON／Markdown／HTML 報告。
+- 預設的安全自動模式會列出 OpenAPI Operation，並只驗證無必要參數的唯讀 Operation；
+  仍可切換成僅 Discovery。
 - 由新到舊的持久化評估歷史，可依專案篩選、顯示失敗狀態，並在重新整理後再次下載報告。
 - 供 authentication deployment 選用的 Operator Bearer Token 輸入。
 - 系統強制執行的 L0-L4 風險政策參考。
 - 如實標示已運作與仍鎖定的能力。
 
-Browser 目前只能啟動有界、無憑證、GET-only Discovery；不會登入目標、提交 Form、
-執行外部工具或 Payload、批准高風險 Action、顯示原始 Evidence，或獨立驗證 Finding。
+Browser 目前只能啟動有界、無憑證的 GET／HEAD Discovery 與安全 API 驗證；不會登入、
+提交 Form、送出寫入 Operation、執行外部工具或 Exploit Payload、顯示原始 Evidence，
+或批准高風險 Action。
 
 ## 開啟控制台
 

@@ -66,6 +66,7 @@ def make_approval(action: Action) -> Approval:
     ("action_type", "expected"),
     [
         ("Public Page Read", RiskLevel.L0),
+        ("active_safe_api_read", RiskLevel.L0),
         ("directory-enumeration", RiskLevel.L1),
         ("file_upload", RiskLevel.L2),
         ("privilege_escalation", RiskLevel.L3),

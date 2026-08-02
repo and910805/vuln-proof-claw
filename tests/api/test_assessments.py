@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -70,6 +71,36 @@ class LinkedAssessmentTransport(FakeAssessmentTransport):
             final_target=request.target,
             headers=(("Content-Type", "text/html"),),
             body=links[path].encode(),
+            duration_ms=2,
+        )
+
+
+class OpenApiAssessmentTransport(FakeAssessmentTransport):
+    def send(
+        self, request: HttpCaptureRequest, limits: HttpCaptureLimits
+    ) -> HttpCaptureResponse:
+        self.calls.append((request, limits))
+        path = request.target.removeprefix("https://api.example.test:443")
+        if path == "/v1/openapi.json":
+            body = json.dumps(
+                {
+                    "openapi": "3.1.0",
+                    "info": {"title": "Protected API"},
+                    "servers": [{"url": "/v1"}],
+                    "security": [{"bearerAuth": []}],
+                    "paths": {
+                        "/profile": {"get": {"operationId": "getProfile"}},
+                        "/users": {"post": {"operationId": "createUser"}},
+                    },
+                }
+            ).encode()
+        else:
+            body = b'{"name":"unexpectedly public"}'
+        return HttpCaptureResponse(
+            status_code=200,
+            final_target=request.target,
+            headers=(("Content-Type", "application/json"),),
+            body=body,
             duration_ms=2,
         )
 
@@ -268,6 +299,58 @@ async def test_safe_preset_crawls_same_origin_links_and_aggregates_report(tmp_pa
     assert html_report.status_code == 200
     assert "Content-Security-Policy" in html_report.headers
     assert "Pages scanned" in html_report.text
+
+
+async def test_active_safe_mode_inventories_and_probes_openapi_reads(tmp_path: Path) -> None:
+    transport = OpenApiAssessmentTransport()
+    async with assessment_client(tmp_path / "active-openapi.db", transport) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        created = await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={
+                "target": "https://api.example.test/v1/openapi.json",
+                "preset": "safe",
+                "mode": "active-safe",
+            },
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "active-openapi"},
+        )
+        report = await client.get(
+            f"/api/v1/engagements/{engagement_id}/report",
+            headers=OPERATOR_HEADERS,
+        )
+        fetched = await client.get(
+            f"/api/v1/engagements/{engagement_id}/assessments/{created.json()['action_id']}",
+            headers=OPERATOR_HEADERS,
+        )
+        audit = await client.get(
+            f"/api/v1/engagements/{engagement_id}/audit-events",
+            headers=OPERATOR_HEADERS,
+        )
+
+    assert created.status_code == 201
+    assert created.json()["pages_scanned"] == 1
+    assert created.json()["active_probes_run"] == 1
+    assert created.json()["active_probe_truncated"] is False
+    assert fetched.json()["pages_scanned"] == 1
+    assert fetched.json()["active_probes_run"] == 1
+    assert len(transport.calls) == 2
+    assert transport.calls[1][0].method == "GET"
+    assert transport.calls[1][0].target == "https://api.example.test:443/v1/profile"
+    inventory = report.json()["api_inventory"]
+    assert inventory["documents_found"] == 1
+    assert inventory["operations_total"] == 2
+    assert inventory["read_operations"] == 1
+    assert inventory["write_operations"] == 1
+    assert inventory["active_probes_run"] == 1
+    assert report.json()["execution_available"] is True
+    assert any(
+        finding["vulnerability_class"] == "CWE-306"
+        for finding in report.json()["findings"]
+    )
+    assert "assessment.active_api_completed" in {
+        event["event_type"] for event in audit.json()["items"]
+    }
 
 
 async def test_assessment_commits_safe_failed_state_when_transport_fails(tmp_path: Path) -> None:

@@ -9,17 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha status:** Version 0.2.0 provides scope-checked, same-origin Web discovery
-> with Safe, Fast, and Deep budgets. Every captured page has evidence, prioritized
-> findings, and JSON, Markdown, or escaped HTML reporting. It does not authenticate to
-> targets, submit forms, run external scanners, or execute exploit payloads.
+> **Alpha status:** Version 0.3.0 adds authorized safe active testing to bounded Web
+> discovery. It inventories captured OpenAPI documents and verifies only parameterless
+> GET/HEAD operations through the existing scope, DNS, evidence, and budget controls.
+> It does not authenticate, submit forms, invoke external scanners, or send exploit payloads.
 
 ## Why vuln-proof-claw?
 
@@ -45,19 +45,19 @@ vuln-proof-claw is being built around those requirements:
 | Area | Available in Phase 0 |
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
-| REST API | Versioned health, project, engagement, passive assessment, workflow, audit, and report contracts with OpenAPI |
-| Web console | Bilingual URL-first discovery, Safe/Fast/Deep presets, progress, prioritized findings, persistent history, and report preview/downloads |
-| Evidence Core | Scoped multi-page passive discovery, transactional evidence, deterministic findings, and immutable reports |
+| REST API | Versioned health, project, engagement, automated assessment, workflow, audit, and report contracts with OpenAPI |
+| Web console | Bilingual URL-first safe automation, discovery-only fallback, Safe/Fast/Deep presets, findings, history, and reports |
+| Evidence Core | Multi-page discovery, semantic OpenAPI inventory, bounded read-only API verification, transactional evidence, and immutable reports |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
 | Authentication | Optional API-wide Bearer boundary with distinct operator, approver, and evidence-reader roles |
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Execution | Opt-in DNS-pinned passive GET capture plus durable Worker, orphan cleanup, restricted-container policy, authenticated Engine gateway, and fixed-field Unix-socket Docker adapter; runtime startup and arbitrary tools remain disabled |
+| Execution | DNS-pinned GET/HEAD discovery and safe API verification plus durable Worker, orphan cleanup, restricted-container policy, authenticated Engine gateway, and fixed-field Unix-socket Docker adapter; arbitrary tools remain disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
-Authenticated discovery, security-tool and exploit execution, LLM orchestration,
+Authenticated browser testing, security-tool and exploit execution, LLM orchestration,
 Planner/Operator/Verifier agents, and SARIF reporting remain roadmap items. The proposed
 provider-neutral AI driver is documented in [AI Driver Architecture](docs/AI_DRIVER.md).
 
@@ -193,11 +193,10 @@ provider keys, customer credentials, or captured target data.
 
 ## Project status and roadmap
 
-Phase 0 is the completed foundation. Version 0.2.0 adds a usable bounded crawler,
-same-origin discovery, per-request scope and DNS enforcement, aggregate Evidence and
-Findings, severity/confidence/remediation, and JSON, Markdown, or HTML reports. Worker
-isolation and Engine-gateway foundations remain available; authenticated browser and
-active testing workflows are later milestones.
+Phase 0 and bounded discovery are complete. Version 0.3.0 adds semantic OpenAPI
+operation inventory and automated verification of parameterless read-only operations,
+including evidence-backed candidate detection when declared authentication appears
+unenforced. Authenticated browser and state-changing tests remain later milestones.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
 not guaranteed release dates.

@@ -50,6 +50,30 @@ class DiscoverySummary(BaseModel):
     candidate_targets: tuple[str, ...]
 
 
+class ApiOperationSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    method: str
+    path: str
+    target: str
+    operation_id: str | None
+    requires_authentication: bool
+    safe_to_probe: bool
+
+
+class ApiInventorySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    documents_found: int
+    operations_total: int
+    read_operations: int
+    write_operations: int
+    safe_probe_operations: int
+    active_probes_run: int
+    inventory_truncated: bool
+    operations: tuple[ApiOperationSummary, ...]
+
+
 class ReportCounts(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -79,10 +103,11 @@ class EngagementReport(ReportSchema):
     action_states: dict[str, int]
     evidence_integrity: EvidenceIntegrity
     discovery: DiscoverySummary
+    api_inventory: ApiInventorySummary
     evidence: tuple[EvidenceReportItem, ...]
     findings: tuple[FindingReportItem, ...]
     raw_evidence_included: Literal[False] = False
-    execution_available: Literal[False] = False
+    execution_available: bool = False
 
 
 class ReportExportCreate(BaseModel):

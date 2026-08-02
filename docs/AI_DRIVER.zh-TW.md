@@ -52,7 +52,7 @@ Command。
 
 ## 交付順序
 
-1. 先透過 REST 穩定 v0.2 Discovery 與 Report。
+1. 先透過 REST 穩定 v0.3 Discovery、安全主動驗證與 Report。
 2. 在穩定 Application Contract 上增加本機 stdio MCP Server。
 3. 發布 Codex 與 Claude Code 的 Project-scoped 安裝設定。
 4. 加入可 Resume 的 Assessment Resource 與進度通知。

@@ -15,6 +15,9 @@ type AssessmentCopy = {
   chooseProject: string;
   chooseProjectPlaceholder: string;
   advancedOptions: string;
+  testMode: string;
+  modeActiveSafe: string;
+  modePassive: string;
   scanPreset: string;
   presetSafe: string;
   presetFast: string;
@@ -35,6 +38,9 @@ type AssessmentCopy = {
   evidenceIntegrity: string;
   pagesScanned: string;
   crawlLimited: string;
+  activeProbes: string;
+  apiOperations: string;
+  activeLimited: string;
   findingDetails: string;
   noFindings: string;
   downloadJson: string;
@@ -65,6 +71,7 @@ export function AssessmentWorkspace({
   message,
   projectId,
   projects,
+  mode,
   preset,
   target,
   stage,
@@ -75,6 +82,7 @@ export function AssessmentWorkspace({
   onHistoryProjectChange,
   onHistoryView,
   onPreviewHtml,
+  onModeChange,
   onPresetChange,
   onProjectChange,
   onSubmit,
@@ -93,6 +101,7 @@ export function AssessmentWorkspace({
   message: string;
   projectId: string;
   projects: Project[];
+  mode: "passive" | "active-safe";
   preset: "safe" | "fast" | "deep";
   target: string;
   stage: "preparing" | "capturing" | "reporting" | null;
@@ -103,6 +112,7 @@ export function AssessmentWorkspace({
   onHistoryProjectChange: (value: string) => void;
   onHistoryView: (assessment: AssessmentHistoryItem) => void;
   onPreviewHtml: () => void;
+  onModeChange: (value: "passive" | "active-safe") => void;
   onPresetChange: (value: "safe" | "fast" | "deep") => void;
   onProjectChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
@@ -139,6 +149,15 @@ export function AssessmentWorkspace({
               type="url"
               value={target}
             />
+            <label htmlFor="assessment-mode">{t.testMode}</label>
+            <select
+              id="assessment-mode"
+              onChange={(event) => onModeChange(event.target.value as "passive" | "active-safe")}
+              value={mode}
+            >
+              <option value="active-safe">{t.modeActiveSafe}</option>
+              <option value="passive">{t.modePassive}</option>
+            </select>
             <details className="assessment-advanced">
               <summary>{t.advancedOptions}</summary>
               <p>{t.automaticProject}</p>
@@ -208,9 +227,19 @@ export function AssessmentWorkspace({
                 {latestReport && (
                   <div><dt>{t.pagesScanned}</dt><dd>{latestReport.discovery.pages_scanned}</dd></div>
                 )}
+                {latestReport && (
+                  <div><dt>{t.apiOperations}</dt><dd>{latestReport.api_inventory.operations_total}</dd></div>
+                )}
+                {latestReport && (
+                  <div><dt>{t.activeProbes}</dt><dd>{latestReport.api_inventory.active_probes_run}</dd></div>
+                )}
               </dl>
               {"crawl_truncated" in latestAssessment && latestAssessment.crawl_truncated && (
                 <p className="crawl-limited">{t.crawlLimited}</p>
+              )}
+              {"active_probe_truncated" in latestAssessment
+                && latestAssessment.active_probe_truncated && (
+                <p className="crawl-limited">{t.activeLimited}</p>
               )}
               {latestReport && (
                 <div className="finding-results">

@@ -56,7 +56,7 @@ unbounded preset, or invoke arbitrary target-facing commands.
 
 ## Delivery sequence
 
-1. Stabilize v0.2 discovery and reports through REST.
+1. Stabilize v0.3 discovery, safe active verification, and reports through REST.
 2. Add a local stdio MCP server over the stable REST/application contracts.
 3. Publish project-scoped setup for Codex and Claude Code.
 4. Add resumable assessment resources and progress notifications.
