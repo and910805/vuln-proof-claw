@@ -30,7 +30,7 @@ def live_request() -> WorkerRequest:
         parameter_digest="a" * 64,
         risk_level=RiskLevel.L1,
         idempotency_key="live-worker-boundary-1",
-        capabilities=("http_client",),
+        capabilities=(),
         scope=WorkerScope(
             allowed_hostnames=("example.test",),
             allowed_ports=(443,),
@@ -77,6 +77,6 @@ async def test_live_digest_pinned_worker_round_trip_when_explicitly_enabled() ->
                 await runtime.destroy(reference)
 
     assert response.status is WorkerResultStatus.POLICY_DENIED
-    assert response.error_code == "worker_execution_not_implemented"
+    assert response.error_code == "worker_action_not_supported"
     assert response.exit_code == 2
     assert response.evidence_ids == ()

@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+## [0.0.21] - 2026-08-02
+
+### 新增
+
+- 新增窄範圍 Worker executor，透過既有 DNS-pinned HTTP transport，執行受 Scope 約束、無憑證的 `public_page_read` L0 GET／HEAD request。
+- 新增受保護的 HTTP Action request 契約，在網路 I/O 前驗證 capability、parameter digest、timeout、header、method 與解碼後 response 大小。
+- 新增明確授權 loopback 的真實 transport 測試，以及從 Worker capture 到 Evidence、Action 完成與 hash-chain 驗證的端對端整合測試。
+
+### 變更
+
+- 專案與 Web package 版本前進至 `0.0.21`，並新增英文與繁體中文的 executor 邊界文件。
+- 不支援的 Worker Action 現在會回傳穩定的 `worker_action_not_supported` policy 結果，不再使用先前的未實作 placeholder。
+
+### 安全性
+
+- Executor 不使用 proxy、驗證所有 DNS 解析位址、拒絕混合公開／私有位址、固定已驗證 IP 並保留 TLS hostname 驗證、拒絕 redirect，且限制 timeout 與 response bytes。
+- Authorization、Cookie、request body、POST、登入 session、JavaScript、crawler、browser automation 與任意工具仍不在契約內；未知 transport 細節不會反射。
+- 官方 Docker Worker network 仍為 internal，公開 egress 仍停用，需等待另行審查的受控 egress 設計與啟動整合。
+
 ## [0.0.20] - 2026-08-02
 
 ### Added

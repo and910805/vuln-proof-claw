@@ -6,6 +6,25 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.21] - 2026-08-02
+
+### Added
+
+- Added a narrow Worker executor for scope-bound, credential-free `public_page_read` L0 GET/HEAD requests using the existing DNS-pinned HTTP transport.
+- Added a protected HTTP action request contract with capability, parameter-digest, timeout, header, method, and decoded-response-size validation before network I/O.
+- Added a real explicitly scoped loopback transport test and an end-to-end Worker capture-to-Evidence integration test covering Action completion and hash-chain verification.
+
+### Changed
+
+- Advanced the project and Web package version to `0.0.21` and documented the executor boundary in English and Traditional Chinese.
+- Unsupported Worker actions now fail with a stable `worker_action_not_supported` policy result instead of the earlier implementation placeholder.
+
+### Security
+
+- The executor disables proxies, validates every resolved address, rejects mixed public/private answers, pins a validated IP while preserving TLS hostname checks, refuses redirects, and bounds timeout and response bytes.
+- Authorization, cookies, request bodies, POST, login sessions, JavaScript, crawling, browser automation, and arbitrary tools remain outside the contract; unknown transport details are not reflected.
+- The official Docker Worker network remains internal and public egress remains disabled pending a separately reviewed controlled-egress design and startup integration.
+
 ## [0.0.20] - 2026-08-02
 
 ### Added

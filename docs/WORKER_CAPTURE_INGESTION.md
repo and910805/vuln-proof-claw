@@ -39,8 +39,10 @@ Any binding or scope failure closes the Action as failed with a stable safe
 error and persists no evidence. The audit event contains Evidence IDs, status,
 and safe error codes, never the inline body.
 
-## Remaining gate
+## Version 0.0.21 follow-up
 
-The bundled Worker still returns `worker_execution_not_implemented` and makes
-no target request. Scoped egress and a narrowly reviewed HTTP executor must be
-implemented before this ingestion path can receive live Worker captures.
+Version 0.0.21 adds the narrowly reviewed, credential-free GET/HEAD executor
+described in [WORKER_HTTP_EXECUTOR.md](WORKER_HTTP_EXECUTOR.md). The ingestion
+path can therefore receive real captures in an explicitly network-enabled and
+scoped environment. The official Docker Worker network remains internal;
+controlled container egress and startup integration are still pending.

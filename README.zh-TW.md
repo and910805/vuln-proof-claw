@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.20-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.21-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0.0.20 提供一條預設關閉、受 Scope 約束的被動 URL
+> **Pre-alpha 狀態：** Phase 0.0.21 提供一條預設關閉、受 Scope 約束的被動 URL
 > 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
 > crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
 > 全部維持 fail-closed。
@@ -149,8 +149,8 @@ flowchart TD
     Control --> Database[("PostgreSQL")]
     Control --> Manager["Worker Manager<br/>具稽核的 lifecycle 預覽"]
     Manager --> Protocol["版本化 Worker protocol"]
-    Protocol --> Worker["一次性 Worker<br/>規劃中的 execution adapter"]
-    Worker -. "未來受 scope 限制的 egress" .-> Target["已授權 Web／API 目標"]
+    Protocol --> Worker["一次性 Worker<br/>窄範圍 GET／HEAD executor"]
+    Worker -. "受控 egress 待完成" .-> Target["已授權 Web／API 目標"]
 ```
 
 控制平面採用 Python modular monolith。Domain code 不依賴 FastAPI、SQLAlchemy、
@@ -183,8 +183,9 @@ Phase 0 基礎建設已完成。v0.1 預覽版目前包含持久化 Engagement�
 capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱、不可變的
 Markdown／JSON 報告匯出、經測試的 orphan-runtime cleanup 契約、完整受限 container
 policy adapter、authenticated bounded Engine-gateway 邊界，以及固定欄位 Unix-socket Docker
-Engine adapter，Worker HTTP capture ingestion 也已綁定 Evidence chain。Evidence Core 里程碑
-仍待完成 scope egress、target-facing Worker executor capability、registry digest publication 與啟動整合。
+Engine adapter、綁定 Evidence chain 的 Worker HTTP capture ingestion，以及窄範圍 DNS-pinned
+GET／HEAD executor。Evidence Core 里程碑仍待完成受控 container egress、registry digest
+publication 與啟動整合。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。
@@ -212,6 +213,7 @@ Engine adapter，Worker HTTP capture ingestion 也已綁定 Evidence chain。Evi
 | 受限 Docker runtime 邊界 | [docs/RESTRICTED_RUNTIME.md](docs/RESTRICTED_RUNTIME.md) | [docs/RESTRICTED_RUNTIME.zh-TW.md](docs/RESTRICTED_RUNTIME.zh-TW.md) |
 | Authenticated Engine gateway boundary | [docs/ENGINE_GATEWAY.md](docs/ENGINE_GATEWAY.md) | [docs/ENGINE_GATEWAY.zh-TW.md](docs/ENGINE_GATEWAY.zh-TW.md) |
 | Restricted Docker Engine backend | [docs/DOCKER_ENGINE_BACKEND.md](docs/DOCKER_ENGINE_BACKEND.md) | [docs/DOCKER_ENGINE_BACKEND.zh-TW.md](docs/DOCKER_ENGINE_BACKEND.zh-TW.md) |
+| Worker HTTP executor | [docs/WORKER_HTTP_EXECUTOR.md](docs/WORKER_HTTP_EXECUTOR.md) | [docs/WORKER_HTTP_EXECUTOR.zh-TW.md](docs/WORKER_HTTP_EXECUTOR.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

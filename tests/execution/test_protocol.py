@@ -16,12 +16,14 @@ from vuln_proof_claw.domain.identifiers import (
     EngagementId,
     EvidenceId,
 )
+from vuln_proof_claw.execution.http_contract import http_parameter_digest
 from vuln_proof_claw.execution.manager import (
     DisabledWorkerManager,
     WorkerExecutionUnavailableError,
 )
 from vuln_proof_claw.execution.protocol import (
     MAXIMUM_INLINE_CAPTURE_BODY_BYTES,
+    WorkerHttpAction,
     WorkerHttpCapture,
     WorkerLimits,
     WorkerRequest,
@@ -71,7 +73,7 @@ def request(*, risk_level: RiskLevel = RiskLevel.L2) -> WorkerRequest:
             else None
         ),
         idempotency_key="action-1",
-        capabilities=("http_client",),
+        capabilities=(),
         scope=worker_scope(),
         limits=worker_limits(),
     )
@@ -122,6 +124,86 @@ def test_request_target_must_be_canonical_and_inside_worker_scope(
 
     with pytest.raises(ValidationError, match=message):
         WorkerRequest.model_validate(payload)
+
+
+def public_read_request() -> WorkerRequest:
+    target = "https://example.test:443/api/upload"
+    action = WorkerHttpAction(
+        method="GET",
+        headers=(("accept", "text/plain"),),
+        maximum_response_bytes=4096,
+    )
+    return WorkerRequest(
+        request_id="public-read-1",
+        engagement_id=EngagementId("00000000-0000-7000-8000-000000000001"),
+        action_id=ActionId("00000000-0000-7000-8000-000000000002"),
+        action_type="public_page_read",
+        normalized_target=target,
+        parameter_digest=http_parameter_digest(
+            method=action.method,
+            target=target,
+            headers=action.headers,
+        ),
+        risk_level=RiskLevel.L0,
+        idempotency_key="public-read-1",
+        capabilities=("http_client",),
+        http_action=action,
+        scope=worker_scope(),
+        limits=WorkerLimits(
+            timeout_seconds=30,
+            memory_megabytes=128,
+            cpu_count=0.5,
+            process_limit=32,
+        ),
+    )
+
+
+def test_public_read_request_binds_exact_http_action() -> None:
+    original = public_read_request()
+
+    restored = WorkerRequest.model_validate_json(original.model_dump_json())
+
+    assert restored == original
+    assert restored.http_action is not None
+    assert restored.http_action.headers == (("accept", "text/plain"),)
+    assert restored.http_action.maximum_response_bytes == 4096
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"parameter_digest": "b" * 64}, "digest"),
+        ({"capabilities": ()}, "requires"),
+        ({"action_type": "file_upload"}, "only supported"),
+        (
+            {
+                "limits": WorkerLimits(
+                    timeout_seconds=61,
+                    memory_megabytes=128,
+                    cpu_count=0.5,
+                    process_limit=32,
+                )
+            },
+            "60 seconds",
+        ),
+    ],
+)
+def test_public_read_request_rejects_ambient_or_drifted_authority(
+    changes: dict[str, object],
+    message: str,
+) -> None:
+    payload = public_read_request().model_dump()
+    payload.update(changes)
+
+    with pytest.raises(ValidationError, match=message):
+        WorkerRequest.model_validate(payload)
+
+
+def test_http_action_rejects_credentials_and_oversized_response_budget() -> None:
+    with pytest.raises(ValidationError, match="not allowed"):
+        WorkerHttpAction(headers=(("authorization", "Bearer secret"),))
+    with pytest.raises(ValidationError, match="less than or equal"):
+        WorkerHttpAction(maximum_response_bytes=MAXIMUM_INLINE_CAPTURE_BODY_BYTES + 1)
 
 
 def test_response_requires_safe_error_code_and_ordered_aware_times() -> None:

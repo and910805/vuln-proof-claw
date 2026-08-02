@@ -22,6 +22,7 @@ from vuln_proof_claw.execution.authorization import (
     authorize_queued_action,
     begin_execution,
 )
+from vuln_proof_claw.execution.http_contract import http_parameter_digest
 from vuln_proof_claw.persistence.repositories import ActionRepository
 from vuln_proof_claw.policy.scope import normalize_target
 
@@ -165,14 +166,11 @@ def _normalize_headers(
 
 def capture_parameter_digest(request: HttpCaptureRequest) -> str:
     """Bind an Action to the exact method, canonical target, and safe request headers."""
-    protected = canonical_json(
-        {
-            "headers": [list(item) for item in request.headers],
-            "method": request.method,
-            "target": request.target,
-        }
+    return http_parameter_digest(
+        method=request.method,
+        target=request.target,
+        headers=request.headers,
     )
-    return hashlib.sha256(protected).hexdigest()
 
 
 def http_capture_evidence_bytes(

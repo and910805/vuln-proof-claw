@@ -19,6 +19,7 @@ from vuln_proof_claw.domain.identifiers import (
     EngagementId,
     EvidenceId,
 )
+from vuln_proof_claw.execution.http_contract import http_parameter_digest
 from vuln_proof_claw.policy.scope import (
     EngagementScope,
     evaluate_scope,
@@ -38,6 +39,7 @@ MAXIMUM_INLINE_CAPTURE_BODY_BASE64_CHARACTERS = (
 _MAXIMUM_HTTP_HEADER_COUNT = 100
 _MAXIMUM_HTTP_HEADER_BYTES = 64 * 1024
 _MAXIMUM_CAPTURE_DURATION_MS = 10_800 * 1000
+_MAXIMUM_HTTP_TIMEOUT_SECONDS = 60
 _ALLOWED_HTTP_REQUEST_HEADERS = frozenset({"accept", "user-agent"})
 
 
@@ -105,6 +107,39 @@ class WorkerScope(ProtocolModel):
             raise ValueError("worker scope requires allowed ports and schemes")
         return self
 
+    def as_engagement_scope(self) -> EngagementScope:
+        """Rebuild the runtime-neutral scope used for Worker-side enforcement."""
+        return EngagementScope.create(
+            allowed_hostnames=self.allowed_hostnames,
+            allowed_cidrs=self.allowed_cidrs,
+            allowed_ports=self.allowed_ports,
+            allowed_schemes=self.allowed_schemes,
+            allowed_paths=self.allowed_paths,
+            denied_hostnames=self.denied_hostnames,
+            denied_cidrs=self.denied_cidrs,
+            denied_paths=self.denied_paths,
+        )
+
+
+class WorkerHttpAction(ProtocolModel):
+    """Exact passive HTTP operation authorized for one Worker request."""
+
+    method: Literal["GET", "HEAD"] = "GET"
+    headers: tuple[tuple[str, str], ...] = Field(default=(), max_length=100)
+    maximum_response_bytes: int = Field(
+        default=MAXIMUM_INLINE_CAPTURE_BODY_BYTES,
+        ge=1,
+        le=MAXIMUM_INLINE_CAPTURE_BODY_BYTES,
+    )
+
+    @field_validator("headers")
+    @classmethod
+    def validate_headers(
+        cls,
+        values: tuple[tuple[str, str], ...],
+    ) -> tuple[tuple[str, str], ...]:
+        return _normalize_worker_headers(values, request=True)
+
 
 class WorkerRequest(ProtocolModel):
     """One authorized, idempotent action submitted to a disposable worker."""
@@ -120,6 +155,7 @@ class WorkerRequest(ProtocolModel):
     approval_id: ApprovalId | None = None
     idempotency_key: str = Field(min_length=1, max_length=255)
     capabilities: tuple[str, ...] = ()
+    http_action: WorkerHttpAction | None = None
     scope: WorkerScope
     limits: WorkerLimits
 
@@ -134,18 +170,26 @@ class WorkerRequest(ProtocolModel):
     def require_high_risk_approval(self) -> WorkerRequest:
         if self.risk_level.requires_approval and self.approval_id is None:
             raise ValueError("L2-L4 worker requests require an approval_id")
-        scope = EngagementScope.create(
-            allowed_hostnames=self.scope.allowed_hostnames,
-            allowed_cidrs=self.scope.allowed_cidrs,
-            allowed_ports=self.scope.allowed_ports,
-            allowed_schemes=self.scope.allowed_schemes,
-            allowed_paths=self.scope.allowed_paths,
-            denied_hostnames=self.scope.denied_hostnames,
-            denied_cidrs=self.scope.denied_cidrs,
-            denied_paths=self.scope.denied_paths,
-        )
+        scope = self.scope.as_engagement_scope()
         if not evaluate_scope(self.normalized_target, scope, at=datetime.now(UTC)).allowed:
             raise ValueError("normalized_target is outside the worker scope")
+        if self.action_type == "public_page_read":
+            if self.risk_level is not RiskLevel.L0:
+                raise ValueError("public_page_read must remain an L0 action")
+            if self.http_action is None or "http_client" not in self.capabilities:
+                raise ValueError("public_page_read requires one HTTP action and capability")
+            if self.limits.timeout_seconds > _MAXIMUM_HTTP_TIMEOUT_SECONDS:
+                raise ValueError("public_page_read timeout must not exceed 60 seconds")
+        elif self.http_action is not None:
+            raise ValueError("HTTP action is only supported for public_page_read")
+        if "http_client" in self.capabilities and self.http_action is None:
+            raise ValueError("http_client capability requires one HTTP action")
+        if self.http_action is not None and self.parameter_digest != http_parameter_digest(
+            method=self.http_action.method,
+            target=self.normalized_target,
+            headers=self.http_action.headers,
+        ):
+            raise ValueError("HTTP action parameter digest does not match")
         return self
 
 
