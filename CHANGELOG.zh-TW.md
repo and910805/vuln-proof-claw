@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+## [0.0.19] - 2026-08-02
+
+### Added
+
+- 新增有大小上限的 Worker stdin 入口，嚴格驗證一筆真實 v1 request，並在不連線目標、不捏造證據的前提下輸出綁定原請求的終止回應。
+- 在既有 SBOM 旁新增綁定原始碼的 container image 身分紀錄，包含 commit、image ID、平台、Dockerfile hash 與可用的 repository digest。
+- 新增須明確啟用的 Linux／Docker 端對端測試，以 digest-pinned image 驗證正式 Engine adapter 與完整 hardened Worker lifecycle。
+
+### Changed
+
+- 專案與 Web package 版號升至 `0.0.19`，並記錄協定驗證、本機 image identity、registry publication 與 target-facing execution 的差異。
+
+### Security
+
+- 無效、畸形、空白與超限 Worker 輸入只會產生一筆固定且不反射輸入的錯誤；有效輸入會產生綁定原 request、engagement、action 與 exit code 的嚴格 `policy_denied` 回應。
+- Worker 協定驗證不會對目標發出網路請求，也不回傳 evidence 或 artifact ID，避免把基礎設施里程碑誤認為評估成功。
+- CI image 帶有必須與身分紀錄一致的 OCI source-revision label；本機 image ID 與 registry publication digest 明確分開處理。
+
 ## [0.0.18] - 2026-08-02
 
 ### 新增

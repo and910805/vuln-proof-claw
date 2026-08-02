@@ -1,12 +1,12 @@
 {
   "name": "vuln-proof-claw-web",
   "private": true,
-  "version": "0.0.18",
+  "version": "0.0.19",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build --configLoader runner",
-    "test": "vitest run",
+    "test": "vitest run --configLoader runner",
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {

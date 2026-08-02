@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -26,7 +25,6 @@ from vuln_proof_claw.execution.protocol import (
     WorkerResultStatus,
     WorkerScope,
 )
-from vuln_proof_claw.execution.worker import main as worker_main
 
 NOW = datetime(2026, 7, 31, 10, 0, tzinfo=UTC)
 DIGEST = "a" * 64
@@ -178,15 +176,3 @@ async def test_disabled_manager_fails_closed() -> None:
 
     assert await manager.status("missing") is None
     assert await manager.collect("missing") is None
-
-
-def test_phase_zero_worker_entry_point_emits_only_safe_failure(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit, match="2"):
-        worker_main()
-
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["error_code"] == "worker_execution_not_implemented"
-    assert "target" not in payload
-    assert "credential" not in payload

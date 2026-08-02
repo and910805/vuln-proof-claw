@@ -52,6 +52,9 @@ def test_container_workflow_builds_and_scans_both_images() -> None:
     assert "severity: HIGH,CRITICAL" in content
     assert "format: cyclonedx" in content
     assert "sbom-${{ matrix.component }}.cdx.json" in content
+    assert "scripts/write_image_identity.py" in content
+    assert "--build-arg \"VCS_REF=${{ github.sha }}\"" in content
+    assert "image-identity-${{ matrix.component }}.json" in content
 
 
 def test_dependabot_targets_the_project_default_branch() -> None:

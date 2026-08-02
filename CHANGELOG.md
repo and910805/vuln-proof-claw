@@ -6,6 +6,24 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.19] - 2026-08-02
+
+### Added
+
+- Added a bounded Worker stdin entry point that strictly validates one real v1 request and emits a request-bound terminal response without contacting the target or inventing evidence.
+- Added source-bound container image identity records containing the commit, image ID, platform, Dockerfile hash, and any available repository digest alongside existing SBOM artifacts.
+- Added an explicitly enabled Linux/Docker end-to-end test that exercises the production Engine adapter and complete hardened Worker lifecycle with a digest-pinned image.
+
+### Changed
+
+- Advanced the project and Web package version to `0.0.19` and documented the distinction between protocol verification, local image identity, registry publication, and target-facing execution.
+
+### Security
+
+- Invalid, malformed, empty, and oversized Worker input now produces one fixed non-reflective error; valid input produces a strict `policy_denied` response bound to the original request, engagement, action, and exit code.
+- Worker protocol verification performs no target network request and returns no evidence or artifact identifiers, so an infrastructure milestone cannot be mistaken for a successful assessment.
+- CI images carry an OCI source-revision label that must match the identity record; local image IDs are explicitly kept distinct from registry publication digests.
+
 ## [0.0.18] - 2026-08-02
 
 ### Added

@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.18-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.19-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0.0.18 includes one opt-in, scope-checked passive URL
+> **Pre-alpha status:** Phase 0.0.19 includes one opt-in, scope-checked passive URL
 > assessment that sends a bounded `GET`, stores evidence, and derives conservative
 > findings. It does not crawl, call an LLM, launch external scanners, authenticate to
 > targets, or execute exploit payloads. All broader execution paths fail closed.
@@ -188,7 +188,7 @@ engagements, structured HTTP capture, durable disposable-worker state, guarded r
 evidence review, immutable Markdown/JSON report exports, a tested orphan-runtime
 cleanup contract, a complete restricted-container policy adapter, an authenticated
 bounded Engine-gateway boundary, and a fixed-field Unix-socket Docker Engine adapter.
-Scoped egress, Worker executor capability, digest publication, and startup integration remain before
+Scoped egress, target-facing Worker executor capability, registry digest publication, and startup integration remain before
 the Evidence Core milestone is complete.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
