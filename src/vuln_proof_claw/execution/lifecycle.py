@@ -10,12 +10,22 @@ from sqlalchemy.orm import Session
 from vuln_proof_claw.audit import record_audit_event
 from vuln_proof_claw.domain.action_state import transition_action
 from vuln_proof_claw.domain.enums import ActionState, WorkerState
-from vuln_proof_claw.domain.identifiers import EngagementId, WorkerId
+from vuln_proof_claw.domain.errors import DomainValidationError
+from vuln_proof_claw.domain.identifiers import EngagementId, WorkerId, new_evidence_id
 from vuln_proof_claw.domain.models import Action, WorkerExecution
+from vuln_proof_claw.evidence.models import EvidenceMetadata
+from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
+from vuln_proof_claw.evidence.store import EvidenceStoreError
 from vuln_proof_claw.execution.authorization import (
     ExecutionAuthorizationError,
     authorize_queued_action,
     begin_execution,
+)
+from vuln_proof_claw.execution.http_capture import (
+    HttpCaptureRequest,
+    HttpCaptureResponse,
+    capture_parameter_digest,
+    http_capture_evidence_bytes,
 )
 from vuln_proof_claw.execution.manager import (
     WorkerHandle,
@@ -35,7 +45,7 @@ from vuln_proof_claw.persistence.repositories import (
     Stored,
     WorkerExecutionRepository,
 )
-from vuln_proof_claw.policy.scope import EngagementScope
+from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope
 
 _SYSTEM_ACTOR = "system:worker-manager"
 
@@ -168,19 +178,17 @@ class ActionWorkerCoordinator:
         reported_status = response.status
         target = self._terminal_action_state(response, handle)
         error_code = response.error_code
+        if target is ActionState.SUCCEEDED and response.http_captures:
+            try:
+                response = self._persist_http_capture(response, stored_action.entity)
+            except (DomainValidationError, EvidenceStoreError, WorkerLifecycleError, ValueError):
+                target = ActionState.FAILED
+                error_code = "worker_capture_binding_invalid"
+                response = self._failure_response(response, error_code)
         if target is ActionState.SUCCEEDED and not self._evidence_belongs_to_action(response):
             target = ActionState.FAILED
             error_code = "worker_evidence_binding_invalid"
-            response = WorkerResponse(
-                request_id=response.request_id,
-                engagement_id=response.engagement_id,
-                action_id=response.action_id,
-                status=WorkerResultStatus.FAILED,
-                started_at=response.started_at,
-                completed_at=response.completed_at,
-                exit_code=response.exit_code,
-                error_code=error_code,
-            )
+            response = self._failure_response(response, error_code)
         terminal = transition_action(stored_action.entity, target, at=timestamp)
         ActionRepository(self._session).save(terminal, expected_version=stored_action.version)
         self._audit(
@@ -322,6 +330,84 @@ class ActionWorkerCoordinator:
             (evidence := repository.get(evidence_id)) is not None
             and evidence.action_id == response.action_id
             for evidence_id in response.evidence_ids
+        )
+
+    def _persist_http_capture(
+        self,
+        response: WorkerResponse,
+        action: Action,
+    ) -> WorkerResponse:
+        if len(response.http_captures) != 1:
+            raise WorkerLifecycleError("worker_capture_count_invalid")
+        capture = response.http_captures[0]
+        request = HttpCaptureRequest(
+            action_id=action.id,
+            method=capture.method,
+            target=capture.request_target,
+            headers=capture.request_headers,
+        )
+        if request.target != action.normalized_target:
+            raise WorkerLifecycleError("worker_capture_target_mismatch")
+        if capture_parameter_digest(request) != action.parameter_digest:
+            raise WorkerLifecycleError("worker_capture_parameter_digest_mismatch")
+        scope = self._scope_for_action(action.engagement_id)
+        decision = evaluate_scope(request.target, scope, at=capture.captured_at)
+        if not decision.allowed:
+            raise WorkerLifecycleError("worker_capture_scope_denied")
+        captured_response = HttpCaptureResponse(
+            status_code=capture.status_code,
+            final_target=capture.final_target,
+            headers=capture.response_headers,
+            body=capture.decoded_body(),
+            duration_ms=capture.duration_ms,
+        )
+        evidence_id = new_evidence_id()
+        metadata = EvidenceMetadata(
+            evidence_id=evidence_id,
+            engagement_id=action.engagement_id,
+            action_id=action.id,
+            tool_name="worker-http-capture",
+            tool_version="v1",
+            normalized_parameters={
+                "headers": [list(item) for item in request.headers],
+                "method": request.method,
+                "target": request.target,
+            },
+            captured_at=capture.captured_at,
+            duration_ms=capture.duration_ms,
+            worker_image=self._manager.runtime_identity,
+            environment={"redirects": "disabled", "transport": "restricted-worker"},
+            scope_decision=decision.reason,
+            approval_id=action.approval_id,
+            media_type="application/vnd.vuln-proof-claw.http-capture+json",
+        )
+        PersistentEvidenceStore(self._session).append(
+            metadata,
+            http_capture_evidence_bytes(request, captured_response),
+        )
+        return WorkerResponse(
+            request_id=response.request_id,
+            engagement_id=response.engagement_id,
+            action_id=response.action_id,
+            status=response.status,
+            started_at=response.started_at,
+            completed_at=response.completed_at,
+            evidence_ids=(evidence_id,),
+            artifact_ids=response.artifact_ids,
+            exit_code=response.exit_code,
+        )
+
+    @staticmethod
+    def _failure_response(response: WorkerResponse, error_code: str) -> WorkerResponse:
+        return WorkerResponse(
+            request_id=response.request_id,
+            engagement_id=response.engagement_id,
+            action_id=response.action_id,
+            status=WorkerResultStatus.FAILED,
+            started_at=response.started_at,
+            completed_at=response.completed_at,
+            exit_code=response.exit_code,
+            error_code=error_code,
         )
 
     def _save_execution(

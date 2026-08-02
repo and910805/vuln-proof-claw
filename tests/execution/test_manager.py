@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tests.execution.test_protocol import request
+from tests.execution.test_protocol import http_capture, request
 from vuln_proof_claw.domain.identifiers import EvidenceId, WorkerId
 from vuln_proof_claw.execution.manager import (
     InvalidWorkerStateError,
@@ -18,7 +18,12 @@ from vuln_proof_claw.execution.manager import (
     WorkerRequestConflictError,
     WorkerState,
 )
-from vuln_proof_claw.execution.protocol import WorkerRequest, WorkerResponse, WorkerResultStatus
+from vuln_proof_claw.execution.protocol import (
+    WorkerHttpCapture,
+    WorkerRequest,
+    WorkerResponse,
+    WorkerResultStatus,
+)
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
 
@@ -163,6 +168,43 @@ async def test_response_binding_mismatch_fails_closed() -> None:
     assert terminal is not None
     assert terminal.state is WorkerState.LOST
     assert terminal.cleaned_up
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
+        http_capture(
+            request_target="https://other.test:443/api/upload",
+            final_target="https://other.test:443/api/upload",
+        ),
+        http_capture(duration_ms=300_001),
+    ],
+    ids=("target", "duration"),
+)
+async def test_inline_capture_binding_mismatch_fails_before_persistence(
+    capture: WorkerHttpCapture,
+) -> None:
+    worker_request = request()
+    inline_response = WorkerResponse(
+        request_id=worker_request.request_id,
+        engagement_id=worker_request.engagement_id,
+        action_id=worker_request.action_id,
+        status=WorkerResultStatus.SUCCEEDED,
+        started_at=capture.captured_at,
+        completed_at=capture.captured_at + timedelta(minutes=6),
+        http_captures=(capture,),
+        exit_code=0,
+    )
+    runtime = FakeRuntime(inline_response)
+    lifecycle = manager(runtime)
+    handle = await lifecycle.submit(worker_request)
+    await lifecycle.start(handle.worker_id)
+
+    response = await lifecycle.collect(handle.worker_id)
+
+    assert response is not None
+    assert response.status is WorkerResultStatus.WORKER_ERROR
+    assert response.error_code == "worker_response_binding_mismatch"
 
 
 async def test_start_and_cleanup_failures_are_safe_terminal_states() -> None:

@@ -175,7 +175,7 @@ def capture_parameter_digest(request: HttpCaptureRequest) -> str:
     return hashlib.sha256(protected).hexdigest()
 
 
-def _evidence_bytes(
+def http_capture_evidence_bytes(
     request: HttpCaptureRequest,
     response: HttpCaptureResponse,
 ) -> bytes:
@@ -253,7 +253,7 @@ class HttpCaptureCoordinator:
                 error_code=error_code,
             )
 
-        raw_content = _evidence_bytes(request, response)
+        raw_content = http_capture_evidence_bytes(request, response)
         item_id = evidence_id or new_evidence_id()
         metadata = EvidenceMetadata(
             evidence_id=item_id,

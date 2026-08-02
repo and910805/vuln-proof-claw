@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Literal, cast
@@ -28,6 +31,14 @@ from vuln_proof_claw.policy.scope import (
 )
 
 PROTOCOL_VERSION: Literal["v1"] = "v1"
+MAXIMUM_INLINE_CAPTURE_BODY_BYTES = 512 * 1024
+MAXIMUM_INLINE_CAPTURE_BODY_BASE64_CHARACTERS = (
+    4 * ((MAXIMUM_INLINE_CAPTURE_BODY_BYTES + 2) // 3)
+)
+_MAXIMUM_HTTP_HEADER_COUNT = 100
+_MAXIMUM_HTTP_HEADER_BYTES = 64 * 1024
+_MAXIMUM_CAPTURE_DURATION_MS = 10_800 * 1000
+_ALLOWED_HTTP_REQUEST_HEADERS = frozenset({"accept", "user-agent"})
 
 
 class ProtocolModel(BaseModel):
@@ -149,6 +160,71 @@ class WorkerResultStatus(StrEnum):
     WORKER_ERROR = "worker_error"
 
 
+class WorkerHttpCapture(ProtocolModel):
+    """One bounded HTTP capture awaiting trusted control-plane persistence."""
+
+    capture_schema: Literal["http-v1"] = "http-v1"
+    method: Literal["GET", "HEAD"]
+    request_target: str
+    request_headers: tuple[tuple[str, str], ...] = Field(default=(), max_length=100)
+    status_code: int = Field(ge=100, le=599)
+    final_target: str
+    response_headers: tuple[tuple[str, str], ...] = Field(default=(), max_length=100)
+    body_base64: str = Field(
+        max_length=MAXIMUM_INLINE_CAPTURE_BODY_BASE64_CHARACTERS,
+        repr=False,
+    )
+    body_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    captured_at: datetime
+    duration_ms: int = Field(ge=0, le=_MAXIMUM_CAPTURE_DURATION_MS)
+
+    @field_validator("request_target", "final_target")
+    @classmethod
+    def require_canonical_capture_target(cls, value: str) -> str:
+        if str(normalize_target(value)) != value:
+            raise ValueError("capture targets must use the canonical target format")
+        return value
+
+    @field_validator("request_headers")
+    @classmethod
+    def validate_request_headers(
+        cls,
+        values: tuple[tuple[str, str], ...],
+    ) -> tuple[tuple[str, str], ...]:
+        return _normalize_worker_headers(values, request=True)
+
+    @field_validator("response_headers")
+    @classmethod
+    def validate_response_headers(
+        cls,
+        values: tuple[tuple[str, str], ...],
+    ) -> tuple[tuple[str, str], ...]:
+        return _normalize_worker_headers(values, request=False)
+
+    @model_validator(mode="after")
+    def validate_capture_content(self) -> WorkerHttpCapture:
+        if self.captured_at.tzinfo is None or self.captured_at.utcoffset() is None:
+            raise ValueError("captured_at must be timezone-aware")
+        if self.final_target != self.request_target:
+            raise ValueError("redirected worker captures are not accepted")
+        body = self.decoded_body()
+        if self.method == "HEAD" and body:
+            raise ValueError("HEAD worker captures must not contain a body")
+        if hashlib.sha256(body).hexdigest() != self.body_sha256:
+            raise ValueError("worker capture body digest does not match")
+        return self
+
+    def decoded_body(self) -> bytes:
+        """Decode the body only after strict alphabet and decoded-size checks."""
+        try:
+            body = base64.b64decode(self.body_base64, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError("worker capture body is not valid base64") from error
+        if len(body) > MAXIMUM_INLINE_CAPTURE_BODY_BYTES:
+            raise ValueError("worker capture body exceeds the decoded byte limit")
+        return body
+
+
 class WorkerResponse(ProtocolModel):
     """Terminal response containing references rather than raw evidence bodies."""
 
@@ -161,6 +237,7 @@ class WorkerResponse(ProtocolModel):
     completed_at: datetime
     evidence_ids: tuple[EvidenceId, ...] = ()
     artifact_ids: tuple[ArtifactId, ...] = ()
+    http_captures: tuple[WorkerHttpCapture, ...] = Field(default=(), max_length=1, repr=False)
     exit_code: int | None = None
     error_code: str | None = None
 
@@ -176,6 +253,46 @@ class WorkerResponse(ProtocolModel):
             raise ValueError("non-success responses require a safe error_code")
         if self.status is WorkerResultStatus.SUCCEEDED and self.error_code is not None:
             raise ValueError("successful responses must not include an error_code")
-        if self.status is WorkerResultStatus.SUCCEEDED and not self.evidence_ids:
-            raise ValueError("successful responses require at least one evidence_id")
+        if self.status is WorkerResultStatus.SUCCEEDED:
+            if not self.evidence_ids and not self.http_captures:
+                raise ValueError("successful responses require evidence_ids or one HTTP capture")
+            if self.evidence_ids and self.http_captures:
+                raise ValueError("worker responses must not mix evidence_ids and HTTP captures")
+            if any(
+                capture.captured_at < self.started_at
+                or capture.captured_at > self.completed_at
+                for capture in self.http_captures
+            ):
+                raise ValueError("worker capture timestamp is outside the response window")
+        elif self.http_captures:
+            raise ValueError("non-success responses must not include HTTP captures")
         return self
+
+
+def _normalize_worker_headers(
+    headers: tuple[tuple[str, str], ...],
+    *,
+    request: bool,
+) -> tuple[tuple[str, str], ...]:
+    if len(headers) > _MAXIMUM_HTTP_HEADER_COUNT:
+        raise ValueError("worker capture header count exceeds limit")
+    normalized: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    total_bytes = 0
+    for name, value in headers:
+        normalized_name = name.strip().lower()
+        normalized_value = value.strip()
+        if not normalized_name or not normalized_value:
+            raise ValueError("worker capture headers must not be empty")
+        if any(character in name or character in value for character in ("\r", "\n", "\0")):
+            raise ValueError("worker capture headers contain a forbidden delimiter")
+        if request and normalized_name not in _ALLOWED_HTTP_REQUEST_HEADERS:
+            raise ValueError("worker capture request header is not allowed")
+        if request and normalized_name in seen:
+            raise ValueError("worker capture request headers must be unique")
+        seen.add(normalized_name)
+        total_bytes += len(normalized_name.encode()) + len(normalized_value.encode())
+        normalized.append((normalized_name, normalized_value))
+    if total_bytes > _MAXIMUM_HTTP_HEADER_BYTES:
+        raise ValueError("worker capture headers exceed the byte limit")
+    return tuple(sorted(normalized))

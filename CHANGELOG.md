@@ -6,6 +6,25 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.20] - 2026-08-02
+
+### Added
+
+- Added a strict inline `http-v1` Worker capture contract for one GET/HEAD response with canonical targets, allowlisted request headers, bounded headers and body, body digest, capture time, and duration.
+- Added trusted control-plane capture ingestion that reconstructs the existing HTTP evidence contract, rechecks Action parameters and Engagement scope, allocates the Evidence ID, and appends canonical content to the transactional hash chain.
+- Added focused protocol, Worker manager, lifecycle, persistence, parameter-drift, expired-scope, target-binding, duration, base64, digest, redirect, HEAD-body, and decoded-size tests.
+
+### Changed
+
+- Successful Worker responses may contain either persisted Evidence IDs or one inline HTTP capture, never both; accepted inline content is replaced with a control-plane Evidence ID before the lifecycle response is returned.
+- Advanced the project and Web package version to `0.0.20` and added bilingual Worker capture-ingestion documentation.
+
+### Security
+
+- Workers cannot choose Evidence IDs or write directly to evidence storage. Inline bodies are excluded from representations and never copied into audit payloads.
+- The control plane independently checks target and duration binding, protected parameter digests, persisted time-aware scope, redirect rejection, HEAD semantics, decoded byte size, and body SHA-256 before persistence.
+- Rejected captures close the Action with a stable safe code and no evidence; the bundled Worker remains network-disabled, so this boundary does not claim target execution.
+
 ## [0.0.19] - 2026-08-02
 
 ### Added
