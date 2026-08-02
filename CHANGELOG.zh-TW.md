@@ -6,6 +6,28 @@
 
 ## Unreleased
 
+## [0.2.0] - 2026-08-02
+
+### Added
+
+- 加入同源有界 Crawler：Safe（5）、Fast（15）、Deep（30）頁／Request Preset，以及不可放寬的時間 Budget。
+- 從 HTML Link、Asset、Form、robots／sitemap、JavaScript API Path 與常見 security／OpenAPI／GraphQL 位置進行 deterministic discovery。
+- Finding 新增 Severity、Confidence 與可執行 Remediation，並提供 Alembic Migration。
+- 報告新增 Discovery Summary，以及受嚴格 Content Security Policy 保護的安全轉義 HTML 預覽。
+- 新增 Provider-neutral AI 驅動架構，供未來 Codex、Claude Code 與其他 MCP Client 使用。
+
+### Changed
+
+- 評估結果與歷史現在會把所有 Discovery Page 聚合成單一 Engagement Report 與 Evidence Chain。
+- Web Console 新增探索 Preset、已掃描頁數、Severity Badge、Remediation 與 HTML 預覽。
+- Python 與 Web Package 版本前進至 `0.2.0`。
+
+### Security
+
+- 每個發現的 URL 都必須維持同源、符合持久化 Engagement Scope、重新通過 DNS／Private-address Policy，並遵守固定 Page、Request、Time、Response-size 與 Timeout Budget。
+- Crawler 仍維持無憑證、GET-only、不跟隨 Redirect，且不提交 Form。
+- AI Agent 維持在安全邊界之外，不能授予授權或擴大 Scope。
+
 ## [0.1.0] - 2026-08-02
 
 ### 新增

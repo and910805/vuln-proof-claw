@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from vuln_proof_claw.domain.enums import (
     ActionState,
     ArtifactKind,
+    FindingConfidence,
+    FindingSeverity,
     FindingStatus,
     ReportFormat,
     RiskLevel,
@@ -318,6 +320,9 @@ class Finding:
     affected_target: str
     evidence_ids: tuple[EvidenceId, ...] = ()
     status: FindingStatus = FindingStatus.CANDIDATE
+    severity: FindingSeverity = FindingSeverity.INFORMATIONAL
+    confidence: FindingConfidence = FindingConfidence.MEDIUM
+    remediation: str = "Review the evidence and apply the relevant security control."
     id: FindingId = field(default_factory=new_finding_id)
     created_at: datetime = field(default_factory=utc_now)
 
@@ -325,6 +330,7 @@ class Finding:
         _require_text(self.title, "title")
         _require_text(self.vulnerability_class, "vulnerability_class")
         _require_text(self.affected_target, "affected_target")
+        _require_text(self.remediation, "remediation")
         _require_aware(self.created_at, "created_at")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")

@@ -66,6 +66,24 @@ class FindingStatus(StrEnum):
     NEEDS_MANUAL_REVIEW = "needs_manual_review"
 
 
+class FindingSeverity(StrEnum):
+    """User-facing impact rating for a finding."""
+
+    INFORMATIONAL = "informational"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class FindingConfidence(StrEnum):
+    """Strength of the evidence supporting a finding."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class ArtifactKind(StrEnum):
     """Supported artifact categories."""
 

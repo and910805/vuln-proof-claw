@@ -36,7 +36,18 @@ class FindingReportItem(BaseModel):
     vulnerability_class: str
     affected_target: str
     status: str
+    severity: str
+    confidence: str
+    remediation: str
     created_at: datetime
+
+
+class DiscoverySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    pages_scanned: int
+    scanned_targets: tuple[str, ...]
+    candidate_targets: tuple[str, ...]
 
 
 class ReportCounts(BaseModel):
@@ -67,6 +78,7 @@ class EngagementReport(ReportSchema):
     counts: ReportCounts
     action_states: dict[str, int]
     evidence_integrity: EvidenceIntegrity
+    discovery: DiscoverySummary
     evidence: tuple[EvidenceReportItem, ...]
     findings: tuple[FindingReportItem, ...]
     raw_evidence_included: Literal[False] = False

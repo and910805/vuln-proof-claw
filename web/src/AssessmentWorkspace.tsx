@@ -15,6 +15,10 @@ type AssessmentCopy = {
   chooseProject: string;
   chooseProjectPlaceholder: string;
   advancedOptions: string;
+  scanPreset: string;
+  presetSafe: string;
+  presetFast: string;
+  presetDeep: string;
   automaticProject: string;
   targetUrl: string;
   targetPlaceholder: string;
@@ -29,10 +33,13 @@ type AssessmentCopy = {
   findingCount: string;
   evidenceCount: string;
   evidenceIntegrity: string;
+  pagesScanned: string;
+  crawlLimited: string;
   findingDetails: string;
   noFindings: string;
   downloadJson: string;
   downloadMarkdown: string;
+  previewHtml: string;
   viewResult: string;
   emptyPendingHint: string;
   assessmentHistory: string;
@@ -58,6 +65,7 @@ export function AssessmentWorkspace({
   message,
   projectId,
   projects,
+  preset,
   target,
   stage,
   t,
@@ -66,6 +74,8 @@ export function AssessmentWorkspace({
   onHistoryDownload,
   onHistoryProjectChange,
   onHistoryView,
+  onPreviewHtml,
+  onPresetChange,
   onProjectChange,
   onSubmit,
   onTargetChange,
@@ -83,6 +93,7 @@ export function AssessmentWorkspace({
   message: string;
   projectId: string;
   projects: Project[];
+  preset: "safe" | "fast" | "deep";
   target: string;
   stage: "preparing" | "capturing" | "reporting" | null;
   t: AssessmentCopy;
@@ -91,6 +102,8 @@ export function AssessmentWorkspace({
   onHistoryDownload: (assessment: AssessmentHistoryItem, format: "json" | "markdown") => void;
   onHistoryProjectChange: (value: string) => void;
   onHistoryView: (assessment: AssessmentHistoryItem) => void;
+  onPreviewHtml: () => void;
+  onPresetChange: (value: "safe" | "fast" | "deep") => void;
   onProjectChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
   onTargetChange: (value: string) => void;
@@ -129,6 +142,16 @@ export function AssessmentWorkspace({
             <details className="assessment-advanced">
               <summary>{t.advancedOptions}</summary>
               <p>{t.automaticProject}</p>
+              <label htmlFor="assessment-preset">{t.scanPreset}</label>
+              <select
+                id="assessment-preset"
+                onChange={(event) => onPresetChange(event.target.value as "safe" | "fast" | "deep")}
+                value={preset}
+              >
+                <option value="safe">{t.presetSafe}</option>
+                <option value="fast">{t.presetFast}</option>
+                <option value="deep">{t.presetDeep}</option>
+              </select>
               <label htmlFor="assessment-project">{t.chooseProject}</label>
               <select
                 aria-describedby="assessment-hint"
@@ -182,7 +205,13 @@ export function AssessmentWorkspace({
                     <dd>{latestReport.evidence_integrity.status}</dd>
                   </div>
                 )}
+                {latestReport && (
+                  <div><dt>{t.pagesScanned}</dt><dd>{latestReport.discovery.pages_scanned}</dd></div>
+                )}
               </dl>
+              {"crawl_truncated" in latestAssessment && latestAssessment.crawl_truncated && (
+                <p className="crawl-limited">{t.crawlLimited}</p>
+              )}
               {latestReport && (
                 <div className="finding-results">
                   <h4>{t.findingDetails}</h4>
@@ -192,9 +221,15 @@ export function AssessmentWorkspace({
                     <ul>
                       {latestReport.findings.map((finding) => (
                         <li key={finding.id}>
-                          <strong>{finding.title}</strong>
-                          <code>{finding.vulnerability_class}</code>
+                          <div className="finding-heading">
+                            <strong>{finding.title}</strong>
+                            <span className={`severity-badge severity-${finding.severity}`}>
+                              {finding.severity}
+                            </span>
+                          </div>
+                          <code>{finding.vulnerability_class} · {finding.confidence}</code>
                           <span>{finding.affected_target}</span>
+                          <p>{finding.remediation}</p>
                         </li>
                       ))}
                     </ul>
@@ -208,6 +243,9 @@ export function AssessmentWorkspace({
                 </button>
                 <button className="quiet-button" onClick={() => onDownload("markdown")} type="button">
                   {t.downloadMarkdown}
+                </button>
+                <button className="quiet-button" onClick={onPreviewHtml} type="button">
+                  {t.previewHtml}
                 </button>
               </div>
             </>

@@ -1,14 +1,15 @@
-# Passive URL assessment preview
+# Bounded Web discovery assessment
 
 [繁體中文](PASSIVE_ASSESSMENT.zh-TW.md) | **English**
 
-Version 0.0.11 is the first end-to-end target-facing MVP slice. Given an already
-authorized Engagement and URL, it creates a low-risk Action, performs one bounded
-GET request, stores tamper-evident Evidence, derives conservative Findings, and
-returns links to the existing JSON and Markdown reports.
+Version 0.2.0 expands the target-facing MVP into bounded, same-origin Web discovery.
+Given an authorized Engagement and URL, it captures the starting page, extracts
+same-origin candidates, follows them within a selected hard budget, stores
+tamper-evident Evidence per page, derives prioritized Findings, and returns JSON,
+Markdown, and escaped HTML reports.
 
-This is not an autonomous penetration-testing engine. It does not crawl, submit
-forms, authenticate to targets, follow redirects, send payloads, or invoke external
+This is not an autonomous penetration-testing engine. It does not submit forms,
+authenticate to targets, follow redirects, send active payloads, or invoke external
 security tools.
 
 ## Enablement
@@ -20,7 +21,7 @@ Compose profile enables this bounded path so the first-run experience works:
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.1.0
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.2.0
 ```
 
 Docker Compose passes the four bounded assessment settings into the container.
@@ -38,10 +39,11 @@ authorized, and start. The acknowledgement is remembered in that browser; it is 
 an extra step on every run. The first run creates a private workspace automatically.
 Project selection remains available under advanced organization options.
 
-The wizard creates a 24-hour L0 Engagement limited to the exact hostname, scheme,
-port, and path. These controls stay behind the interface. The result view shows
-Finding details, terminal Action state, Evidence count and chain integrity, and can
-download the current JSON or Markdown engagement report.
+The wizard creates a 24-hour L0 Engagement limited to the normalized hostname,
+scheme, port, and selected path prefix. These controls stay behind the interface.
+Safe, Fast, and Deep presets cap discovery at 5, 15, and 30 requests/pages. The
+result view shows severity, confidence, remediation, Evidence integrity, and JSON,
+Markdown, or HTML reporting.
 
 Authenticated deployments can enter the operator token through **Operator access**.
 The credential is held only in tab-scoped `sessionStorage` and can be cleared from
@@ -56,7 +58,7 @@ Authorization: Bearer <operator token>
 Idempotency-Key: baseline-homepage-1
 Content-Type: application/json
 
-{"target":"https://app.example.test/"}
+{"target":"https://app.example.test/","preset":"safe"}
 ```
 
 The response contains the Action state, Evidence and Finding IDs, and report URLs.
@@ -95,12 +97,13 @@ stable failure codes, and report links. Omitting `project_id` returns history ac
 The deterministic analyzer currently evaluates cleartext HTTP, HSTS,
 `X-Content-Type-Options`, HTML CSP and Referrer Policy, version-bearing Server
 headers, and Secure/HttpOnly/SameSite flags on cookie names that look sensitive.
-Each Finding references the captured Evidence. These checks are intentionally
-conservative and are not a substitute for manual verification.
+Each Finding references the captured Evidence and includes severity, confidence,
+and remediation. These checks are intentionally conservative and are not a
+substitute for manual verification.
 
 ## Remaining path to autonomous assessment
 
-The next milestones are a container-isolated runtime, orphan cleanup, bounded crawl
-and endpoint discovery, OpenAPI analysis, an independent verifier, authenticated
-browser sessions, and richer severity/remediation report contracts. Active probes
-and exploit validation require separate approval and safety designs.
+The next milestones are semantic OpenAPI analysis, an independent verifier,
+authenticated browser sessions, and SARIF export. Active probes and exploit
+validation require separate approval and safety designs. The optional AI interaction
+layer is described in [AI Driver Architecture](AI_DRIVER.md).

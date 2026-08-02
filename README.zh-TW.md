@@ -9,17 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha 狀態：** 0.1.0 提供一條可實際使用、受 Scope 約束的被動 URL
-> 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
-> crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
-> 全部維持 fail-closed。
+> **Alpha 狀態：** 0.2.0 提供受 Scope 約束的同源網站探索，以及 Safe、Fast、Deep
+> 三種 Budget。每個擷取頁面都有 Evidence、具優先順序的 Finding，以及 JSON、
+> Markdown 或安全轉義 HTML 報告。目前仍不會登入目標、提交表單、啟動外部掃描器
+> 或送出 exploit payload。
 
 ## 為什麼需要 vuln-proof-claw？
 
@@ -44,8 +44,8 @@ vuln-proof-claw 以這些要求作為核心設計：
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
 | REST API | 版本化 health、project、engagement、passive assessment、workflow、audit、report contract 與 OpenAPI |
-| Web 控制台 | 雙語儀表板、分頁範圍 Operator authentication、授權 URL 評估精靈、可依專案篩選的持久化歷史、報告下載與如實能力狀態 |
-| Evidence Core 預覽版 | Scoped passive URL assessment、transactional evidence、deterministic finding 與不可變報告 |
+| Web 控制台 | 雙語 URL-first 探索、Safe／Fast／Deep preset、進度、具優先順序 Finding、持久化歷史與報告預覽／下載 |
+| Evidence Core | Scoped 多頁被動探索、transactional Evidence、deterministic Finding 與不可變報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
 | Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator、approver 與 evidence-reader role |
@@ -55,8 +55,9 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Execution | Opt-in DNS-pinned passive GET capture、持久化 Worker、orphan cleanup、受限 container policy、authenticated Engine gateway 與固定欄位 Unix-socket Docker adapter；runtime startup 與任意工具仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
-Crawler 型目標探索、資安工具與 exploit execution、LLM orchestration、
-Planner／Operator／Verifier agents，以及進階 HTML／SARIF 報告仍屬於後續路線圖。
+Authenticated discovery、資安工具與 exploit execution、LLM orchestration、
+Planner／Operator／Verifier agents，以及 SARIF 報告仍屬於後續路線圖。Provider-neutral
+AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 
 ## 快速開始
 
@@ -74,7 +75,8 @@ docker compose up --build -d
 
 開啟 <http://127.0.0.1:8080/>，選擇「評估網址」，輸入你確實獲得授權的公開
 HTTP(S) 網址、完成一次授權聲明並開始。第一次執行會自動建立私有工作區；結果頁會
-顯示 Finding、Evidence 完整性，並提供 JSON 與 Markdown 報告。
+顯示具優先順序的 Finding 與 Evidence 完整性，並提供 JSON、Markdown 與安全轉義
+HTML 報告。Safe 模式最多探索五個同源頁面；Fast 與 Deep 可在進階選項切換。
 
 檢查服務：
 
@@ -184,13 +186,10 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 
 ## 專案狀態與路線圖
 
-Phase 0 基礎建設已完成。v0.1.0 Alpha 目前包含持久化 Engagement、結構化 HTTP
-capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱、不可變的
-Markdown／JSON 報告匯出、經測試的 orphan-runtime cleanup 契約、完整受限 container
-policy adapter、authenticated bounded Engine-gateway 邊界，以及固定欄位 Unix-socket Docker
-Engine adapter、綁定 Evidence chain 的 Worker HTTP capture ingestion，以及窄範圍 DNS-pinned
-GET／HEAD executor。Evidence Core 里程碑仍待完成受控 container egress、registry digest
-publication 與啟動整合。
+Phase 0 基礎建設已完成。0.2.0 新增可使用的有界 Crawler、同源 Discovery、逐 Request
+Scope 與 DNS Enforcement、聚合 Evidence／Finding、Severity／Confidence／Remediation，
+以及 JSON、Markdown 或 HTML 報告。Worker Isolation 與 Engine-gateway 基礎仍可使用；
+Authenticated Browser 與 Active Testing Workflow 屬於後續里程碑。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。
@@ -213,6 +212,7 @@ publication 與啟動整合。
 | Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | Evidence 存取與報告匯出 | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
 | Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
+| AI 驅動架構 | [docs/AI_DRIVER.md](docs/AI_DRIVER.md) | [docs/AI_DRIVER.zh-TW.md](docs/AI_DRIVER.zh-TW.md) |
 | 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | Runtime 資源清理器 | [docs/RUNTIME_JANITOR.md](docs/RUNTIME_JANITOR.md) | [docs/RUNTIME_JANITOR.zh-TW.md](docs/RUNTIME_JANITOR.zh-TW.md) |
 | 受限 Docker runtime 邊界 | [docs/RESTRICTED_RUNTIME.md](docs/RESTRICTED_RUNTIME.md) | [docs/RESTRICTED_RUNTIME.zh-TW.md](docs/RESTRICTED_RUNTIME.zh-TW.md) |

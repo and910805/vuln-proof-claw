@@ -14,13 +14,15 @@ Web 基礎版本目前提供：
 - 專案清單與建立專案。
 - 可用 deep link 直接開啟的授權 URL 評估工作區。
 - 根據已確認目標，自動建立範圍縮到最小的 24 小時 L0 Engagement。
-- 被動評估狀態、Evidence／Finding 數量，以及 JSON／Markdown 報告下載。
+- Safe／Fast／Deep 同源 Discovery、Page／Evidence／Finding 數量、具優先順序的
+  Remediation，以及 JSON／Markdown／HTML 報告。
 - 由新到舊的持久化評估歷史，可依專案篩選、顯示失敗狀態，並在重新整理後再次下載報告。
 - 供 authentication deployment 選用的 Operator Bearer Token 輸入。
 - 系統強制執行的 L0-L4 風險政策參考。
 - 如實標示已運作與仍鎖定的能力。
 
-Browser 目前只能啟動有界的被動 URL assessment，不會 crawl、登入目標、執行外部工具或 payload、批准高風險 Action、顯示原始 Evidence，或獨立驗證 Finding。
+Browser 目前只能啟動有界、無憑證、GET-only Discovery；不會登入目標、提交 Form、
+執行外部工具或 Payload、批准高風險 Action、顯示原始 Evidence，或獨立驗證 Finding。
 
 ## 開啟控制台
 
