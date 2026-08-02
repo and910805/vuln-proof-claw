@@ -11,6 +11,7 @@ from vuln_proof_claw.config.models import (
     AssessmentConfig,
     DockerConfig,
     EngineGatewayConfig,
+    EngineServerConfig,
     Environment,
 )
 from vuln_proof_claw.config.settings import Settings
@@ -188,6 +189,45 @@ def test_engine_gateway_requires_safe_origin_and_long_token() -> None:
     assert ipv4.url == "http://127.0.0.1:8081"
     assert ipv6.ready
     assert "g" * 32 not in repr(ipv4)
+
+
+def test_engine_server_requires_a_distinct_long_token_when_enabled() -> None:
+    with pytest.raises(ValidationError, match="requires an authentication token"):
+        EngineServerConfig(enabled=True)
+    for unsafe_host in (
+        "0.0.0.0",  # noqa: S104 - verifies public binding rejection
+        "localhost",
+        "engine.example.test",
+    ):
+        with pytest.raises(ValidationError, match="loopback IP literal"):
+            EngineServerConfig(host=unsafe_host)
+
+    shared = SecretStr("s" * 32)
+    with pytest.raises(ValidationError, match="distinct from API tokens"):
+        Settings(
+            api=ApiConfig(
+                authentication_ready=True,
+                operator_token=shared,
+                approver_token=SecretStr("a" * 32),
+            ),
+            engine_server=EngineServerConfig(enabled=True, token=shared),
+        )
+
+    with pytest.raises(ValidationError, match="client and server tokens must match"):
+        Settings(
+            engine_gateway=EngineGatewayConfig(
+                url="http://127.0.0.1:8081",
+                token=SecretStr("g" * 32),
+            ),
+            engine_server=EngineServerConfig(
+                enabled=True,
+                token=SecretStr("s" * 32),
+            ),
+        )
+
+    configured = EngineServerConfig(enabled=True, token=SecretStr("e" * 32))
+    assert configured.enabled
+    assert "e" * 32 not in repr(configured)
 
 
 def test_assessment_user_agent_rejects_header_injection() -> None:
