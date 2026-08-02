@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+## [0.0.20] - 2026-08-02
+
+### Added
+
+- 新增嚴格的 inline `http-v1` Worker capture 契約，支援一筆 GET／HEAD response，並限制 canonical target、allowlist request header、header/body 大小、body digest、capture time 與 duration。
+- 新增可信控制面 capture ingestion：重建既有 HTTP evidence 契約、重驗 Action parameter 與 Engagement scope、配置 Evidence ID，並將 canonical content 寫入 transactional hash chain。
+- 新增針對協定、Worker manager、lifecycle、持久化、parameter drift、過期 scope、target binding、duration、base64、digest、redirect、HEAD body 與解碼大小的測試。
+
+### Changed
+
+- 成功的 Worker response 可包含已持久化 Evidence ID 或一筆 inline HTTP capture，但不可混用；接受的 inline content 會在 lifecycle response 回傳前換成控制面產生的 Evidence ID。
+- 專案與 Web package 版號升至 `0.0.20`，並新增雙語 Worker capture-ingestion 文件。
+
+### Security
+
+- Worker 無法選擇 Evidence ID，也不能直接寫入 Evidence storage。Inline body 不會出現在 representation 或 audit payload。
+- 控制面會在持久化前獨立檢查 target／duration binding、受保護 parameter digest、具時間性的持久化 scope、redirect rejection、HEAD 語意、解碼後大小與 body SHA-256。
+- 被拒絕的 capture 會以穩定安全錯誤關閉 Action，且不寫入 Evidence；內建 Worker 仍停用網路，因此本邊界不宣稱已完成目標執行。
+
 ## [0.0.19] - 2026-08-02
 
 ### Added

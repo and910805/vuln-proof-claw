@@ -336,6 +336,11 @@ class LifecycleWorkerManager:
             and response.request_id == request.request_id
             and response.engagement_id == request.engagement_id
             and response.action_id == request.action_id
+            and all(
+                capture.request_target == request.normalized_target
+                and capture.duration_ms <= request.limits.timeout_seconds * 1000
+                for capture in response.http_captures
+            )
         )
 
     @staticmethod

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -19,6 +21,8 @@ from vuln_proof_claw.execution.manager import (
     WorkerExecutionUnavailableError,
 )
 from vuln_proof_claw.execution.protocol import (
+    MAXIMUM_INLINE_CAPTURE_BODY_BYTES,
+    WorkerHttpCapture,
     WorkerLimits,
     WorkerRequest,
     WorkerResponse,
@@ -164,6 +168,98 @@ def test_response_requires_safe_error_code_and_ordered_aware_times() -> None:
             error_code="worker_failed",
         )
 
+
+def http_capture(**changes: object) -> WorkerHttpCapture:
+    body = b"hello"
+    values: dict[str, object] = {
+        "method": "GET",
+        "request_target": "https://example.test:443/api/upload",
+        "request_headers": (("accept", "text/plain"),),
+        "status_code": 200,
+        "final_target": "https://example.test:443/api/upload",
+        "response_headers": (("content-type", "text/plain"),),
+        "body_base64": base64.b64encode(body).decode(),
+        "body_sha256": hashlib.sha256(body).hexdigest(),
+        "captured_at": NOW,
+        "duration_ms": 12,
+    }
+    values.update(changes)
+    return WorkerHttpCapture(**values)
+
+
+def test_success_can_carry_one_bounded_http_capture_before_persistence() -> None:
+    capture = http_capture()
+
+    response = WorkerResponse(
+        request_id="request-1",
+        engagement_id=request().engagement_id,
+        action_id=request().action_id,
+        status=WorkerResultStatus.SUCCEEDED,
+        started_at=NOW,
+        completed_at=NOW + timedelta(seconds=1),
+        http_captures=(capture,),
+        exit_code=0,
+    )
+
+    restored = WorkerResponse.model_validate_json(response.model_dump_json())
+    assert restored.http_captures == (capture,)
+    assert restored.evidence_ids == ()
+    assert "hello" not in repr(restored)
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"body_base64": "not-base64"}, "base64"),
+        ({"body_sha256": "b" * 64}, "digest"),
+        ({"final_target": "https://example.test:443/elsewhere"}, "redirected"),
+        ({"request_headers": (("authorization", "secret"),)}, "not allowed"),
+        ({"method": "HEAD"}, "HEAD"),
+    ],
+)
+def test_http_capture_rejects_untrusted_content(
+    changes: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        http_capture(**changes)
+
+
+def test_http_capture_rejects_body_over_decoded_limit() -> None:
+    body = b"x" * (MAXIMUM_INLINE_CAPTURE_BODY_BYTES + 1)
+
+    with pytest.raises(ValidationError, match="decoded byte limit"):
+        http_capture(
+            body_base64=base64.b64encode(body).decode(),
+            body_sha256=hashlib.sha256(body).hexdigest(),
+        )
+
+
+def test_response_rejects_capture_outside_window_or_mixed_with_evidence_ids() -> None:
+    capture = http_capture(captured_at=NOW - timedelta(seconds=1))
+
+    with pytest.raises(ValidationError, match="outside"):
+        WorkerResponse(
+            request_id="request-1",
+            engagement_id=request().engagement_id,
+            action_id=request().action_id,
+            status=WorkerResultStatus.SUCCEEDED,
+            started_at=NOW,
+            completed_at=NOW,
+            http_captures=(capture,),
+        )
+
+    with pytest.raises(ValidationError, match="must not mix"):
+        WorkerResponse(
+            request_id="request-1",
+            engagement_id=request().engagement_id,
+            action_id=request().action_id,
+            status=WorkerResultStatus.SUCCEEDED,
+            started_at=NOW,
+            completed_at=NOW,
+            evidence_ids=(EvidenceId("00000000-0000-7000-8000-000000000004"),),
+            http_captures=(http_capture(),),
+        )
 
 async def test_disabled_manager_fails_closed() -> None:
     manager = DisabledWorkerManager()

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -10,7 +13,7 @@ import pytest
 from sqlalchemy import Engine
 
 from vuln_proof_claw.domain.enums import ActionState, RiskLevel, WorkerState
-from vuln_proof_claw.domain.identifiers import EvidenceId, WorkerId
+from vuln_proof_claw.domain.identifiers import EvidenceId, WorkerId, new_action_id
 from vuln_proof_claw.domain.models import (
     Action,
     Engagement,
@@ -20,6 +23,8 @@ from vuln_proof_claw.domain.models import (
     Task,
     WorkerExecution,
 )
+from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
+from vuln_proof_claw.execution.http_capture import HttpCaptureRequest, capture_parameter_digest
 from vuln_proof_claw.execution.lifecycle import ActionWorkerCoordinator, WorkerLifecycleError
 from vuln_proof_claw.execution.manager import (
     DisabledWorkerManager,
@@ -27,6 +32,7 @@ from vuln_proof_claw.execution.manager import (
     RuntimeResource,
 )
 from vuln_proof_claw.execution.protocol import (
+    WorkerHttpCapture,
     WorkerLimits,
     WorkerRequest,
     WorkerResponse,
@@ -49,7 +55,6 @@ from vuln_proof_claw.persistence.session import create_engine, create_session_fa
 from vuln_proof_claw.policy.scope import EngagementScope
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
-DIGEST = "a" * 64
 
 
 class FakeRuntime:
@@ -110,12 +115,19 @@ def seed_action(engine: Engine) -> tuple[Engagement, Action, WorkerRequest]:
     )
     flow = Flow(engagement_id=engagement.id, objective="Validate", created_at=NOW)
     task = Task(flow_id=flow.id, title="Capture", created_at=NOW)
+    action_id = new_action_id()
+    capture_request = HttpCaptureRequest(
+        action_id=action_id,
+        method="GET",
+        target="https://example.test:443/public",
+    )
     action = Action(
+        id=action_id,
         engagement_id=engagement.id,
         task_id=task.id,
         action_type="public_page_read",
         normalized_target="https://example.test:443/public",
-        parameter_digest=DIGEST,
+        parameter_digest=capture_parameter_digest(capture_request),
         risk_level=RiskLevel.L0,
         idempotency_key="lifecycle-1",
         state=ActionState.QUEUED,
@@ -202,6 +214,90 @@ async def test_success_requires_persisted_evidence_and_records_lifecycle(engine:
         "worker.destroyed",
     }
     assert runtime.calls == ["create", "start", "wait", "destroy"]
+
+
+async def test_inline_worker_capture_is_revalidated_persisted_and_replaced(
+    engine: Engine,
+) -> None:
+    engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    runtime.response = _capture_response(worker_request)
+    session_factory = create_session_factory(engine)
+
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        response = await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+        assert len(response.evidence_ids) == 1
+        assert response.http_captures == ()
+        raw = PersistentEvidenceStore(session).read_raw(response.evidence_ids[0])
+
+    assert raw is not None
+    payload = json.loads(raw)
+    assert payload["request"] == {
+        "headers": [],
+        "method": "GET",
+        "target": "https://example.test:443/public",
+    }
+    assert payload["response"]["body_base64"] == "aGVsbG8="
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        verification = PersistentEvidenceStore(session).verify_engagement(engagement.id)
+    assert stored is not None
+    assert stored.entity.state is ActionState.SUCCEEDED
+    assert verification.valid
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
+        WorkerHttpCapture(
+            method="GET",
+            request_target="https://example.test:443/public",
+            request_headers=(("accept", "application/json"),),
+            status_code=200,
+            final_target="https://example.test:443/public",
+            body_base64="",
+            body_sha256=hashlib.sha256(b"").hexdigest(),
+            captured_at=NOW,
+            duration_ms=1,
+        ),
+        WorkerHttpCapture(
+            method="GET",
+            request_target="https://example.test:443/public",
+            status_code=200,
+            final_target="https://example.test:443/public",
+            body_base64="",
+            body_sha256=hashlib.sha256(b"").hexdigest(),
+            captured_at=NOW + timedelta(days=2),
+            duration_ms=1,
+        ),
+    ],
+    ids=("parameter-drift", "expired-scope"),
+)
+async def test_untrusted_inline_capture_fails_without_persisting_evidence(
+    engine: Engine,
+    capture: WorkerHttpCapture,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    runtime.response = _capture_response(worker_request, capture=capture)
+    session_factory = create_session_factory(engine)
+
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        response = await coordinator.collect(handle.worker_id, at=capture.captured_at)
+
+    assert response.status is WorkerResultStatus.FAILED
+    assert response.error_code == "worker_capture_binding_invalid"
+    assert response.evidence_ids == ()
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        evidence = EvidenceRepository(session).for_action(action.id)
+    assert stored is not None
+    assert stored.entity.state is ActionState.FAILED
+    assert evidence == ()
 
 
 async def test_unpersisted_or_cross_action_evidence_fails_action(engine: Engine) -> None:
@@ -392,5 +488,34 @@ def _response(
         started_at=NOW,
         completed_at=NOW + timedelta(seconds=1),
         evidence_ids=(evidence_id,),
+        exit_code=0,
+    )
+
+
+def _capture_response(
+    worker_request: WorkerRequest,
+    *,
+    capture: WorkerHttpCapture | None = None,
+) -> WorkerResponse:
+    body = b"hello"
+    inline = capture or WorkerHttpCapture(
+        method="GET",
+        request_target=worker_request.normalized_target,
+        status_code=200,
+        final_target=worker_request.normalized_target,
+        response_headers=(("content-type", "text/plain"),),
+        body_base64=base64.b64encode(body).decode(),
+        body_sha256=hashlib.sha256(body).hexdigest(),
+        captured_at=NOW,
+        duration_ms=12,
+    )
+    return WorkerResponse(
+        request_id=worker_request.request_id,
+        engagement_id=worker_request.engagement_id,
+        action_id=worker_request.action_id,
+        status=WorkerResultStatus.SUCCEEDED,
+        started_at=min(NOW, inline.captured_at),
+        completed_at=max(NOW + timedelta(seconds=1), inline.captured_at),
+        http_captures=(inline,),
         exit_code=0,
     )
