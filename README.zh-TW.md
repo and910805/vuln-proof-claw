@@ -9,17 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
-> **v0.4.0 重大更新：** 新增具樂觀版本檢查與 Audit trail 的 Finding 審查流程、SARIF 2.1.0 報告與不可變 SARIF export。這一版仍維持唯讀、同源、Scope／DNS／Evidence／Budget 邊界；Planner／Verifier 編排、登入測試與 Exploit Payload 尚未開放。
+> **v0.5.0 重大更新：** 新增一次性 Authenticated Chromium Session、經審查的無害參數變異、四類安全比較、可重用 Approval Preset、Planner／Operator／Verifier 計畫，以及 Codex／Claude Code stdio MCP Server。進階流程目前以 API／MCP 為主，仍不發送 Exploit Payload。
 
 > [!IMPORTANT]
-> **Alpha 狀態：** 0.4.0 新增 Operator 審查 Finding 狀態與 SARIF 2.1.0 匯出，接在
-> 已授權的安全主動測試流程上。系統仍不會登入目標、送出表單或發送 Exploit Payload。
+> **Alpha 狀態：** 0.5.0 已提供隔離登入 Session 與經審查自動化核心，但 Browser、Preset 與
+> Planner／Operator／Verifier 目前以 API／MCP 為主；仍不會送出破壞性 Payload 或任意執行掃描器。
 >
 > 0.3.0 在有界 Web Discovery 上加入已授權的安全主動測試。系統會
 > 解析已擷取的 OpenAPI 文件，且只透過既有 Scope、DNS、Evidence 與 Budget 控制驗證
@@ -56,12 +56,14 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Execution | DNS-pinned GET／HEAD Discovery 與安全 API 驗證、持久化 Worker、orphan cleanup、受限 Container Policy、authenticated Engine gateway 與固定欄位 Unix-socket Docker adapter；任意工具仍停用 |
+| Execution | DNS-pinned GET／HEAD 驗證、一次性 Playwright Chromium Context、記憶體內登入憑證、跨主機阻擋、持久化 Worker 與受限 Container Policy；任意工具仍停用 |
+| Automation | 經審查的 Query／Header／Path 變異、CORS／Authentication／Authorization／輸入驗證比較、Approval Preset 與 Planner／Operator／Verifier 任務產生 |
+| AI 介面 | Codex、Claude Code 與相容 Client 可使用的本機 stdio MCP Server；Provider 憑證不會交給 ProofClaw |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
-Authenticated Browser 測試、資安工具與 Exploit Execution、LLM orchestration、
-Planner／Operator／Verifier agents，以及 Bug-bounty 專用報告仍屬於後續路線圖。Provider-neutral
-AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
+v0.5.0 的 Browser 與 Automation 目前以 API／MCP 為主；Web Console 操作介面、更多 Session
+登入方式、即時進度、外部資安工具、Exploit Execution 與 Bug-bounty 專用報告仍屬後續路線圖。
+請參閱[安全自動化核心](docs/SAFE_AUTOMATION.zh-TW.md)與 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 
 ## 版本重大更新
 
@@ -75,6 +77,7 @@ AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 | **v0.3.0** | OpenAPI 3.x／Swagger 2.0 Operation Inventory，以及 `active-safe` 無必要參數 GET／HEAD 驗證；包含具 Evidence 的宣告式 Authentication 異常 Candidate。 | 不會送出寫入 Method、必要參數、登入、Browser Automation、Exploit Payload 或任意工具。 |
 | **v0.3.1** | 文件與 Release Metadata 更新：版本歷史、修正 Quick Start 說明，以及同步 Package／User-Agent 版本。 | 沒有新增目標流量能力；安全邊界與 v0.3.0 相同。 |
 | **v0.4.0** | Operator Finding 審查、樂觀版本檢查與不可變 Audit Event；SARIF 2.1.0 直接報告與具 Idempotency 的不可變匯出；Web console SARIF 下載。 | 尚未提供 Planner／Operator／Verifier 編排、Browser Authentication、寫入 Method 測試、Exploit Payload 或任意工具。 |
+| **v0.5.0** | 一次性 Authenticated Chromium Context、經審查的無害參數變異、四類安全比較、可重用 Approval Preset、Planner／Operator／Verifier 計畫與 Codex／Claude Code stdio MCP 工具。 | 進階路徑仍以 API／MCP 為主；不提供破壞性 Payload、任意 Scanner、自動權限提升或無限制目標存取。 |
 
 實作細節與下一階段請參閱 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) 及
 [CHANGELOG.zh-TW.md](CHANGELOG.zh-TW.md) 的版本記錄。

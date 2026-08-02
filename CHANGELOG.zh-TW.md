@@ -6,6 +6,31 @@
 
 ## Unreleased
 
+## [0.5.0] - 2026-08-03
+
+### Added
+
+- 加入一次性 Playwright Chromium Session：登入秘密僅存於記憶體，每次建立獨立 Browser
+  Context，封鎖下載、Service Worker 與非允許主機請求，完成後保證清除。
+- 加入經 Operator 審查且以 digest 綁定的 Query、Header、Path 變異計畫；內建策略僅包含空值、
+  邊界值、型別錯配與無害 marker。
+- 加入 CORS、Authentication、Authorization 與輸入驗證的 deterministic 比對器。
+- 加入 Engagement-scoped Approval Preset；由 Approver 建立、Operator 套用，但每次仍產生精確綁定、
+  有效期限且僅能執行一次的 Approval。
+- 加入 Planner／Operator／Verifier 自動計畫、獨立驗證 API 與 Audit Event。
+- 加入可供 Codex、Claude Code 與相容 Client 使用的 stdio MCP Server，共六個工具。
+
+### Changed
+
+- 新增 Alembic revision `0008_approval_presets`，版本資訊更新至 `0.5.0`。
+- 隔離 Worker Image 現在包含 Playwright 與 Chromium 執行環境。
+
+### Security
+
+- Browser 登入資料不寫入結果，執行後銷毀 Context 與 Browser Process。
+- 變異計畫必須可審查且以 digest 綁定；拒絕敏感 Header 變異與未審查的輸入驗證。
+- MCP 不接收模型供應商憑證，也不能繞過 Scope、Policy 或 Approval。
+
 ## [0.4.0] - 2026-08-02
 
 ### Added

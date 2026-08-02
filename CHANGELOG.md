@@ -6,6 +6,34 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.5.0] - 2026-08-03
+
+### Added
+
+- Added disposable Playwright Chromium sessions with in-memory login secrets, per-run browser
+  contexts, download/service-worker blocking, outbound host filtering, and guaranteed cleanup.
+- Added digest-bound, operator-reviewed query/header/path mutation plans using only benign marker,
+  empty, boundary, and type-mismatch strategies.
+- Added deterministic CORS, authentication, authorization, and input-validation comparisons.
+- Added engagement-scoped Approval Presets authored by an approver and applied by an operator;
+  each application still creates an exact, expiring, single-execution Approval.
+- Added Planner/Operator/Verifier automation plan and verification endpoints with audit events.
+- Added a dependency-light stdio MCP server with six tools for Codex, Claude Code, and compatible
+  clients.
+
+### Changed
+
+- Added Alembic revision `0008_approval_presets` and advanced release metadata to `0.5.0`.
+- The isolated Worker image now installs Playwright and its Chromium runtime dependencies.
+
+### Security
+
+- Browser credentials remain in memory and are excluded from results; browser contexts and
+  processes are destroyed after each run.
+- Mutation plans are reviewable and digest-bound. Sensitive header mutation and unreviewed
+  input-validation execution are rejected.
+- MCP never receives model-provider credentials and cannot bypass scope, policy, or approvals.
+
 ## [0.4.0] - 2026-08-02
 
 ### Added

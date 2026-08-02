@@ -14,6 +14,7 @@ EXPECTED_TABLES = {
     "actions",
     "alembic_version",
     "approvals",
+    "approval_presets",
     "artifacts",
     "audit_events",
     "engagements",

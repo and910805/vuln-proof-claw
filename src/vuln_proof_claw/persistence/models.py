@@ -117,6 +117,30 @@ class ApprovalRecord(Base):
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
 
 
+class ApprovalPresetRecord(Base):
+    """Reusable approver-authored policy that still emits exact one-action approvals."""
+
+    __tablename__ = "approval_presets"
+    __table_args__ = (
+        UniqueConstraint("engagement_id", "name"),
+        Index("ix_approval_presets_engagement_enabled", "engagement_id", "enabled"),
+    )
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    action_types: Mapped[list[str]] = mapped_column(JSON)
+    target_prefixes: Mapped[list[str]] = mapped_column(JSON)
+    maximum_risk: Mapped[str] = mapped_column(String(2))
+    approval_ttl_seconds: Mapped[int] = mapped_column(Integer)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
 class ActionRecord(Base):
     __tablename__ = "actions"
     __table_args__ = (

@@ -9,16 +9,17 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha status:** Version 0.4.0 adds operator-reviewed Finding states and SARIF 2.1.0
-> exports to the authorized safe active testing workflow. The system still does not
-> authenticate to targets, submit forms, or send exploit payloads.
+> **Alpha status:** Version 0.5.0 adds disposable authenticated Chromium sessions,
+> reviewed benign parameter-mutation plans, four deterministic security comparisons,
+> reusable approval presets, Planner/Operator/Verifier planning, and a local stdio MCP
+> server. These advanced paths are API/MCP-first and still do not send exploit payloads.
 >
 > Version 0.3.0 added authorized safe active testing to bounded Web
 > discovery. It inventories captured OpenAPI documents and verifies only parameterless
@@ -58,12 +59,15 @@ vuln-proof-claw is being built around those requirements:
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Execution | DNS-pinned GET/HEAD discovery and safe API verification plus durable Worker, orphan cleanup, restricted-container policy, authenticated Engine gateway, and fixed-field Unix-socket Docker adapter; arbitrary tools remain disabled |
+| Execution | DNS-pinned GET/HEAD verification plus disposable Playwright Chromium contexts, in-memory login credentials, outbound host filtering, durable Workers, and restricted-container policy; arbitrary tools remain disabled |
+| Automation | Reviewed query/header/path mutation plans, CORS/authentication/authorization/input-validation comparisons, approval presets, and Planner/Operator/Verifier task generation |
+| AI interface | Local stdio MCP server for Codex, Claude Code, and compatible clients; credentials stay in the client environment |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
-Authenticated browser testing, security-tool and exploit execution, LLM orchestration,
-Planner/Operator/Verifier agents, and bug-bounty-specific reporting remain roadmap items. The proposed
-provider-neutral AI driver is documented in [AI Driver Architecture](docs/AI_DRIVER.md).
+Browser execution and automation are API/MCP-first in v0.5.0; Web-console controls, richer
+session methods, live execution progress, external security tools, exploit execution, and
+bug-bounty-specific reporting remain roadmap items. See [Safe Automation](docs/SAFE_AUTOMATION.md)
+and [AI Driver Architecture](docs/AI_DRIVER.md).
 
 ## Release highlights
 
@@ -77,6 +81,7 @@ adds a user-completable capability while keeping the execution boundary explicit
 | **v0.3.0** | OpenAPI 3.x/Swagger 2.0 operation inventory and `active-safe` verification of parameterless GET/HEAD operations, including evidence-backed declared-authentication candidates. | No write methods, required parameters, login, browser automation, exploit payloads, or arbitrary tools. |
 | **v0.3.1** | Documentation and release metadata update: this version history, corrected Quick Start guidance, and synchronized package/user-agent versions. | No new target-facing capability; the security boundary is unchanged from v0.3.0. |
 | **v0.4.0** | Operator Finding review with optimistic version checks and immutable audit events; SARIF 2.1.0 direct reports and idempotent immutable exports; Web console SARIF download. | No Planner/Operator/Verifier orchestration, browser authentication, write-method testing, exploit payloads, or arbitrary tools. |
+| **v0.5.0** | Disposable authenticated Chromium contexts, reviewed benign parameter mutations, CORS/authentication/authorization/input-validation comparison, reusable Approval Presets, Planner/Operator/Verifier plans, and Codex/Claude Code stdio MCP tools. | Advanced paths remain API/MCP-first; no destructive payloads, arbitrary scanner execution, automatic privilege escalation, or unrestricted target access. |
 
 For implementation details and the next milestones, see [ROADMAP.md](ROADMAP.md) and the
 versioned entries in [CHANGELOG.md](CHANGELOG.md).

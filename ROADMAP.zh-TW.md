@@ -62,6 +62,19 @@ Request 執行 Scope、DNS、Evidence、Request Count 與 Time Budget。
 - 依 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)提供 Codex、Claude Code 與其他 Client 使用的
   本機 ProofClaw MCP Server；受管自動化仍使用 Provider API 或經核准的企業 Access Token。
 
+## v0.5 — 安全自動化與 Agent 介面
+
+v0.5.0 交付第一條有界 Autonomous Core 垂直流程：
+
+- 已完成：一次性 Authenticated Chromium Context、經審查的無害 Query／Header／Path 變異，
+  以及 deterministic CORS／Authentication／Authorization／輸入驗證比較。
+- 已完成：可重用且綁定 Engagement 的 Approval Preset；套用時仍產生精確、單次 Approval。
+- 已完成：可稽核的 Planner／Operator／Verifier 計畫與獨立 Comparison Endpoint。
+- 已完成：Codex、Claude Code 與相容 Client 可使用的本機 stdio MCP Server。
+- 待完成：將 Browser 與 Comparison Execution 接入持久化 Worker Manager、以專用 Secret Store
+  保存多 Principal Session Handle、加入即時進度與 Web 操作介面，並只允許 Evidence-backed
+  Verifier Decision 將 Candidate 升級。
+
 ## v1.0 — 穩定開源版本
 
 - 穩定 REST 與 Plugin API、Upgrade 文件、Security review、簽章 Image 與 SBOM。

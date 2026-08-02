@@ -203,3 +203,49 @@ async def test_approval_mutation_stays_disabled_without_authentication(tmp_path:
 
     assert response.status_code == 503
     assert response.json()["detail"] == "authentication_not_ready"
+
+
+async def test_approval_preset_is_created_by_approver_and_applied_by_operator(
+    tmp_path: Path,
+) -> None:
+    async with authenticated_client(tmp_path / "preset.db") as client:
+        engagement_id, action_id = await _pending_action(client)
+        preset = await client.post(
+            f"/api/v1/engagements/{engagement_id}/approval-presets",
+            json={
+                "name": "Reviewed exploit validation",
+                "action_types": ["exploit_attempt"],
+                "target_prefixes": ["https://api.example.test/v1/"],
+                "maximum_risk": "L2",
+                "approval_ttl_seconds": 600,
+            },
+            headers=APPROVER_HEADERS,
+        )
+        duplicate = await client.post(
+            f"/api/v1/engagements/{engagement_id}/approval-presets",
+            json={
+                "name": "Reviewed exploit validation",
+                "action_types": ["exploit_attempt"],
+                "target_prefixes": ["https://api.example.test/v1/"],
+                "maximum_risk": "L2",
+            },
+            headers=APPROVER_HEADERS,
+        )
+        applied = await client.post(
+            f"/api/v1/actions/{action_id}/apply-approval-preset",
+            json={"preset_id": preset.json()["id"]},
+            headers=OPERATOR_HEADERS,
+        )
+        listed = await client.get(
+            f"/api/v1/engagements/{engagement_id}/approval-presets",
+            headers=OPERATOR_HEADERS,
+        )
+
+    assert preset.status_code == 201
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "approval_preset_name_conflict"
+    assert preset.json()["created_by"] == "security-lead@example.test"
+    assert applied.status_code == 200
+    assert applied.json()["state"] == "queued"
+    assert applied.json()["approval"]["permitted_executions"] == 1
+    assert listed.json()["total"] == 1

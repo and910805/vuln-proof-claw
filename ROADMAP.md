@@ -71,6 +71,19 @@ v0.4.0 starts this milestone with a user-completable reporting and review slice:
   for Codex, Claude Code, and other clients following [AI Driver Architecture](docs/AI_DRIVER.md).
   Managed automation continues to use provider APIs or approved enterprise access tokens.
 
+## v0.5 — Safe Automation and Agent Interface
+
+Version 0.5.0 delivers the first bounded autonomous-core vertical slice:
+
+- Delivered: disposable authenticated Chromium contexts, reviewed benign query/header/path
+  mutation plans, and deterministic CORS/authentication/authorization/input-validation checks.
+- Delivered: reusable engagement-scoped Approval Presets that mint exact single-use Approvals.
+- Delivered: auditable Planner/Operator/Verifier plans and an independent comparison endpoint.
+- Delivered: a local stdio MCP server for Codex, Claude Code, and compatible clients.
+- Remaining: wire Browser and comparison execution into the durable Worker manager, persist
+  multi-principal session handles in a dedicated secret store, add live progress and Web controls,
+  and promote candidates only through evidence-backed Verifier decisions.
+
 ## v1.0 — Stable Open Source
 
 - Stable REST and plugin APIs, upgrade documentation, security review, signed images, and SBOMs.
