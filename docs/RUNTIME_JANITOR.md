@@ -54,7 +54,7 @@ Audit event types are:
 ## Current boundary
 
 This release provides the inventory, reconciliation, cleanup, audit, and restricted
-container-policy adapter and authenticated Engine client/server boundary. The privileged Engine
-adapter, worker executor, scoped
-egress, and startup wiring are still deliberately absent, so `DisabledWorkerManager`
+container-policy adapter, authenticated Engine client/server boundary, and fixed-field
+Docker adapter. Worker executor capability, scoped egress, and startup wiring are still
+deliberately absent, so `DisabledWorkerManager`
 remains the default and arbitrary tools cannot run.

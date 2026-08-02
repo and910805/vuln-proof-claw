@@ -14,6 +14,7 @@ from vuln_proof_claw.config.models import (
     AssessmentConfig,
     DatabaseConfig,
     DockerConfig,
+    DockerEngineBackendConfig,
     EngineGatewayConfig,
     EngineServerConfig,
     Environment,
@@ -47,12 +48,34 @@ class Settings(BaseSettings):
     docker: DockerConfig = DockerConfig()
     engine_gateway: EngineGatewayConfig = EngineGatewayConfig()
     engine_server: EngineServerConfig = EngineServerConfig()
+    docker_engine_backend: DockerEngineBackendConfig = DockerEngineBackendConfig()
     logging: LoggingConfig = LoggingConfig()
     provider: ProviderConfig = ProviderConfig()
 
     @model_validator(mode="after")
     def validate_production_safety(self) -> Settings:
         """Reject combinations that make an unfinished API publicly reachable."""
+        self._validate_engine_configuration()
+        if self.app.environment is not Environment.PRODUCTION:
+            return self
+        if self.app.debug:
+            msg = "debug mode is not allowed in production"
+            raise ValueError(msg)
+        if self.api.host in WILDCARD_API_HOSTS and not self.api.authentication_ready:
+            msg = "wildcard API binding requires authentication readiness in production"
+            raise ValueError(msg)
+        if self.database.echo:
+            msg = "database query echo is not allowed in production"
+            raise ValueError(msg)
+        if self.assessment.enabled and not self.api.authentication_ready:
+            msg = "passive assessment requires authentication readiness in production"
+            raise ValueError(msg)
+        if self.docker.runtime_enabled and not self.api.authentication_ready:
+            msg = "worker runtime requires authentication readiness in production"
+            raise ValueError(msg)
+        return self
+
+    def _validate_engine_configuration(self) -> None:
         if self.docker.runtime_enabled:
             if not self.engine_gateway.ready:
                 msg = "worker runtime requires an authenticated Engine gateway"
@@ -92,24 +115,9 @@ class Settings(BaseSettings):
             ):
                 msg = "co-configured Engine client and server tokens must match"
                 raise ValueError(msg)
-        if self.app.environment is not Environment.PRODUCTION:
-            return self
-        if self.app.debug:
-            msg = "debug mode is not allowed in production"
+        if self.docker_engine_backend.enabled and not self.engine_server.enabled:
+            msg = "Docker Engine backend requires the Engine server"
             raise ValueError(msg)
-        if self.api.host in WILDCARD_API_HOSTS and not self.api.authentication_ready:
-            msg = "wildcard API binding requires authentication readiness in production"
-            raise ValueError(msg)
-        if self.database.echo:
-            msg = "database query echo is not allowed in production"
-            raise ValueError(msg)
-        if self.assessment.enabled and not self.api.authentication_ready:
-            msg = "passive assessment requires authentication readiness in production"
-            raise ValueError(msg)
-        if self.docker.runtime_enabled and not self.api.authentication_ready:
-            msg = "worker runtime requires authentication readiness in production"
-            raise ValueError(msg)
-        return self
 
     def worker_runtime(self) -> WorkerRuntimeConfig:
         """Return the credential-free configuration allowed in workers."""

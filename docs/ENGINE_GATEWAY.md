@@ -2,7 +2,7 @@
 
 [繁體中文](ENGINE_GATEWAY.zh-TW.md) | **English**
 
-Version 0.0.17 implements both sides of a narrow HTTP boundary between the control
+Version 0.0.18 implements both sides of a narrow HTTP boundary between the control
 plane and a separately operated privileged Engine process. The API process neither
 mounts an Engine socket nor invokes a container CLI.
 
@@ -14,9 +14,9 @@ and ambient proxy discovery are disabled. Both processes require the same 32–4
 character Bearer secret, which must be distinct from every API role token.
 
 The server is disabled by default and refuses construction without an explicit enable
-flag and token. Its OpenAPI and interactive documentation endpoints are disabled. A
-real privileged backend is not included in 0.0.17; starting the service without an
-injected backend is deliberately unready and returns a safe availability code.
+flag and token. Its OpenAPI and interactive documentation endpoints are disabled.
+Version 0.0.18 can inject the separately enabled fixed-field Docker adapter; without
+that explicit backend policy, readiness deliberately returns a safe availability code.
 
 ## Versioned lifecycle contract
 
@@ -52,14 +52,16 @@ The listener can be launched separately with:
 vuln-proof-claw-engine
 ```
 
-Required environment settings are documented in `.env.example`. Keep
-`VULN_PROOF_CLAW_ENGINE_SERVER__ENABLED=false` until a reviewed backend, transport
-protection, and deployment isolation exist.
+Required environment settings are documented in `.env.example`. Keep both the server
+and Docker backend disabled until the Engine process is isolated and its exact image
+digest and internal network are configured. See
+[DOCKER_ENGINE_BACKEND.md](DOCKER_ENGINE_BACKEND.md).
 
 ## Current boundary
 
 The client, server, shared schemas, authentication, request and response bounds,
 admission control, safe error mapping, configuration gates, and in-memory end-to-end
-contract are complete and tested. Engine adapter implementation, scoped egress,
-Worker-side execution, startup integration, and an isolated target fixture remain for
-subsequent releases. Consequently the Compose runtime remains disabled.
+contract and fixed-field Unix-socket Docker adapter are complete and tested without
+daemon access. Scoped egress, Worker-side executor capability, published Worker image
+digests, control-plane startup integration, and an isolated live target fixture remain
+for subsequent releases. Consequently the Compose runtime remains disabled.

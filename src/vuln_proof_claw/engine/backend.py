@@ -19,6 +19,7 @@ class EngineBackendErrorCode(StrEnum):
     BUSY = "engine_backend_busy"
     CONFLICT = "engine_backend_conflict"
     NOT_FOUND = "engine_backend_not_found"
+    OUTPUT_LIMIT = "engine_backend_output_limit_exceeded"
     REJECTED = "engine_backend_rejected"
     UNAVAILABLE = "engine_backend_unavailable"
 
@@ -55,6 +56,9 @@ class PrivilegedEngineBackend(Protocol):
     async def list_owned(self, *, labels: Mapping[str, str]) -> tuple[OwnedContainer, ...]:
         """List only containers matching all ownership labels."""
 
+    async def aclose(self) -> None:
+        """Release transport resources owned by the backend."""
+
 
 class DisabledEngineBackend:
     """Fail closed until a separately reviewed Engine implementation is injected."""
@@ -85,6 +89,9 @@ class DisabledEngineBackend:
     async def list_owned(self, *, labels: Mapping[str, str]) -> tuple[OwnedContainer, ...]:
         del labels
         self._unavailable()
+
+    async def aclose(self) -> None:
+        """No resources are owned by the disabled backend."""
 
     @staticmethod
     def _unavailable() -> Never:

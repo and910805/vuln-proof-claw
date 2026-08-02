@@ -118,6 +118,27 @@ class ContainerCreateRequest(GatewayModel):
             tmpfs=tuple(sorted(self.tmpfs.items())),
         )
 
+    @classmethod
+    def from_container_spec(cls, spec: RestrictedContainerSpec) -> ContainerCreateRequest:
+        """Build and independently validate the complete privileged request."""
+        return cls(
+            name=spec.name,
+            image=spec.image,
+            network=spec.network,
+            user=spec.user,
+            labels=dict(spec.labels),
+            request_payload_base64=base64.b64encode(spec.request_payload).decode("ascii"),
+            timeout_seconds=spec.timeout_seconds,
+            memory_bytes=spec.memory_bytes,
+            nano_cpus=spec.nano_cpus,
+            process_limit=spec.process_limit,
+            read_only_root=spec.read_only_root,
+            capability_drop=spec.capability_drop,
+            no_new_privileges=spec.no_new_privileges,
+            init=spec.init,
+            tmpfs=dict(spec.tmpfs),
+        )
+
 
 class ContainerReferenceRequest(GatewayModel):
     reference: str = Field(min_length=1, max_length=4096, repr=False)
@@ -214,23 +235,7 @@ class HttpDockerEngineGateway:
         )
 
     async def create(self, spec: RestrictedContainerSpec) -> str:
-        request = ContainerCreateRequest(
-            name=spec.name,
-            image=spec.image,
-            network=spec.network,
-            user=spec.user,
-            labels=dict(spec.labels),
-            request_payload_base64=base64.b64encode(spec.request_payload).decode("ascii"),
-            timeout_seconds=spec.timeout_seconds,
-            memory_bytes=spec.memory_bytes,
-            nano_cpus=spec.nano_cpus,
-            process_limit=spec.process_limit,
-            read_only_root=spec.read_only_root,
-            capability_drop=spec.capability_drop,
-            no_new_privileges=spec.no_new_privileges,
-            init=spec.init,
-            tmpfs=dict(spec.tmpfs),
-        )
+        request = ContainerCreateRequest.from_container_spec(spec)
         response = await self._exchange(
             "POST",
             "/v1/containers/create",

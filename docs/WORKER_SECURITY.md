@@ -56,8 +56,8 @@ The control plane now defines and tests the lifecycle state machine, durable
 registry, Action binding, approval consumption, response binding, evidence
 validation, audit trail, timeout, cancellation, cleanup, and fail-closed restart
 reconciliation, an orphan-resource janitor, and a complete restricted-container
-policy adapter and authenticated Engine client/server boundary. It does not yet provide the
-privileged Engine adapter, scoped egress, worker executor, startup wiring, or security tools.
-The internal-only Worker network remains closed until network-policy enforcement,
-the privileged Engine adapter, startup integration, and isolated end-to-end targets are
-implemented and verified.
+policy adapter, authenticated Engine client/server boundary, and fixed-field local
+Unix-socket adapter. It does not yet provide scoped egress, worker executor capability,
+startup wiring, published Worker digests, or security tools. The internal-only Worker
+network remains closed until network-policy enforcement, Docker adapter deployment
+isolation, startup integration, and isolated end-to-end targets are implemented and verified.

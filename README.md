@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.17-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.18-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0.0.17 includes one opt-in, scope-checked passive URL
+> **Pre-alpha status:** Phase 0.0.18 includes one opt-in, scope-checked passive URL
 > assessment that sends a bounded `GET`, stores evidence, and derives conservative
 > findings. It does not crawl, call an LLM, launch external scanners, authenticate to
 > targets, or execute exploit payloads. All broader execution paths fail closed.
@@ -54,7 +54,7 @@ vuln-proof-claw is being built around those requirements:
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Execution | Opt-in DNS-pinned passive GET capture plus durable Worker, orphan cleanup, restricted-container policy, and authenticated Engine-gateway client/server boundaries; the privileged backend and arbitrary tools remain disabled |
+| Execution | Opt-in DNS-pinned passive GET capture plus durable Worker, orphan cleanup, restricted-container policy, authenticated Engine gateway, and fixed-field Unix-socket Docker adapter; runtime startup and arbitrary tools remain disabled |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
 Crawler-based discovery, security-tool and exploit execution, LLM orchestration,
@@ -186,9 +186,9 @@ provider keys, customer credentials, or captured target data.
 Phase 0 is the completed foundation. The v0.1 preview now includes persisted
 engagements, structured HTTP capture, durable disposable-worker state, guarded raw
 evidence review, immutable Markdown/JSON report exports, a tested orphan-runtime
-cleanup contract, a complete restricted-container policy adapter, and an authenticated
-bounded Engine-gateway client/server boundary. The privileged Engine adapter, scoped egress, Worker
-executor, and startup integration remain before
+cleanup contract, a complete restricted-container policy adapter, an authenticated
+bounded Engine-gateway boundary, and a fixed-field Unix-socket Docker Engine adapter.
+Scoped egress, Worker executor capability, digest publication, and startup integration remain before
 the Evidence Core milestone is complete.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
@@ -216,6 +216,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Runtime resource janitor | [docs/RUNTIME_JANITOR.md](docs/RUNTIME_JANITOR.md) | [docs/RUNTIME_JANITOR.zh-TW.md](docs/RUNTIME_JANITOR.zh-TW.md) |
 | Restricted Docker runtime boundary | [docs/RESTRICTED_RUNTIME.md](docs/RESTRICTED_RUNTIME.md) | [docs/RESTRICTED_RUNTIME.zh-TW.md](docs/RESTRICTED_RUNTIME.zh-TW.md) |
 | Authenticated Engine gateway boundary | [docs/ENGINE_GATEWAY.md](docs/ENGINE_GATEWAY.md) | [docs/ENGINE_GATEWAY.zh-TW.md](docs/ENGINE_GATEWAY.zh-TW.md) |
+| Restricted Docker Engine backend | [docs/DOCKER_ENGINE_BACKEND.md](docs/DOCKER_ENGINE_BACKEND.md) | [docs/DOCKER_ENGINE_BACKEND.zh-TW.md](docs/DOCKER_ENGINE_BACKEND.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

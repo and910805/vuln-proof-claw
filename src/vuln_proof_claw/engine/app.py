@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import Depends, FastAPI, Request
@@ -86,6 +87,14 @@ def create_engine_app(
     )
     expected_authorization = f"Bearer {config.token.get_secret_value()}"
 
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        del application
+        try:
+            yield
+        finally:
+            await engine.aclose()
+
     async def authenticate(request: Request) -> None:
         supplied = request.headers.get("authorization", "")
         if not hmac.compare_digest(supplied, expected_authorization):
@@ -98,6 +107,7 @@ def create_engine_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     @app.exception_handler(GatewayRequestError)
@@ -262,6 +272,7 @@ async def _run_backend[Result](
             EngineBackendErrorCode.BUSY: 503,
             EngineBackendErrorCode.CONFLICT: 409,
             EngineBackendErrorCode.NOT_FOUND: 404,
+            EngineBackendErrorCode.OUTPUT_LIMIT: 502,
             EngineBackendErrorCode.REJECTED: 400,
             EngineBackendErrorCode.UNAVAILABLE: 503,
         }[error.code]

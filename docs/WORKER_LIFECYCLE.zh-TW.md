@@ -2,7 +2,7 @@
 
 **繁體中文** | [English](WORKER_LIFECYCLE.md)
 
-0.0.17 版提供內部生命週期協調器、受限 container policy adapter 與 authenticated
+0.0.18 版提供內部生命週期協調器、受限 container policy adapter 與 authenticated
 Engine-gateway client/server 邊界。這不是公開掃描
 endpoint，也不會啟用 Docker 或網路執行 adapter。
 
@@ -37,5 +37,5 @@ adapter 可在啟動時執行整合式 recovery。它會先把 abandoned `starti
 process-local lifecycle 現在可接受完整受限 container policy adapter，包含 digest
 pinning、固定 privilege control、資源上限、有界 protocol I/O、inventory、cleanup 與
 authenticated bounded Engine client/server 邊界。在啟用面向目標的執行前，仍須完成 privileged
-Engine adapter、scope egress、Worker executor、啟動 wiring 與隔離式端對端目標測試。預設的
+scope egress、Worker executor capability、digest publication、啟動 wiring 與隔離式端對端目標測試。預設的
 `DisabledWorkerManager` 仍維持 fail closed。
