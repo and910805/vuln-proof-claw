@@ -1,27 +1,26 @@
-# Authenticated Engine gateway client
+# Authenticated Engine gateway boundary
 
 [繁體中文](ENGINE_GATEWAY.zh-TW.md) | **English**
 
-Version 0.0.16 implements the control-plane client and strict wire contract for a
-future privileged Engine gateway. It connects the restricted container policy to a
-narrow authenticated HTTP boundary without mounting the Docker socket or invoking
-the Docker CLI from the API process.
+Version 0.0.17 implements both sides of a narrow HTTP boundary between the control
+plane and a separately operated privileged Engine process. The API process neither
+mounts an Engine socket nor invokes a container CLI.
 
-## Connection policy
+## Trust boundary
 
-The gateway origin and token must be configured together. HTTPS is required except
-for explicit loopback IP literals such as `127.0.0.1` or `::1`; `localhost` over
-unencrypted HTTP is rejected to avoid host-file and DNS ambiguity. Gateway URLs cannot
-contain credentials, paths, queries, or fragments. A private CA bundle is optional.
+The client accepts HTTPS origins, or explicit loopback IP literals for local
+development. URLs cannot contain credentials, paths, queries, or fragments. Redirects
+and ambient proxy discovery are disabled. Both processes require the same 32–4096
+character Bearer secret, which must be distinct from every API role token.
 
-The Bearer token must contain 32–4096 visible ASCII characters, must be distinct from API operator,
-approver, and evidence-reader tokens, and remains a `SecretStr`. Redirect following
-and environment proxy discovery are disabled, so credentials cannot be forwarded to
-another origin or an ambient proxy.
+The server is disabled by default and refuses construction without an explicit enable
+flag and token. Its OpenAPI and interactive documentation endpoints are disabled. A
+real privileged backend is not included in 0.0.17; starting the service without an
+injected backend is deliberately unready and returns a safe availability code.
 
-## API contract
+## Versioned lifecycle contract
 
-Every operation uses authenticated JSON over the versioned `/v1` boundary:
+Every operation uses authenticated JSON over `/v1`:
 
 - `POST /v1/health/ready`
 - `POST /v1/containers/create`
@@ -31,34 +30,36 @@ Every operation uses authenticated JSON over the versioned `/v1` boundary:
 - `POST /v1/containers/remove`
 - `POST /v1/containers/inventory`
 
-Container references remain opaque JSON values and never enter URL paths. Create
-requests revalidate the digest-pinned image, Worker UUID, non-root user, positive hard
-resource ceilings, fixed `cap_drop=ALL`, read-only root, `no-new-privileges`, required
-tmpfs paths/options, complete ownership labels, and the strict `WorkerRequest` payload.
-The Worker ID, request ID, container name, labels, and protocol payload must agree.
+References remain opaque JSON values rather than URL path components. Create requests
+independently revalidate the digest-pinned image, Worker/name/request identity,
+non-root user, fixed privilege restrictions, resource ceilings, tmpfs policy,
+ownership labels, and strict Worker protocol payload.
 
-## Bounded responses
+## Server controls
 
-Responses are streamed into a bounded buffer. Both declared `Content-Length` and
-actual streamed bytes are checked, content type must be JSON, unknown response fields
-are rejected, and base64 Worker output is checked again after decoding. HTTP and
-transport details become stable safe codes such as:
+Authentication runs before request parsing or backend admission. Declared
+`Content-Length` and actual streamed bytes are capped before strict JSON validation;
+unknown fields are rejected. A semaphore bounds concurrent privileged operations, and
+queue admission has a short timeout. Worker output is checked again before encoding.
 
-- `engine_gateway_unauthorized`
-- `engine_gateway_conflict`
-- `engine_gateway_request_rejected`
-- `engine_gateway_response_limit_exceeded`
-- `engine_gateway_response_invalid`
-- `engine_gateway_unavailable`
+Expected backend states map to stable codes for busy, conflict, not found, rejected,
+and unavailable conditions. Unexpected exception text, daemon paths, credentials, and
+response bodies never cross the boundary. No mutating operation is blindly retried.
 
-No operation is automatically retried because create/remove ambiguity must be
-resolved using the immutable ownership inventory rather than blind replay.
+The listener can be launched separately with:
+
+```console
+vuln-proof-claw-engine
+```
+
+Required environment settings are documented in `.env.example`. Keep
+`VULN_PROOF_CLAW_ENGINE_SERVER__ENABLED=false` until a reviewed backend, transport
+protection, and deployment isolation exist.
 
 ## Current boundary
 
-The client, configuration gate, readiness contract, wire schemas, bounded transport,
-and integration with `DockerWorkerRuntime` are complete and tested. The separate
-gateway server that owns Engine credentials, scoped egress enforcement, Worker-side
-executor, application startup wiring, and isolated target fixture remain pending.
-Consequently `RUNTIME_ENABLED` stays false in Compose and no new target-facing tool
-execution is enabled in this release.
+The client, server, shared schemas, authentication, request and response bounds,
+admission control, safe error mapping, configuration gates, and in-memory end-to-end
+contract are complete and tested. Engine adapter implementation, scoped egress,
+Worker-side execution, startup integration, and an isolated target fixture remain for
+subsequent releases. Consequently the Compose runtime remains disabled.

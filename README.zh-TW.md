@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.16-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.17-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0.0.16 提供一條預設關閉、受 Scope 約束的被動 URL
+> **Pre-alpha 狀態：** Phase 0.0.17 提供一條預設關閉、受 Scope 約束的被動 URL
 > 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
 > crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
 > 全部維持 fail-closed。
@@ -52,7 +52,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Execution | Opt-in DNS-pinned passive GET capture、持久化 Worker、orphan cleanup、受限 container policy 與 authenticated Engine-gateway client boundary；gateway server 與任意工具仍停用 |
+| Execution | Opt-in DNS-pinned passive GET capture、持久化 Worker、orphan cleanup、受限 container policy 與 authenticated Engine-gateway client/server boundary；privileged backend 與任意工具仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
 Crawler 型目標探索、資安工具與 exploit execution、LLM orchestration、
@@ -182,8 +182,8 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 Phase 0 基礎建設已完成。v0.1 預覽版目前包含持久化 Engagement、結構化 HTTP
 capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱、不可變的
 Markdown／JSON 報告匯出、經測試的 orphan-runtime cleanup 契約、完整受限 container
-policy adapter，以及 authenticated bounded Engine-gateway client。Evidence Core
-里程碑仍待完成 privileged gateway server、scope egress、Worker executor 與啟動整合。
+policy adapter，以及 authenticated bounded Engine-gateway client/server 邊界。Evidence Core
+里程碑仍待完成 privileged Engine adapter、scope egress、Worker executor 與啟動整合。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。
@@ -209,7 +209,7 @@ policy adapter，以及 authenticated bounded Engine-gateway client。Evidence C
 | 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |
 | Runtime 資源清理器 | [docs/RUNTIME_JANITOR.md](docs/RUNTIME_JANITOR.md) | [docs/RUNTIME_JANITOR.zh-TW.md](docs/RUNTIME_JANITOR.zh-TW.md) |
 | 受限 Docker runtime 邊界 | [docs/RESTRICTED_RUNTIME.md](docs/RESTRICTED_RUNTIME.md) | [docs/RESTRICTED_RUNTIME.zh-TW.md](docs/RESTRICTED_RUNTIME.zh-TW.md) |
-| Authenticated Engine gateway client | [docs/ENGINE_GATEWAY.md](docs/ENGINE_GATEWAY.md) | [docs/ENGINE_GATEWAY.zh-TW.md](docs/ENGINE_GATEWAY.zh-TW.md) |
+| Authenticated Engine gateway boundary | [docs/ENGINE_GATEWAY.md](docs/ENGINE_GATEWAY.md) | [docs/ENGINE_GATEWAY.zh-TW.md](docs/ENGINE_GATEWAY.zh-TW.md) |
 | 平台設計 | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 實作計畫 | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 

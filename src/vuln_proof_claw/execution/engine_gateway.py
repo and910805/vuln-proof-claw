@@ -58,7 +58,7 @@ class ContainerCreateRequest(GatewayModel):
     network: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
     user: str = Field(pattern=r"^[1-9][0-9]*:[1-9][0-9]*$")
     labels: dict[str, str] = Field(min_length=5, max_length=5)
-    request_payload_base64: str = Field(max_length=1_398_104)
+    request_payload_base64: str = Field(max_length=1_398_104, repr=False)
     timeout_seconds: int = Field(ge=1, le=10_800)
     memory_bytes: int = Field(ge=64 * 1024 * 1024, le=32_768 * 1024 * 1024)
     nano_cpus: int = Field(ge=1, le=32_000_000_000)
@@ -98,9 +98,29 @@ class ContainerCreateRequest(GatewayModel):
                 raise ValueError("container tmpfs options are unsafe")
         return self
 
+    def to_container_spec(self) -> RestrictedContainerSpec:
+        """Return the already revalidated privileged Engine request."""
+        return RestrictedContainerSpec(
+            name=self.name,
+            image=self.image,
+            network=self.network,
+            user=self.user,
+            labels=tuple(sorted(self.labels.items())),
+            request_payload=base64.b64decode(self.request_payload_base64, validate=True),
+            timeout_seconds=self.timeout_seconds,
+            memory_bytes=self.memory_bytes,
+            nano_cpus=self.nano_cpus,
+            process_limit=self.process_limit,
+            read_only_root=self.read_only_root,
+            capability_drop=self.capability_drop,
+            no_new_privileges=self.no_new_privileges,
+            init=self.init,
+            tmpfs=tuple(sorted(self.tmpfs.items())),
+        )
+
 
 class ContainerReferenceRequest(GatewayModel):
-    reference: str = Field(min_length=1, max_length=4096)
+    reference: str = Field(min_length=1, max_length=4096, repr=False)
 
 
 class ContainerStopRequest(ContainerReferenceRequest):
@@ -121,7 +141,7 @@ class ContainerInventoryRequest(GatewayModel):
 
 
 class ReferenceResponse(GatewayModel):
-    reference: str = Field(min_length=1, max_length=4096)
+    reference: str = Field(min_length=1, max_length=4096, repr=False)
 
 
 class AckResponse(GatewayModel):
@@ -130,11 +150,11 @@ class AckResponse(GatewayModel):
 
 class WaitResponse(GatewayModel):
     exit_code: int
-    output_base64: str
+    output_base64: str = Field(repr=False)
 
 
 class OwnedContainerResponse(GatewayModel):
-    reference: str = Field(min_length=1, max_length=4096)
+    reference: str = Field(min_length=1, max_length=4096, repr=False)
     labels: dict[str, str]
 
 

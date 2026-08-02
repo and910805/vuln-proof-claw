@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+## [0.0.17] - 2026-08-02
+
+### 新增
+
+- 新增必須明確啟用、獨立啟動的 FastAPI Engine gateway server，實作既有 readiness、create、start、wait、stop、強制移除與 ownership inventory 契約。
+- 新增窄版可注入 privileged-backend protocol、安全 backend error 分類，以及在 reviewed Engine adapter 完成前保持 readiness fail-closed 的 disabled backend。
+- 新增 loopback binding、Bearer secret、request size、併發操作與有界 queue admission 設定。
+- 新增 server 聚焦測試，以及真實的記憶體內 `HttpDockerEngineGateway` client-to-server 完整 lifecycle 測試。
+
+### 變更
+
+- 新增 `vuln-proof-claw-engine` process entry point，並以英文與繁體中文記錄獨立信任邊界及環境設定。
+- 專案與 Web package 版號升至 `0.0.17`，並更新 runtime 狀態文件，區分已完成的 gateway service 邊界與待完成的 privileged Engine adapter。
+
+### 安全性
+
+- Authentication 會在 body parsing 與 privileged admission 前執行；宣告與實際串流 request size 都會在 strict schema validation 前受到限制。
+- Privileged operation 受到 semaphore 併發限制與短 queue timeout，Worker output 也會在 server 邊界再次檢查。
+- Backend error 會縮減為穩定公開 code；未預期 exception 訊息、Engine 細節、不透明 reference、payload 與 secret 都不會透過 response 或 representation 外洩。
+
 ## [0.0.16] - 2026-08-02
 
 ### 新增

@@ -1,25 +1,23 @@
-# Authenticated Engine gateway client
+# 已驗證的 Engine gateway 邊界
 
 **繁體中文** | [English](ENGINE_GATEWAY.md)
 
-0.0.16 版實作控制平面連接未來 privileged Engine gateway 所使用的 client 與嚴格 wire
-contract。它把受限 container policy 接到窄化 authenticated HTTP boundary，而且不會在
-API process 掛載 Docker socket 或呼叫 Docker CLI。
+0.0.17 版完成控制平面與獨立高權限 Engine process 之間的窄版 HTTP 邊界。API
+process 不掛載 Engine socket，也不呼叫 container CLI。
 
-## 連線政策
+## 信任邊界
 
-Gateway origin 與 token 必須一起設定。除 `127.0.0.1`、`::1` 等明確 loopback IP literal
-外，一律要求 HTTPS；未加密 HTTP 的 `localhost` 會被拒絕，以避免 hosts file 與 DNS
-歧義。Gateway URL 不得包含 credential、path、query 或 fragment，可選擇設定 private
-CA bundle。
+Client 僅接受 HTTPS origin；本機開發則可使用明確的 loopback IP literal。URL 不得含
+credential、path、query 或 fragment，並停用 redirect 與環境 proxy 探測。兩個 process
+必須使用相同的 32–4096 字元 Bearer secret，而且不得與任何 API role token 相同。
 
-Bearer token 長度必須為 32–4096 個可見 ASCII 字元，而且不得與 API operator、approver 或
-evidence-reader token 相同，並持續以 `SecretStr` 保存。Client 會停用 redirect follow
-與環境 proxy discovery，避免 credential 被送往其他 origin 或環境中的 proxy。
+Server 預設關閉，沒有明確 enable 與 token 就拒絕建立；OpenAPI 與互動文件端點也已
+關閉。0.0.17 尚未包含真正的高權限 backend，因此未注入 backend 時會刻意保持
+unready，只回傳安全的 unavailable code。
 
-## API contract
+## 版本化生命週期契約
 
-所有操作都透過 authenticated JSON 與版本化 `/v1` boundary：
+所有操作都透過 `/v1` 的 authenticated JSON：
 
 - `POST /v1/health/ready`
 - `POST /v1/containers/create`
@@ -29,32 +27,33 @@ evidence-reader token 相同，並持續以 `SecretStr` 保存。Client 會停�
 - `POST /v1/containers/remove`
 - `POST /v1/containers/inventory`
 
-Container reference 維持為不透明 JSON value，不會進入 URL path。Create request 會重新
-驗證 digest-pinned image、Worker UUID、非 root user、正值硬資源上限、固定
-`cap_drop=ALL`、唯讀 root、`no-new-privileges`、必要 tmpfs path／option、完整
-ownership label 與嚴格 `WorkerRequest` payload。Worker ID、request ID、container name、
-label 與 protocol payload 必須完全一致。
+Container reference 僅作為不透明 JSON value，不進入 URL path。Create request 會獨立
+重驗 digest-pinned image、Worker/name/request 身分、非 root user、固定權限限制、資源
+上限、tmpfs policy、ownership labels 與嚴格 Worker protocol payload。
 
-## 有界 response
+## Server 防護
 
-Response 會串流寫入有界 buffer，同時檢查宣告的 `Content-Length` 與實際串流 byte；
-content type 必須是 JSON、未知 response field 會被拒絕，而且 base64 Worker output 在
-解碼後還會再檢查一次。HTTP 與 transport detail 會轉換成穩定安全 code，例如：
+Authentication 會在解析 request 或取得 backend admission 之前執行。宣告的
+`Content-Length` 與實際串流 bytes 都會先受限，再進行 strict JSON validation；未知欄位
+一律拒絕。Semaphore 限制高權限操作併發數，排隊也有短 timeout。Worker output 在編碼
+前會再次檢查大小。
 
-- `engine_gateway_unauthorized`
-- `engine_gateway_conflict`
-- `engine_gateway_request_rejected`
-- `engine_gateway_response_limit_exceeded`
-- `engine_gateway_response_invalid`
-- `engine_gateway_unavailable`
+Backend 的 busy、conflict、not found、rejected 與 unavailable 狀態會映射成穩定 code。
+未預期 exception 文字、daemon path、credential 與 response body 都不會穿越邊界。
+Mutating operation 不會被盲目 retry。
 
-任何操作都不會自動 retry，因為 create／remove 的不確定狀態應透過不可變 ownership
-inventory 解決，而不是盲目重送。
+Listener 必須以獨立 process 啟動：
 
-## 目前邊界
+```console
+vuln-proof-claw-engine
+```
 
-Client、configuration gate、readiness contract、wire schema、有界 transport，以及與
-`DockerWorkerRuntime` 的整合皆已完成並測試。持有 Engine credential 的獨立 gateway
-server、scope egress enforcement、Worker-side executor、application startup wiring 與
-隔離 target fixture 仍待完成。因此 Compose 的 `RUNTIME_ENABLED` 仍為 false，本版不會
-啟用新的面向目標工具執行。
+必要環境變數記錄於 `.env.example`。在 reviewed backend、transport protection 與部署隔離
+完成前，請維持 `VULN_PROOF_CLAW_ENGINE_SERVER__ENABLED=false`。
+
+## 目前範圍
+
+Client、server、共享 schema、authentication、request/response bounds、admission
+control、安全 error mapping、設定 gate 與記憶體內端到端契約均已完成並測試。Engine
+adapter、受 Scope 約束的 egress、Worker-side executor、startup integration 與隔離 target
+fixture 留待後續版本，因此 Compose runtime 仍預設關閉。

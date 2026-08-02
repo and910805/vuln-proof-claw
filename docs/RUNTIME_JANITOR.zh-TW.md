@@ -49,5 +49,5 @@ optimistic registry update 發生競態，結果會是 `registry_update_conflict
 ## 目前邊界
 
 本版完成 inventory、reconciliation、cleanup、audit 與受限 container-policy
-adapter 與 authenticated Engine client。Privileged gateway server、Worker executor、scope egress 與啟動 wiring 仍
+adapter 與 authenticated Engine client/server 邊界。Privileged Engine adapter、Worker executor、scope egress 與啟動 wiring 仍
 刻意不提供，因此預設仍使用 `DisabledWorkerManager`，任意工具仍無法執行。

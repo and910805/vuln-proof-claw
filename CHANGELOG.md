@@ -6,6 +6,26 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.17] - 2026-08-02
+
+### Added
+
+- Added an explicitly enabled, separately launched FastAPI Engine gateway server for the existing readiness, create, start, wait, stop, forced removal, and ownership inventory contract.
+- Added a narrow injectable privileged-backend protocol, safe backend error categories, and a disabled backend that keeps readiness fail-closed until the reviewed Engine adapter exists.
+- Added server settings for loopback binding, a secret Bearer token, request-size limits, concurrent-operation limits, and bounded queue admission.
+- Added focused server tests plus a real in-memory `HttpDockerEngineGateway` client-to-server lifecycle test.
+
+### Changed
+
+- Added the `vuln-proof-claw-engine` process entry point and documented the separate trust boundary and environment configuration in English and Traditional Chinese.
+- Advanced the project and Web package version to `0.0.17` and updated runtime status documentation to distinguish the completed gateway service boundary from the pending privileged Engine adapter.
+
+### Security
+
+- Authentication now runs before body parsing and privileged admission. Both declared and streamed request sizes are bounded before strict schema validation.
+- Concurrent privileged operations are semaphore-limited with a short queue timeout, and Worker output is checked again at the server boundary.
+- Backend errors are reduced to stable public codes; unexpected exception messages, Engine details, opaque references, payloads, and secrets are not exposed through responses or representations.
+
 ## [0.0.16] - 2026-08-02
 
 ### Added

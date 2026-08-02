@@ -15,6 +15,7 @@ from vuln_proof_claw.config.models import (
     DatabaseConfig,
     DockerConfig,
     EngineGatewayConfig,
+    EngineServerConfig,
     Environment,
     LoggingConfig,
     ProviderConfig,
@@ -45,6 +46,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = DatabaseConfig()
     docker: DockerConfig = DockerConfig()
     engine_gateway: EngineGatewayConfig = EngineGatewayConfig()
+    engine_server: EngineServerConfig = EngineServerConfig()
     logging: LoggingConfig = LoggingConfig()
     provider: ProviderConfig = ProviderConfig()
 
@@ -67,6 +69,28 @@ class Settings(BaseSettings):
                 for token in api_tokens
             ):
                 msg = "engine gateway token must be distinct from API tokens"
+                raise ValueError(msg)
+        if self.engine_server.enabled:
+            server_token = self.engine_server.token
+            api_tokens = (
+                self.api.operator_token,
+                self.api.approver_token,
+                self.api.evidence_reader_token,
+            )
+            if server_token is not None and any(
+                token is not None
+                and token.get_secret_value() == server_token.get_secret_value()
+                for token in api_tokens
+            ):
+                msg = "Engine server token must be distinct from API tokens"
+                raise ValueError(msg)
+            gateway_token = self.engine_gateway.token
+            if (
+                server_token is not None
+                and gateway_token is not None
+                and server_token.get_secret_value() != gateway_token.get_secret_value()
+            ):
+                msg = "co-configured Engine client and server tokens must match"
                 raise ValueError(msg)
         if self.app.environment is not Environment.PRODUCTION:
             return self

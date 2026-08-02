@@ -150,20 +150,7 @@ class EngineGatewayConfig(FrozenConfigModel):
     @field_validator("token")
     @classmethod
     def validate_token(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None:
-            secret = value.get_secret_value()
-            if not (
-                _ENGINE_TOKEN_MINIMUM_LENGTH
-                <= len(secret)
-                <= _ENGINE_TOKEN_MAXIMUM_LENGTH
-            ):
-                raise ValueError("engine gateway token must contain 32 to 4096 characters")
-            if any(
-                not _VISIBLE_ASCII_MINIMUM <= ord(character) <= _VISIBLE_ASCII_MAXIMUM
-                for character in secret
-            ):
-                raise ValueError("engine gateway token must use visible ASCII characters")
-        return value
+        return _validate_engine_token(value)
 
     @model_validator(mode="after")
     def require_complete_credentials(self) -> EngineGatewayConfig:
@@ -176,11 +163,63 @@ class EngineGatewayConfig(FrozenConfigModel):
         return self.url is not None and self.token is not None
 
 
+class EngineServerConfig(FrozenConfigModel):
+    """Fail-closed listener and admission limits for the privileged gateway service."""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = Field(default=8081, ge=1, le=65_535)
+    token: SecretStr | None = None
+    maximum_request_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        ge=64 * 1024,
+        le=4 * 1024 * 1024,
+    )
+    maximum_concurrent_operations: int = Field(default=16, ge=1, le=128)
+    queue_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        normalized = value.strip()
+        if not _is_loopback_literal(normalized):
+            raise ValueError("Engine server host must be a loopback IP literal")
+        return normalized
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, value: SecretStr | None) -> SecretStr | None:
+        return _validate_engine_token(value)
+
+    @model_validator(mode="after")
+    def require_token_when_enabled(self) -> EngineServerConfig:
+        if self.enabled and self.token is None:
+            raise ValueError("enabled Engine server requires an authentication token")
+        return self
+
+
 def _is_loopback_literal(hostname: str) -> bool:
     try:
         return ip_address(hostname).is_loopback
     except ValueError:
         return False
+
+
+def _validate_engine_token(value: SecretStr | None) -> SecretStr | None:
+    if value is not None:
+        secret = value.get_secret_value()
+        if not (
+            _ENGINE_TOKEN_MINIMUM_LENGTH
+            <= len(secret)
+            <= _ENGINE_TOKEN_MAXIMUM_LENGTH
+        ):
+            raise ValueError("Engine token must contain 32 to 4096 characters")
+        if any(
+            not _VISIBLE_ASCII_MINIMUM <= ord(character) <= _VISIBLE_ASCII_MAXIMUM
+            for character in secret
+        ):
+            raise ValueError("Engine token must use visible ASCII characters")
+    return value
 
 
 class AssessmentConfig(FrozenConfigModel):
@@ -189,7 +228,7 @@ class AssessmentConfig(FrozenConfigModel):
     enabled: bool = False
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
-    user_agent: str = Field(default="vuln-proof-claw/0.0.16", min_length=1, max_length=255)
+    user_agent: str = Field(default="vuln-proof-claw/0.0.17", min_length=1, max_length=255)
 
     @field_validator("user_agent")
     @classmethod
