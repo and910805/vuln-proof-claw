@@ -33,8 +33,9 @@ Raw capture 不會出現在物件 representation。Docker、Engine gateway 與 W
 任何 binding 或 scope 失敗都會以穩定安全錯誤將 Action 關閉為 failed，且不寫入
 Evidence。Audit event 只包含 Evidence ID、狀態與安全錯誤碼，不包含 inline body。
 
-## 尚待完成
+## 0.0.21 後續進度
 
-內建 Worker 仍回傳 `worker_execution_not_implemented`，也不會對目標發出請求。必須先
-完成 scoped egress 與經過窄範圍審查的 HTTP executor，這條 ingestion path 才能接收
-真實 Worker capture。
+0.0.21 新增 [WORKER_HTTP_EXECUTOR.zh-TW.md](WORKER_HTTP_EXECUTOR.zh-TW.md) 所述、
+經窄範圍審查且不使用憑證的 GET／HEAD executor。因此 ingestion path 已能在明確開放
+網路且受 Scope 約束的環境接收真實 capture。官方 Docker Worker network 仍為 internal；
+受控 container egress 與啟動整合仍待完成。

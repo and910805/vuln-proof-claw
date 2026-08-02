@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vuln-proof-claw"
-version = "0.0.20"
+version = "0.0.21"
 description = "Evidence-driven autonomous Web and API security testing platform"
 readme = "README.md"
 requires-python = ">=3.12"

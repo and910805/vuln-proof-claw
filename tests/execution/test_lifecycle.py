@@ -32,6 +32,7 @@ from vuln_proof_claw.execution.manager import (
     RuntimeResource,
 )
 from vuln_proof_claw.execution.protocol import (
+    WorkerHttpAction,
     WorkerHttpCapture,
     WorkerLimits,
     WorkerRequest,
@@ -151,6 +152,7 @@ def seed_action(engine: Engine) -> tuple[Engagement, Action, WorkerRequest]:
         risk_level=action.risk_level,
         idempotency_key=action.idempotency_key,
         capabilities=("http_client",),
+        http_action=WorkerHttpAction(method="GET"),
         scope=WorkerScope(
             allowed_hostnames=("example.test",),
             allowed_ports=(443,),

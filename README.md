@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.20-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.21-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha status:** Phase 0.0.20 includes one opt-in, scope-checked passive URL
+> **Pre-alpha status:** Phase 0.0.21 includes one opt-in, scope-checked passive URL
 > assessment that sends a bounded `GET`, stores evidence, and derives conservative
 > findings. It does not crawl, call an LLM, launch external scanners, authenticate to
 > targets, or execute exploit payloads. All broader execution paths fail closed.
@@ -151,8 +151,8 @@ flowchart TD
     Control --> Database[("PostgreSQL")]
     Control --> Manager["Worker Manager<br/>audited lifecycle preview"]
     Manager --> Protocol["Versioned worker protocol"]
-    Protocol --> Worker["Disposable worker<br/>planned execution adapter"]
-    Worker -. "future scope-restricted egress" .-> Target["Authorized Web/API target"]
+    Protocol --> Worker["Disposable worker<br/>narrow GET/HEAD executor"]
+    Worker -. "controlled egress pending" .-> Target["Authorized Web/API target"]
 ```
 
 The control plane is a Python modular monolith. Domain code does not depend on
@@ -188,7 +188,7 @@ engagements, structured HTTP capture, durable disposable-worker state, guarded r
 evidence review, immutable Markdown/JSON report exports, a tested orphan-runtime
 cleanup contract, a complete restricted-container policy adapter, an authenticated
 bounded Engine-gateway boundary, and a fixed-field Unix-socket Docker Engine adapter.
-Worker HTTP capture ingestion is now bound to the evidence chain. Scoped egress, target-facing Worker executor capability, registry digest publication, and startup integration remain before
+Worker HTTP capture ingestion and a narrow DNS-pinned GET/HEAD executor now exist. Controlled container egress, registry digest publication, and startup integration remain before
 the Evidence Core milestone is complete.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
@@ -217,6 +217,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Restricted Docker runtime boundary | [docs/RESTRICTED_RUNTIME.md](docs/RESTRICTED_RUNTIME.md) | [docs/RESTRICTED_RUNTIME.zh-TW.md](docs/RESTRICTED_RUNTIME.zh-TW.md) |
 | Authenticated Engine gateway boundary | [docs/ENGINE_GATEWAY.md](docs/ENGINE_GATEWAY.md) | [docs/ENGINE_GATEWAY.zh-TW.md](docs/ENGINE_GATEWAY.zh-TW.md) |
 | Restricted Docker Engine backend | [docs/DOCKER_ENGINE_BACKEND.md](docs/DOCKER_ENGINE_BACKEND.md) | [docs/DOCKER_ENGINE_BACKEND.zh-TW.md](docs/DOCKER_ENGINE_BACKEND.zh-TW.md) |
+| Worker HTTP executor | [docs/WORKER_HTTP_EXECUTOR.md](docs/WORKER_HTTP_EXECUTOR.md) | [docs/WORKER_HTTP_EXECUTOR.zh-TW.md](docs/WORKER_HTTP_EXECUTOR.zh-TW.md) |
 | Platform design | [English](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.md) | [繁體中文](docs/superpowers/specs/2026-07-30-vuln-proof-claw-platform-design.zh-TW.md) |
 | Phase 0 implementation plan | [English](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.md) | [繁體中文](docs/superpowers/plans/2026-07-30-phase-0-foundation-implementation-plan.zh-TW.md) |
 
