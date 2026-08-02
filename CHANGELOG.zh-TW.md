@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+## [0.3.1] - 2026-08-02
+
+### Changed
+
+- 兩份 README 新增 v0.1.0 到 v0.3.1 的逐版本重大更新表。
+- 修正 Quick Start 與目前能力說明，準確描述 v0.3 的安全自動測試模式。
+- 將 Release Metadata、Package 版本與預設 Assessment User-Agent 同步至 `0.3.1`。
+
+這是文件與 Release Metadata 修正版；目標流量行為與 v0.3.0 相同。
+
 ## [0.3.0] - 2026-08-02
 
 ### Added

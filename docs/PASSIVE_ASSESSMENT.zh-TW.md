@@ -20,7 +20,7 @@ tamper-evident Evidence、產生具優先順序的 Finding，並回傳 JSON、Ma
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.3.0
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.3.1
 ```
 
 Docker Compose 會把四個有界限的 assessment 設定傳入 container。若要關閉 target
