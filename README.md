@@ -9,14 +9,18 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.3.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha status:** Version 0.3.0 adds authorized safe active testing to bounded Web
+> **Alpha status:** Version 0.4.0 adds operator-reviewed Finding states and SARIF 2.1.0
+> exports to the authorized safe active testing workflow. The system still does not
+> authenticate to targets, submit forms, or send exploit payloads.
+>
+> Version 0.3.0 added authorized safe active testing to bounded Web
 > discovery. It inventories captured OpenAPI documents and verifies only parameterless
 > GET/HEAD operations through the existing scope, DNS, evidence, and budget controls.
 > It does not authenticate, submit forms, invoke external scanners, or send exploit payloads.
@@ -46,8 +50,8 @@ vuln-proof-claw is being built around those requirements:
 | --- | --- |
 | CLI | Version command and credential-safe `doctor` diagnostics |
 | REST API | Versioned health, project, engagement, automated assessment, workflow, audit, and report contracts with OpenAPI |
-| Web console | Bilingual URL-first safe automation, discovery-only fallback, Safe/Fast/Deep presets, findings, history, and reports |
-| Evidence Core | Multi-page discovery, semantic OpenAPI inventory, bounded read-only API verification, transactional evidence, and immutable reports |
+| Web console | Bilingual URL-first safe automation, discovery-only fallback, Safe/Fast/Deep presets, Finding review, history, and JSON/Markdown/HTML/SARIF reports |
+| Evidence Core | Multi-page discovery, semantic OpenAPI inventory, bounded read-only API verification, transactional evidence, immutable reports, and evidence-backed review state |
 | Domain | Projects, engagements, tasks, flows, actions, approvals, evidence, and findings |
 | Policy | Web/API target normalization, default-deny scope checks, L0–L4 risk, action-bound approvals |
 | Authentication | Optional API-wide Bearer boundary with distinct operator, approver, and evidence-reader roles |
@@ -58,7 +62,7 @@ vuln-proof-claw is being built around those requirements:
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
 Authenticated browser testing, security-tool and exploit execution, LLM orchestration,
-Planner/Operator/Verifier agents, and SARIF reporting remain roadmap items. The proposed
+Planner/Operator/Verifier agents, and bug-bounty-specific reporting remain roadmap items. The proposed
 provider-neutral AI driver is documented in [AI Driver Architecture](docs/AI_DRIVER.md).
 
 ## Release highlights
@@ -72,6 +76,7 @@ adds a user-completable capability while keeping the execution boundary explicit
 | **v0.2.0** | Bounded same-origin discovery with Safe/Fast/Deep budgets, per-page Evidence, aggregate Findings, severity/confidence/remediation, and escaped HTML reports. | No authentication, browser session, external scanner, parameter mutation, or exploit validation. |
 | **v0.3.0** | OpenAPI 3.x/Swagger 2.0 operation inventory and `active-safe` verification of parameterless GET/HEAD operations, including evidence-backed declared-authentication candidates. | No write methods, required parameters, login, browser automation, exploit payloads, or arbitrary tools. |
 | **v0.3.1** | Documentation and release metadata update: this version history, corrected Quick Start guidance, and synchronized package/user-agent versions. | No new target-facing capability; the security boundary is unchanged from v0.3.0. |
+| **v0.4.0** | Operator Finding review with optimistic version checks and immutable audit events; SARIF 2.1.0 direct reports and idempotent immutable exports; Web console SARIF download. | No Planner/Operator/Verifier orchestration, browser authentication, write-method testing, exploit payloads, or arbitrary tools. |
 
 For implementation details and the next milestones, see [ROADMAP.md](ROADMAP.md) and the
 versioned entries in [CHANGELOG.md](CHANGELOG.md).
@@ -96,7 +101,7 @@ first run creates its private workspace automatically. Safe automated mode disco
 same-origin pages and verifies eligible read-only API operations; discovery-only mode,
 Fast mode, and Deep mode are available in the form. The result view shows prioritized
 findings, API inventory, active-probe counts, evidence integrity, and JSON, Markdown,
-and escaped HTML reports.
+escaped HTML, and SARIF 2.1.0 reports.
 
 Check the service:
 
@@ -209,10 +214,12 @@ provider keys, customer credentials, or captured target data.
 
 ## Project status and roadmap
 
-Phase 0 and bounded discovery are complete. Version 0.3.0 adds semantic OpenAPI
+Phase 0 and bounded discovery are complete. Version 0.4.0 adds operator review of
+evidence-backed findings and SARIF 2.1.0 export. Version 0.3.0 added semantic OpenAPI
 operation inventory and automated verification of parameterless read-only operations,
 including evidence-backed candidate detection when declared authentication appears
-unenforced. Authenticated browser and state-changing tests remain later milestones.
+unenforced. Authenticated browser, state-changing tests, and Planner/Operator/Verifier
+orchestration remain later milestones.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones. Roadmap items describe intent,
 not guaranteed release dates.
@@ -233,6 +240,8 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Controlled HTTP capture | [docs/HTTP_CAPTURE.md](docs/HTTP_CAPTURE.md) | [docs/HTTP_CAPTURE.zh-TW.md](docs/HTTP_CAPTURE.zh-TW.md) |
 | Control-plane workflow API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication and approvals | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
+| Finding review | [docs/FINDING_REVIEW.md](docs/FINDING_REVIEW.md) | [docs/FINDING_REVIEW.zh-TW.md](docs/FINDING_REVIEW.zh-TW.md) |
+| SARIF reporting | [docs/SARIF_REPORTING.md](docs/SARIF_REPORTING.md) | [docs/SARIF_REPORTING.zh-TW.md](docs/SARIF_REPORTING.zh-TW.md) |
 | Evidence access and report exports | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
 | Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
 | AI driver architecture | [docs/AI_DRIVER.md](docs/AI_DRIVER.md) | [docs/AI_DRIVER.zh-TW.md](docs/AI_DRIVER.zh-TW.md) |

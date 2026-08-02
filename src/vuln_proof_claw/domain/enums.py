@@ -100,3 +100,4 @@ class ReportFormat(StrEnum):
 
     JSON = "json"
     MARKDOWN = "markdown"
+    SARIF = "sarif"

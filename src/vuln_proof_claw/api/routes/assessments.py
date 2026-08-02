@@ -57,6 +57,7 @@ def _summary(result: PassiveAssessmentResult) -> AssessmentSummary:
         report_url=f"{prefix}/report",
         markdown_report_url=f"{prefix}/report.md",
         html_report_url=f"{prefix}/report.html",
+        sarif_report_url=f"{prefix}/report.sarif",
     )
 
 

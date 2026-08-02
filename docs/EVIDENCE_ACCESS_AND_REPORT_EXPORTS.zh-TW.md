@@ -37,7 +37,9 @@ Content-Type: application/json
 {"format":"json"}
 ```
 
-`format` 接受 `json` 或 `markdown`。以相同 key 與 format 重送時會回傳原始快照；
+v0.4.0 另外接受 `sarif`，可建立 SARIF 2.1.0 不可變報告快照。
+
+`format` 接受 `json`、`markdown` 或 `sarif`。以相同 key 與 format 重送時會回傳原始快照；
 同一 key 改用另一種 format 則回覆 `409 idempotency_key_conflict`。可由
 `GET .../report-exports` 列出 metadata，該 response 不包含內容。
 

@@ -45,6 +45,7 @@ type AssessmentCopy = {
   noFindings: string;
   downloadJson: string;
   downloadMarkdown: string;
+  downloadSarif: string;
   previewHtml: string;
   viewResult: string;
   emptyPendingHint: string;
@@ -107,8 +108,8 @@ export function AssessmentWorkspace({
   stage: "preparing" | "capturing" | "reporting" | null;
   t: AssessmentCopy;
   onAuthorizationChange: (value: boolean) => void;
-  onDownload: (format: "json" | "markdown") => void;
-  onHistoryDownload: (assessment: AssessmentHistoryItem, format: "json" | "markdown") => void;
+  onDownload: (format: "json" | "markdown" | "sarif") => void;
+  onHistoryDownload: (assessment: AssessmentHistoryItem, format: "json" | "markdown" | "sarif") => void;
   onHistoryProjectChange: (value: string) => void;
   onHistoryView: (assessment: AssessmentHistoryItem) => void;
   onPreviewHtml: () => void;
@@ -273,6 +274,9 @@ export function AssessmentWorkspace({
                 <button className="quiet-button" onClick={() => onDownload("markdown")} type="button">
                   {t.downloadMarkdown}
                 </button>
+                <button className="quiet-button" onClick={() => onDownload("sarif")} type="button">
+                  {t.downloadSarif}
+                </button>
                 <button className="quiet-button" onClick={onPreviewHtml} type="button">
                   {t.previewHtml}
                 </button>
@@ -363,6 +367,14 @@ export function AssessmentWorkspace({
                       type="button"
                     >
                       Markdown
+                    </button>
+                    <button
+                      aria-label={`${t.downloadSarif}: ${item.target}`}
+                      className="quiet-button"
+                      onClick={() => onHistoryDownload(item, "sarif")}
+                      type="button"
+                    >
+                      SARIF
                     </button>
                   </div>
                 </article>

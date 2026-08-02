@@ -24,6 +24,7 @@ from vuln_proof_claw.api.dependencies import (
 from vuln_proof_claw.api.routes.approvals import router as approvals_router
 from vuln_proof_claw.api.routes.assessments import router as assessments_router
 from vuln_proof_claw.api.routes.console import router as console_router
+from vuln_proof_claw.api.routes.findings import router as findings_router
 from vuln_proof_claw.api.routes.health import router as health_router
 from vuln_proof_claw.api.routes.reports import router as reports_router
 from vuln_proof_claw.api.routes.workflow import router as workflow_router
@@ -95,6 +96,7 @@ def create_app(
     app.include_router(reports_router, prefix="/api/v1", dependencies=protected)
     app.include_router(workflow_router, prefix="/api/v1", dependencies=protected)
     app.include_router(approvals_router, prefix="/api/v1", dependencies=protected)
+    app.include_router(findings_router, prefix="/api/v1", dependencies=protected)
     app.include_router(assessments_router, prefix="/api/v1", dependencies=protected)
 
     web_root = app_settings.web.static_directory or (

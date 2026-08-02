@@ -37,7 +37,7 @@ Content-Type: application/json
 {"format":"json"}
 ```
 
-`format` accepts `json` or `markdown`. Repeating the same key and format returns the
+`format` accepts `json`, `markdown`, or `sarif`. Repeating the same key and format returns the
 original snapshot. Reusing the key for another format returns
 `409 idempotency_key_conflict`. List metadata at `GET .../report-exports`; content is
 not included in that response.

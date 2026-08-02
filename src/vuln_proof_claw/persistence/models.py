@@ -246,7 +246,7 @@ class ReportExportRecord(Base):
         UniqueConstraint("engagement_id", "idempotency_key"),
         Index("ix_report_exports_engagement_created", "engagement_id", "created_at"),
         CheckConstraint("size >= 0", name="size"),
-        CheckConstraint("format IN ('json', 'markdown')", name="format"),
+        CheckConstraint("format IN ('json', 'markdown', 'sarif')", name="format"),
     )
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)

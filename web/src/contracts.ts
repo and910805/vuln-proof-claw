@@ -53,6 +53,7 @@ export type AssessmentSummary = {
   report_url: string;
   markdown_report_url: string;
   html_report_url: string;
+  sarif_report_url: string;
 };
 
 export type AssessmentHistoryItem = {
@@ -125,6 +126,8 @@ export type EngagementReport = {
     severity: string;
     confidence: string;
     remediation: string;
+    evidence_ids: string[];
+    version: number;
     created_at: string;
   }>;
 };

@@ -9,14 +9,19 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.3.1-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
+> **v0.4.0 重大更新：** 新增具樂觀版本檢查與 Audit trail 的 Finding 審查流程、SARIF 2.1.0 報告與不可變 SARIF export。這一版仍維持唯讀、同源、Scope／DNS／Evidence／Budget 邊界；Planner／Verifier 編排、登入測試與 Exploit Payload 尚未開放。
+
 > [!IMPORTANT]
-> **Alpha 狀態：** 0.3.0 在有界 Web Discovery 上加入已授權的安全主動測試。系統會
+> **Alpha 狀態：** 0.4.0 新增 Operator 審查 Finding 狀態與 SARIF 2.1.0 匯出，接在
+> 已授權的安全主動測試流程上。系統仍不會登入目標、送出表單或發送 Exploit Payload。
+>
+> 0.3.0 在有界 Web Discovery 上加入已授權的安全主動測試。系統會
 > 解析已擷取的 OpenAPI 文件，且只透過既有 Scope、DNS、Evidence 與 Budget 控制驗證
 > 無必要參數的 GET／HEAD Operation；仍不會登入、提交 Form、啟動外部掃描器或送出 Exploit Payload。
 
@@ -55,7 +60,7 @@ vuln-proof-claw 以這些要求作為核心設計：
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
 Authenticated Browser 測試、資安工具與 Exploit Execution、LLM orchestration、
-Planner／Operator／Verifier agents，以及 SARIF 報告仍屬於後續路線圖。Provider-neutral
+Planner／Operator／Verifier agents，以及 Bug-bounty 專用報告仍屬於後續路線圖。Provider-neutral
 AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 
 ## 版本重大更新
@@ -69,6 +74,7 @@ AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 | **v0.2.0** | 有界同源 Discovery、Safe／Fast／Deep Budget、逐頁 Evidence、聚合 Finding、Severity／Confidence／Remediation 與安全轉義 HTML 報告。 | 不會 Authentication、Browser Session、外部 Scanner、參數變異或 Exploit 驗證。 |
 | **v0.3.0** | OpenAPI 3.x／Swagger 2.0 Operation Inventory，以及 `active-safe` 無必要參數 GET／HEAD 驗證；包含具 Evidence 的宣告式 Authentication 異常 Candidate。 | 不會送出寫入 Method、必要參數、登入、Browser Automation、Exploit Payload 或任意工具。 |
 | **v0.3.1** | 文件與 Release Metadata 更新：版本歷史、修正 Quick Start 說明，以及同步 Package／User-Agent 版本。 | 沒有新增目標流量能力；安全邊界與 v0.3.0 相同。 |
+| **v0.4.0** | Operator Finding 審查、樂觀版本檢查與不可變 Audit Event；SARIF 2.1.0 直接報告與具 Idempotency 的不可變匯出；Web console SARIF 下載。 | 尚未提供 Planner／Operator／Verifier 編排、Browser Authentication、寫入 Method 測試、Exploit Payload 或任意工具。 |
 
 實作細節與下一階段請參閱 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) 及
 [CHANGELOG.zh-TW.md](CHANGELOG.zh-TW.md) 的版本記錄。
@@ -91,7 +97,7 @@ docker compose up --build -d
 HTTP(S) 網址、完成一次授權聲明並開始。第一次執行會自動建立私有工作區；安全自動
 模式會探索同源頁面並驗證符合條件的唯讀 API，也可在表單切換成僅 Discovery、Fast
 或 Deep。結果頁會顯示 Finding、API Inventory、Active Probe 數量、Evidence 完整性，
-並提供 JSON、Markdown 與安全轉義 HTML 報告。
+並提供 JSON、Markdown、安全轉義 HTML 與 SARIF 2.1.0 報告。
 
 檢查服務：
 
@@ -201,7 +207,8 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 
 ## 專案狀態與路線圖
 
-Phase 0 與有界 Discovery 已完成。0.3.0 新增 OpenAPI Operation 語意 Inventory，以及
+Phase 0 與有界 Discovery 已完成。0.4.0 新增具 Evidence 的 Finding Operator 審查與 SARIF 2.1.0
+匯出。0.3.0 新增 OpenAPI Operation 語意 Inventory，以及
 無必要參數唯讀 Operation 的自動驗證；若規格宣告 Authentication 但匿名請求取得 2xx，
 會產生具 Evidence 的候選 Finding。Authenticated Browser 與改變狀態的測試仍屬後續里程碑。
 

@@ -59,13 +59,17 @@ scope, DNS, evidence, request-count, and time enforcement.
 
 ## v0.4 — Autonomous Core
 
-- Planner, Operator, and independent Verifier with budgets and stopping conditions.
-- Live progress, interactive approvals, evidence viewer, finding review, and exports
-  for HTML, SARIF, and bug-bounty workflows.
-- Multi-provider registry and capability detection.
-- A local ProofClaw MCP server for Codex, Claude Code, and other clients following
-  [AI Driver Architecture](docs/AI_DRIVER.md); managed automation continues to use
-  provider APIs or approved enterprise access tokens.
+v0.4.0 starts this milestone with a user-completable reporting and review slice:
+
+- Delivered: operator Finding review with optimistic version checks, evidence-required
+  verification, immutable review audit events, and SARIF 2.1.0 direct and immutable exports.
+- Delivered: Web console SARIF download alongside JSON, Markdown, and HTML reports.
+- Remaining: Planner, Operator, and independent Verifier orchestration with budgets and
+  stopping conditions; live progress and interactive approval UX; and bug-bounty-specific
+  report formats.
+- Remaining: multi-provider registry/capability detection and a local ProofClaw MCP server
+  for Codex, Claude Code, and other clients following [AI Driver Architecture](docs/AI_DRIVER.md).
+  Managed automation continues to use provider APIs or approved enterprise access tokens.
 
 ## v1.0 — Stable Open Source
 

@@ -37,6 +37,7 @@ class AssessmentSummary(BaseModel):
     report_url: str
     markdown_report_url: str
     html_report_url: str
+    sarif_report_url: str
 
 
 class AssessmentHistoryItem(BaseModel):

@@ -815,6 +815,26 @@ class FindingRepository:
                 ],
             )
 
+    def save(self, finding: Finding, *, expected_version: int) -> Stored[Finding]:
+        """Persist a review decision with optimistic concurrency control."""
+        row = self._session.scalar(
+            select(FindingRecord).where(
+                FindingRecord.id == finding.id,
+                FindingRecord.version == expected_version,
+            )
+        )
+        if row is None:
+            raise ConcurrentUpdateError
+        row.status = finding.status.value
+        row.severity = finding.severity.value
+        row.confidence = finding.confidence.value
+        row.remediation = finding.remediation
+        self._session.flush()
+        stored = self.get(finding.id)
+        if stored is None:  # pragma: no cover - persistence invariant
+            raise RuntimeError("persisted finding could not be reloaded")
+        return stored
+
 
 class AuditEventRepository:
     """Append and inspect immutable engagement audit events."""

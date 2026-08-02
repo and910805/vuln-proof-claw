@@ -22,7 +22,7 @@ Compose profile enables this bounded path so the first-run experience works:
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.3.1
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.4.0
 ```
 
 Docker Compose passes the four bounded assessment settings into the container.
@@ -109,7 +109,7 @@ substitute for manual verification.
 
 ## Remaining path to autonomous assessment
 
-The next milestones are semantic OpenAPI analysis, an independent verifier,
-authenticated browser sessions, and SARIF export. Active probes and exploit
-validation require separate approval and safety designs. The optional AI interaction
-layer is described in [AI Driver Architecture](AI_DRIVER.md).
+Semantic OpenAPI analysis and SARIF export are now available in v0.4.0. The next
+milestones are an independent verifier and authenticated browser sessions. Active
+probes and exploit validation require separate approval and safety designs. The
+optional AI interaction layer is described in [AI Driver Architecture](AI_DRIVER.md).

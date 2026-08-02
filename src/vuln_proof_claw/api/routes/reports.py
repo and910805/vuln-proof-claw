@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from vuln_proof_claw import __version__
 from vuln_proof_claw.api.audit import record_audit_event
 from vuln_proof_claw.api.auth import (
     AuthenticatedPrincipal,
@@ -50,6 +51,7 @@ from vuln_proof_claw.persistence.models import (
     EvidenceRecord,
     FindingRecord,
     ReportExportRecord,
+    finding_evidence,
 )
 from vuln_proof_claw.persistence.repositories import (
     EngagementRepository,
@@ -109,6 +111,17 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             .order_by(FindingRecord.created_at, FindingRecord.id)
         )
     )
+    finding_evidence_rows = tuple(
+        session.execute(
+            select(finding_evidence.c.finding_id, finding_evidence.c.evidence_id).where(
+                finding_evidence.c.finding_id.in_(row.id for row in finding_rows)
+            )
+        )
+    ) if finding_rows else ()
+    evidence_ids_by_finding: dict[str, tuple[str, ...]] = {}
+    for finding_id, evidence_id in finding_evidence_rows:
+        evidence_ids_by_finding.setdefault(finding_id, ())
+        evidence_ids_by_finding[finding_id] += (evidence_id,)
     action_states: dict[str, int] = {}
     for action in actions:
         action_states[action.state] = action_states.get(action.state, 0) + 1
@@ -249,6 +262,8 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
                 severity=row.severity,
                 confidence=row.confidence,
                 remediation=row.remediation,
+                evidence_ids=evidence_ids_by_finding.get(row.id, ()),
+                version=row.version,
                 created_at=row.created_at,
             )
             for row in finding_rows
@@ -406,7 +421,75 @@ table {{ display:block; overflow:auto; }} }}
 <th>Path</th><th>Authentication</th><th>Safe probe</th></tr></thead>
 <tbody>{operation_rows}</tbody></table></div>
 <h2>Scanned targets</h2><div class="card"><ul>{target_rows}</ul></div>
-</main></body></html>"""
+    </main></body></html>"""
+
+
+def render_sarif(report: EngagementReport) -> bytes:
+    """Render a SARIF 2.1.0 result set without raw target evidence."""
+    levels = {
+        "critical": "error",
+        "high": "error",
+        "medium": "warning",
+        "low": "note",
+        "informational": "note",
+    }
+    rules: dict[str, dict[str, object]] = {}
+    results: list[dict[str, object]] = []
+    for finding in report.findings:
+        rules.setdefault(
+            finding.vulnerability_class,
+            {
+                "id": finding.vulnerability_class,
+                "name": finding.vulnerability_class,
+                "shortDescription": {"text": finding.title},
+                "help": {"text": finding.remediation},
+            },
+        )
+        result: dict[str, object] = {
+            "ruleId": finding.vulnerability_class,
+            "level": levels.get(finding.severity, "warning"),
+            "message": {"text": finding.title},
+            "locations": [
+                {"physicalLocation": {"artifactLocation": {"uri": finding.affected_target}}}
+            ],
+            "properties": {
+                "proofclaw_status": finding.status,
+                "proofclaw_confidence": finding.confidence,
+                "proofclaw_finding_id": finding.id,
+                "proofclaw_evidence_ids": list(finding.evidence_ids),
+                "proofclaw_remediation": finding.remediation,
+                "proofclaw_version": finding.version,
+            },
+        }
+        if finding.status == "rejected":
+            result["suppressions"] = [
+                {"kind": "inSource", "justification": "Rejected during review"}
+            ]
+        results.append(result)
+    payload = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "vuln-proof-claw",
+                        "semanticVersion": __version__,
+                        "informationUri": "https://github.com/and910805/vuln-proof-claw",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "automationDetails": {"id": report.engagement_id},
+                "properties": {
+                    "proofclaw_report_version": report.report_version,
+                    "proofclaw_engagement_id": report.engagement_id,
+                    "proofclaw_evidence_integrity": report.evidence_integrity.status,
+                },
+                "results": results,
+            }
+        ],
+    }
+    return (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
 
 
 def _export_summary(export: ReportExport) -> ReportExportSummary:
@@ -425,6 +508,8 @@ def _export_summary(export: ReportExport) -> ReportExportSummary:
 def _serialize_report(report: EngagementReport, export_format: ReportFormat) -> tuple[str, bytes]:
     if export_format is ReportFormat.JSON:
         return "application/json", (report.model_dump_json(indent=2) + "\n").encode()
+    if export_format is ReportFormat.SARIF:
+        return "application/sarif+json", render_sarif(report)
     return "text/markdown", render_markdown(report).encode()
 
 
@@ -473,6 +558,21 @@ def engagement_report_html(engagement_id: str, session: SessionDependency) -> HT
             "Cache-Control": "no-store",
             "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
             "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get(
+    "/engagements/{engagement_id}/report.sarif",
+    summary="Generate a SARIF 2.1.0 engagement report",
+)
+def engagement_report_sarif(engagement_id: str, session: SessionDependency) -> Response:
+    return Response(
+        content=render_sarif(build_engagement_report(session, engagement_id)),
+        media_type="application/sarif+json",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": "inline; filename=engagement.sarif",
         },
     )
 
@@ -591,7 +691,11 @@ def download_report_export(
         {"report_export_id": stored.entity.id, "digest": stored.entity.digest},
     )
     session.commit()
-    extension = "json" if stored.entity.format is ReportFormat.JSON else "md"
+    extension = {
+        ReportFormat.JSON: "json",
+        ReportFormat.MARKDOWN: "md",
+        ReportFormat.SARIF: "sarif",
+    }[stored.entity.format]
     return _download_response(
         stored.content,
         media_type=stored.entity.media_type,

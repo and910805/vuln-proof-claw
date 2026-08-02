@@ -39,6 +39,8 @@ class FindingReportItem(BaseModel):
     severity: str
     confidence: str
     remediation: str
+    evidence_ids: tuple[str, ...]
+    version: int
     created_at: datetime
 
 
@@ -113,13 +115,13 @@ class EngagementReport(ReportSchema):
 class ReportExportCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    format: Literal["json", "markdown"]
+    format: Literal["json", "markdown", "sarif"]
 
 
 class ReportExportSummary(ReportSchema):
     id: str
     engagement_id: str
-    format: Literal["json", "markdown"]
+    format: Literal["json", "markdown", "sarif"]
     media_type: str
     digest: str
     size: int

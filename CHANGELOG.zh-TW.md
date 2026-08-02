@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## [0.4.0] - 2026-08-02
+
+### Added
+
+- 新增需要 Operator 身分的 Finding 審查 Endpoint，提供明確審查狀態、verified 的 Evidence
+  要求、樂觀版本檢查與不可變 `finding.reviewed` Audit Event。
+- 新增 SARIF 2.1.0 Engagement Report，以及具 Idempotency 的不可變 SARIF report export。
+- Web console 為目前與歷史 Assessment 新增 SARIF 下載。
+- 新增雙語 Finding review 與 SARIF reporting 文件。
+
+### Changed
+
+- 新增 Alembic revision `0007_sarif_exports`，擴充 Report Export format contract。
+- Python、Web、User-Agent 與 Release Metadata 版本同步至 `0.4.0`。
+
+### Security
+
+- Finding review 只改變 Control Plane metadata，不會授權新的目標 Action 或擴大 Scope。
+- SARIF 只包含 metadata 與 location，不會包含原始 HTTP body；不可變下載仍需 Evidence-reader
+  role，並會驗證 SHA-256。
+
 ## [0.3.1] - 2026-08-02
 
 ### Changed

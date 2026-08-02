@@ -6,6 +6,29 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.4.0] - 2026-08-02
+
+### Added
+
+- Added an authenticated operator Finding review endpoint with explicit review statuses,
+  evidence-required verification, optimistic version checks, and immutable `finding.reviewed`
+  audit events.
+- Added SARIF 2.1.0 direct engagement reports and idempotent immutable SARIF report exports.
+- Added Web console SARIF downloads for current and persisted assessment results.
+- Added bilingual Finding review and SARIF reporting documentation.
+
+### Changed
+
+- Added Alembic revision `0007_sarif_exports` and expanded the report export format contract.
+- Advanced Python, Web, User-Agent, and release metadata versions to `0.4.0`.
+
+### Security
+
+- Finding review changes control-plane metadata only; it does not authorize new target-facing
+  actions or widen scope.
+- SARIF contains metadata and locations, never raw HTTP bodies. Immutable downloads still
+  require the evidence-reader role and pass SHA-256 verification.
+
 ## [0.3.1] - 2026-08-02
 
 ### Changed
