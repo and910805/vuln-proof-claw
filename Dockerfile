@@ -14,6 +14,9 @@ RUN python -m pip install .
 
 FROM python:3.14-slim AS runtime
 
+ARG VCS_REF="unknown"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

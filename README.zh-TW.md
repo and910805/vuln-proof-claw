@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.18-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.0.19-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0.0.18 提供一條預設關閉、受 Scope 約束的被動 URL
+> **Pre-alpha 狀態：** Phase 0.0.19 提供一條預設關閉、受 Scope 約束的被動 URL
 > 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
 > crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
 > 全部維持 fail-closed。
@@ -183,8 +183,8 @@ Phase 0 基礎建設已完成。v0.1 預覽版目前包含持久化 Engagement�
 capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱、不可變的
 Markdown／JSON 報告匯出、經測試的 orphan-runtime cleanup 契約、完整受限 container
 policy adapter、authenticated bounded Engine-gateway 邊界，以及固定欄位 Unix-socket Docker
-Engine adapter。Evidence Core 里程碑仍待完成 scope egress、Worker executor capability、
-digest publication 與啟動整合。
+Engine adapter。Evidence Core 里程碑仍待完成 scope egress、target-facing Worker executor
+capability、registry digest publication 與啟動整合。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。
