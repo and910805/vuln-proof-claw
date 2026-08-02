@@ -406,11 +406,41 @@ main { min-width: 0; }
   font-size: 12px;
 }
 .assessment-panel input:focus, .assessment-panel select:focus { border-color: #718641; box-shadow: 0 0 0 3px rgba(214,255,75,.06); }
+.assessment-advanced {
+  margin: 1px 0 8px;
+  padding: 12px 13px 2px;
+  border: 1px solid #29353a;
+  border-radius: 8px;
+  background: #10171a;
+}
+.assessment-advanced summary {
+  min-height: 32px;
+  color: #aeb9bc;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.assessment-advanced p { margin: 0 0 13px; color: #7f8d92; font-size: 11px; line-height: 1.55; }
 .authorization-check { margin: 4px 0 12px; display: flex; align-items: flex-start; gap: 10px; line-height: 1.55; cursor: pointer; }
 .authorization-check input { flex: 0 0 auto; margin-top: 2px; accent-color: var(--accent); }
 .assessment-submit { justify-self: start; }
 .assessment-submit, .report-actions .quiet-button { min-height: 44px; }
 .assessment-message { margin: 0 22px 22px; padding: 11px 13px; border: 1px solid #34452d; border-radius: 7px; background: #151d14; color: #bcd587; font: 10px ui-monospace, monospace; overflow-wrap: anywhere; }
+.assessment-progress { margin: 7px 0 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.assessment-progress li { min-height: 28px; padding-left: 28px; position: relative; display: flex; align-items: center; color: #647278; font-size: 11px; }
+.assessment-progress li::before {
+  position: absolute;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid #405057;
+  border-radius: 50%;
+  content: "";
+}
+.assessment-progress li.active { color: #e0e8e6; }
+.assessment-progress li.active::before { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(214,255,75,.08); animation: pulse-history 1.1s ease-in-out infinite; }
+.assessment-progress li.complete { color: #9eb772; }
+.assessment-progress li.complete::before { border-color: #6f843f; background: #6f843f; box-shadow: inset 0 0 0 3px #10171a; }
 .assessment-result { padding-bottom: 20px; }
 .assessment-result dl { margin: 15px 20px; }
 .assessment-result dl div { min-height: 45px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202a2e; }
@@ -418,6 +448,14 @@ main { min-width: 0; }
 .assessment-result dd { margin: 0; color: #e3e9e7; font: 700 12px ui-monospace, monospace; }
 .action-reference { display: block; margin: 17px 20px; padding: 10px; border-radius: 6px; background: #0c1215; color: #839197; font-size: 9px; overflow-wrap: anywhere; }
 .report-actions { padding: 0 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+.finding-results { margin: 18px 20px; }
+.finding-results h4 { margin: 0 0 10px; font-size: 12px; }
+.finding-results > p { color: #829095; font-size: 11px; line-height: 1.55; }
+.finding-results ul { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.finding-results li { padding: 11px 12px; display: grid; gap: 5px; border: 1px solid #2b373c; border-radius: 7px; background: #0d1316; }
+.finding-results strong { color: #e5ebe9; font-size: 11px; line-height: 1.45; }
+.finding-results code { width: fit-content; color: #bfd56f; font-size: 9px; overflow-wrap: anywhere; }
+.finding-results span { color: #77868b; font: 9px ui-monospace, monospace; overflow-wrap: anywhere; }
 .empty-state.compact { min-height: 330px; }
 
 .assessment-history { margin-top: 17px; overflow: hidden; }
@@ -464,7 +502,7 @@ main { min-width: 0; }
 .history-time span { color: #66757a; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
 .history-time time { margin-top: 5px; color: #aeb8ba; font-size: 11px; }
 .history-time code { margin-top: 6px; color: var(--danger); font-size: 10px; overflow-wrap: anywhere; }
-.history-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.history-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .history-actions .quiet-button { min-width: 0; min-height: 44px; padding-inline: 9px; }
 .history-loading, .history-empty { min-height: 130px; padding: 28px 20px; display: grid; place-items: center; color: #839095; font-size: 12px; text-align: center; }
 .history-loading { animation: pulse-history 1.4s ease-in-out infinite; }
@@ -550,4 +588,7 @@ main { min-width: 0; }
   .history-primary > strong { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
   .history-time { display: block; }
   .history-actions .quiet-button { width: 100%; font-size: 10px; }
+  .assessment-panel form { padding: 18px; }
+  .assessment-panel input:not([type="checkbox"]), .assessment-panel select { font-size: 16px; }
+  .assessment-submit { width: 100%; justify-content: center; }
 }

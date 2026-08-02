@@ -5,6 +5,7 @@ import {
   assessmentHistoryPath,
   assessmentIdempotencyKey,
   prepareAssessment,
+  resolveAssessmentProjectId,
 } from "./assessment";
 import { AssessmentWorkspace } from "./AssessmentWorkspace";
 import {
@@ -12,6 +13,7 @@ import {
   AssessmentList,
   AssessmentSummary,
   DashboardSummary,
+  EngagementReport,
   Engagement,
   HealthStatus,
   Project,
@@ -35,7 +37,7 @@ const copy = {
       findings: "Findings",
       policy: "Safety policy",
     },
-    webFoundation: "EVIDENCE CORE PREVIEW",
+    webFoundation: "PASSIVE ASSESSMENT ALPHA",
     phaseText: "Scoped engagements online",
     apiReady: "API ready",
     apiUnavailable: "API unavailable",
@@ -44,6 +46,7 @@ const copy = {
     subhead:
       "Create authorized assessment boundaries and monitor evidence-backed results. Passive URL capture is available only when explicitly enabled.",
     newProject: "New project",
+    startAssessment: "Assess a URL",
     refresh: "Refresh",
     metrics: {
       projects: "Projects",
@@ -94,22 +97,31 @@ const copy = {
     saveToken: "Use token",
     clearToken: "Clear token",
     tokenActive: "Token configured",
-    assessmentTitle: "Authorized passive URL assessment",
-    assessmentHint: "Creates a 24-hour L0 engagement, sends one bounded GET, stores evidence, and produces report data.",
+    assessmentTitle: "Quick URL assessment",
+    assessmentHint: "Checks one public response, records evidence, and builds a report. Safety limits are applied automatically.",
     chooseProject: "Project",
-    chooseProjectPlaceholder: "Select a project",
+    chooseProjectPlaceholder: "Automatic workspace",
+    advancedOptions: "Advanced organization options",
+    automaticProject: "The first run creates a private “Quick assessments” workspace automatically.",
     targetUrl: "Target URL",
     targetPlaceholder: "https://app.example.com/",
-    authorizationConfirm: "I confirm that I am authorized to assess this exact target.",
-    runAssessment: "Run passive assessment",
+    authorizationConfirm: "I am authorized to assess this target. Remember this choice on this device.",
+    runAssessment: "Start assessment",
     assessing: "Assessing…",
+    preparingScope: "Preparing an exact target scope",
+    contactingTarget: "Capturing the bounded public response",
+    buildingReport: "Verifying evidence and building the report",
     assessmentDisabled: "Passive target traffic is disabled in server settings.",
     assessmentResult: "Latest assessment result",
     actionState: "Action state",
     findingCount: "Findings",
     evidenceCount: "Evidence records",
+    evidenceIntegrity: "Evidence integrity",
+    findingDetails: "Finding details",
+    noFindings: "No conservative header findings were produced for this response.",
     downloadJson: "Download JSON report",
     downloadMarkdown: "Download Markdown report",
+    viewResult: "View result",
     assessmentSuccess: "Assessment completed and persisted.",
     assessmentError: "Assessment could not be completed.",
     invalidTarget: "Enter a complete HTTP or HTTPS URL.",
@@ -159,7 +171,7 @@ const copy = {
       findings: "漏洞發現",
       policy: "安全政策",
     },
-    webFoundation: "證據核心預覽版",
+    webFoundation: "被動評估 Alpha",
     phaseText: "授權範圍評估已上線",
     apiReady: "API 正常",
     apiUnavailable: "API 無法連線",
@@ -168,6 +180,7 @@ const copy = {
     subhead:
       "建立明確授權的評估邊界並監控證據結果。被動 URL 擷取只有在明確啟用後才會執行。",
     newProject: "新增專案",
+    startAssessment: "評估網址",
     refresh: "重新整理",
     metrics: {
       projects: "專案",
@@ -218,22 +231,31 @@ const copy = {
     saveToken: "使用 Token",
     clearToken: "清除 Token",
     tokenActive: "Token 已設定",
-    assessmentTitle: "已授權的被動網址評估",
-    assessmentHint: "建立 24 小時 L0 Engagement、送出一次有界 GET、保存 Evidence 並產生報告資料。",
+    assessmentTitle: "快速網址評估",
+    assessmentHint: "檢查一次公開 Response、保存 Evidence 並產生報告；安全限制會在背景自動套用。",
     chooseProject: "所屬專案",
-    chooseProjectPlaceholder: "選擇專案",
+    chooseProjectPlaceholder: "自動建立工作區",
+    advancedOptions: "進階整理選項",
+    automaticProject: "第一次執行會自動建立私有的「快速評估」工作區。",
     targetUrl: "目標網址",
     targetPlaceholder: "https://app.example.com/",
-    authorizationConfirm: "我確認自己已獲授權，可以評估這個確切目標。",
-    runAssessment: "執行被動評估",
+    authorizationConfirm: "我已獲授權評估此目標，並在這台裝置記住此選擇。",
+    runAssessment: "開始評估",
     assessing: "評估中…",
+    preparingScope: "建立精確的目標 Scope",
+    contactingTarget: "擷取有界的公開 Response",
+    buildingReport: "驗證 Evidence 並產生報告",
     assessmentDisabled: "伺服器設定目前未啟用被動目標流量。",
     assessmentResult: "最近一次評估結果",
     actionState: "動作狀態",
     findingCount: "Finding 數量",
     evidenceCount: "Evidence 數量",
+    evidenceIntegrity: "Evidence 完整性",
+    findingDetails: "Finding 明細",
+    noFindings: "這次 Response 沒有產生保守的 Header Finding。",
     downloadJson: "下載 JSON 報告",
     downloadMarkdown: "下載 Markdown 報告",
+    viewResult: "查看結果",
     assessmentSuccess: "評估已完成並保存。",
     assessmentError: "無法完成評估。",
     invalidTarget: "請輸入完整的 HTTP 或 HTTPS 網址。",
@@ -290,10 +312,18 @@ function App() {
   const [authenticationRequired, setAuthenticationRequired] = useState(false);
   const [assessmentProjectId, setAssessmentProjectId] = useState("");
   const [assessmentTarget, setAssessmentTarget] = useState("");
-  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(
+    () => localStorage.getItem("proofclaw.authorizationAcknowledged") === "true",
+  );
   const [assessing, setAssessing] = useState(false);
   const [assessmentMessage, setAssessmentMessage] = useState("");
-  const [latestAssessment, setLatestAssessment] = useState<AssessmentSummary | null>(null);
+  const [latestAssessment, setLatestAssessment] = useState<
+    AssessmentSummary | AssessmentHistoryItem | null
+  >(null);
+  const [latestReport, setLatestReport] = useState<EngagementReport | null>(null);
+  const [assessmentStage, setAssessmentStage] = useState<
+    "preparing" | "capturing" | "reporting" | null
+  >(null);
   const [assessmentHistory, setAssessmentHistory] = useState<AssessmentHistoryItem[]>([]);
   const [assessmentHistoryTotal, setAssessmentHistoryTotal] = useState(0);
   const [historyProjectId, setHistoryProjectId] = useState("");
@@ -386,13 +416,31 @@ function App() {
 
   const runAssessment = async (event: FormEvent) => {
     event.preventDefault();
-    if (!assessmentProjectId || !authorizationConfirmed || assessing) return;
+    if (!authorizationConfirmed || assessing) return;
     setAssessing(true);
     setAssessmentMessage("");
+    setLatestReport(null);
+    setAssessmentStage("preparing");
     try {
       const prepared = prepareAssessment(assessmentTarget);
+      const selectedProjectId = await resolveAssessmentProjectId(
+        assessmentProjectId,
+        projects,
+        async () => {
+          const project = await apiRequest<Project>("/api/v1/projects", operatorToken, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: language === "zh-TW" ? "快速評估" : "Quick assessments",
+            }),
+          });
+          setAssessmentProjectId(project.id);
+          return project;
+        },
+      );
+      setAssessmentStage("capturing");
       const engagement = await apiRequest<Engagement>(
-        `/api/v1/projects/${assessmentProjectId}/engagements`,
+        `/api/v1/projects/${selectedProjectId}/engagements`,
         operatorToken,
         {
           method: "POST",
@@ -412,7 +460,10 @@ function App() {
           body: JSON.stringify({ target: prepared.displayTarget }),
         },
       );
+      setAssessmentStage("reporting");
+      const report = await apiRequest<EngagementReport>(result.report_url, operatorToken);
       setLatestAssessment(result);
+      setLatestReport(report);
       setAssessmentMessage(result.error_code ?? t.assessmentSuccess);
       await loadData();
     } catch (assessmentError) {
@@ -429,6 +480,7 @@ function App() {
         setShowAuthentication(true);
       }
     } finally {
+      setAssessmentStage(null);
       setAssessing(false);
     }
   };
@@ -448,6 +500,18 @@ function App() {
       setAssessmentMessage(
         downloadError instanceof Error ? downloadError.message : t.assessmentError,
       );
+    }
+  };
+
+  const viewPersistedReport = async (assessment: AssessmentHistoryItem) => {
+    setAssessmentMessage("");
+    try {
+      const report = await apiRequest<EngagementReport>(assessment.report_url, operatorToken);
+      setLatestAssessment(assessment);
+      setLatestReport(report);
+      document.getElementById("assessment-result")?.scrollIntoView({ behavior: "smooth" });
+    } catch (reportError) {
+      setAssessmentMessage(reportError instanceof Error ? reportError.message : t.assessmentError);
     }
   };
 
@@ -503,7 +567,7 @@ function App() {
             <span className="phase-kicker">{t.webFoundation}</span>
             <strong>{t.phaseText}</strong>
             <div className="phase-progress"><span /></div>
-            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.1 preview</small>
+            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.1 alpha</small>
           </div>
         </div>
       </aside>
@@ -559,6 +623,7 @@ function App() {
               projects={projects.slice(0, 5)}
               t={t}
               onCreate={() => setShowCreate(true)}
+              onAssess={() => navigate("assessments")}
               onProjects={() => navigate("projects")}
             />
           )}
@@ -581,15 +646,25 @@ function App() {
               historyTotal={assessmentHistoryTotal}
               executionAvailable={summary?.execution_available ?? false}
               latestAssessment={latestAssessment}
+              latestReport={latestReport}
               message={assessmentMessage}
               projectId={assessmentProjectId}
               projects={projects}
               target={assessmentTarget}
+              stage={assessmentStage}
               t={t}
-              onAuthorizationChange={setAuthorizationConfirmed}
+              onAuthorizationChange={(confirmed) => {
+                setAuthorizationConfirmed(confirmed);
+                if (confirmed) {
+                  localStorage.setItem("proofclaw.authorizationAcknowledged", "true");
+                } else {
+                  localStorage.removeItem("proofclaw.authorizationAcknowledged");
+                }
+              }}
               onDownload={(format) => void downloadReport(format)}
               onHistoryDownload={(assessment, format) => void downloadReport(format, assessment)}
               onHistoryProjectChange={setHistoryProjectId}
+              onHistoryView={(assessment) => void viewPersistedReport(assessment)}
               onProjectChange={setAssessmentProjectId}
               onSubmit={(event) => void runAssessment(event)}
               onTargetChange={setAssessmentTarget}
@@ -702,6 +777,7 @@ function Overview({
   projects,
   t,
   onCreate,
+  onAssess,
   onProjects,
 }: {
   executionAvailable: boolean;
@@ -710,6 +786,7 @@ function Overview({
   projects: Project[];
   t: Translation;
   onCreate: () => void;
+  onAssess: () => void;
   onProjects: () => void;
 }) {
   return (
@@ -720,8 +797,8 @@ function Overview({
           <h2>{t.headline}</h2>
           <p>{t.subhead}</p>
         </div>
-        <button className="primary-button" onClick={onCreate} type="button">
-          <span>＋</span>{t.newProject}
+        <button className="primary-button" onClick={onAssess} type="button">
+          <span aria-hidden="true">→</span>{t.startAssessment}
         </button>
         <div className="hero-grid" aria-hidden="true" />
       </section>

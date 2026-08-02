@@ -4,6 +4,7 @@ import {
   assessmentHistoryPath,
   assessmentIdempotencyKey,
   prepareAssessment,
+  resolveAssessmentProjectId,
 } from "./assessment";
 
 describe("prepareAssessment", () => {
@@ -51,4 +52,28 @@ it("builds bounded and encoded assessment history URLs", () => {
   expect(assessmentHistoryPath("project id/one")).toBe(
     "/api/v1/assessments?limit=50&project_id=project+id%2Fone",
   );
+});
+
+describe("resolveAssessmentProjectId", () => {
+  it("keeps an explicitly selected project", async () => {
+    let created = false;
+    const projectId = await resolveAssessmentProjectId("selected", [{ id: "first" }], async () => {
+      created = true;
+      return { id: "created" };
+    });
+    expect(projectId).toBe("selected");
+    expect(created).toBe(false);
+  });
+
+  it("uses an existing project without extra setup", async () => {
+    const projectId = await resolveAssessmentProjectId("", [{ id: "first" }], async () => ({
+      id: "created",
+    }));
+    expect(projectId).toBe("first");
+  });
+
+  it("creates the first private workspace when none exists", async () => {
+    const projectId = await resolveAssessmentProjectId("", [], async () => ({ id: "created" }));
+    expect(projectId).toBe("created");
+  });
 });

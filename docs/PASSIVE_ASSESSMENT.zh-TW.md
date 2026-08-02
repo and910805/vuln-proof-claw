@@ -11,19 +11,19 @@ Evidence、產生保守的 Finding，並回傳既有 JSON 與 Markdown 報告連
 
 ## 啟用方式
 
-Target traffic 預設停用：
+應用程式層級預設仍停用。只綁定 loopback 的本機 Docker Compose profile 會啟用這條
+有界路徑，讓首次使用流程可直接運作：
 
 ```text
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.21
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.1.0
 ```
 
-使用 Docker Compose 開發時，先把 `.env.example` 複製成 `.env`，再把
-`VULN_PROOF_CLAW_ASSESSMENT__ENABLED` 改成 `true` 並重新建立 API service。Compose
-會把四個有界限的 assessment 設定傳入 container。尚未設定正式環境 authentication
-前，請維持只綁定 loopback。
+Docker Compose 會把四個有界限的 assessment 設定傳入 container。若要關閉 target
+traffic，可在 `.env` 設定 `VULN_PROOF_CLAW_ASSESSMENT__ENABLED=false`。尚未設定
+正式環境 authentication 前，請維持只綁定 loopback。
 
 正式環境若尚未達成 API authentication readiness，會拒絕啟用此設定。只有 operator
 role 能啟動 assessment。URL 必須符合持久化 Engagement 的 hostname／CIDR、scheme、
@@ -31,10 +31,13 @@ port、path 與時間範圍。
 
 ## Web 控制台
 
-開啟 `/#assessments`，選擇 Project、輸入以 hostname 表示的 HTTP(S) URL、確認你確實
-獲得該目標的評估授權，再啟動 assessment。精靈會建立只允許該 hostname、scheme、
-port 與 path 的 24 小時 L0 Engagement，接著顯示 Action 終態與 Evidence／Finding
-數量，並可下載目前的 JSON 或 Markdown Engagement report。
+開啟 `/#assessments`，輸入以 hostname 表示的 HTTP(S) URL、完成一次授權聲明後即可
+啟動。聲明會保存在該瀏覽器，不必每次重新勾選。第一次執行會自動建立私有工作區；
+Project 選擇仍可在進階整理選項內使用。
+
+精靈會在背景建立只允許確切 hostname、scheme、port 與 path 的 24 小時 L0
+Engagement。結果頁會顯示 Finding 明細、Action 終態、Evidence 數量與 chain 完整性，
+並可下載目前的 JSON 或 Markdown Engagement report。
 
 啟用 authentication 的 deployment 可透過「操作員權限」輸入 Operator Token。憑證只
 保存在分頁範圍的 `sessionStorage`，也能在相同對話框清除。精靈不會自動替 IP literal

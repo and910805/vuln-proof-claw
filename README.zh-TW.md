@@ -9,14 +9,14 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.0.21-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Status](https://img.shields.io/badge/status-pre--alpha-orange)
+![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Pre-alpha 狀態：** Phase 0.0.21 提供一條預設關閉、受 Scope 約束的被動 URL
+> **Alpha 狀態：** 0.1.0 提供一條可實際使用、受 Scope 約束的被動 URL
 > 評估流程；它只送出有大小限制的 `GET`、保存證據並產生保守 Finding。目前不會
 > crawl、呼叫 LLM、啟動外部掃描器、登入目標或送出 exploit payload；其他執行路徑
 > 全部維持 fail-closed。
@@ -72,6 +72,10 @@ cd vuln-proof-claw
 docker compose up --build -d
 ```
 
+開啟 <http://127.0.0.1:8080/>，選擇「評估網址」，輸入你確實獲得授權的公開
+HTTP(S) 網址、完成一次授權聲明並開始。第一次執行會自動建立私有工作區；結果頁會
+顯示 Finding、Evidence 完整性，並提供 JSON 與 Markdown 報告。
+
 檢查服務：
 
 ```bash
@@ -91,8 +95,9 @@ curl --fail http://127.0.0.1:8080/api/v1/health/ready
 docker compose down
 ```
 
-Compose 的預設帳密只適用於本機開發。在共用環境使用前，請自行設定 PostgreSQL
-憑證。
+Compose 的預設值只適用本機開發，只啟用有界的被動評估，且 UI 綁定 loopback。
+在共用環境使用前，請自行設定 PostgreSQL 憑證並啟用 API authentication；本機
+profile 以外的應用程式預設仍維持 fail closed。
 
 ### 方案 B：本機 CLI
 
@@ -179,7 +184,7 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 
 ## 專案狀態與路線圖
 
-Phase 0 基礎建設已完成。v0.1 預覽版目前包含持久化 Engagement、結構化 HTTP
+Phase 0 基礎建設已完成。v0.1.0 Alpha 目前包含持久化 Engagement、結構化 HTTP
 capture、可持久化的拋棄式 Worker 狀態、受控 raw evidence 審閱、不可變的
 Markdown／JSON 報告匯出、經測試的 orphan-runtime cleanup 契約、完整受限 container
 policy adapter、authenticated bounded Engine-gateway 邊界，以及固定欄位 Unix-socket Docker

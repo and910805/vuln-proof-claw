@@ -13,19 +13,19 @@ security tools.
 
 ## Enablement
 
-Target traffic is disabled by default:
+The application-level default remains disabled. The loopback-only local Docker
+Compose profile enables this bounded path so the first-run experience works:
 
 ```text
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.0.21
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.1.0
 ```
 
-For Docker Compose development, copy `.env.example` to `.env`, change
-`VULN_PROOF_CLAW_ASSESSMENT__ENABLED` to `true`, and recreate the API service.
-Compose passes the four bounded assessment settings into the container. Keep the
-service bound to loopback unless production authentication has been configured.
+Docker Compose passes the four bounded assessment settings into the container.
+Set `VULN_PROOF_CLAW_ASSESSMENT__ENABLED=false` in `.env` to disable target traffic.
+Keep the service bound to loopback unless production authentication is configured.
 
 Production mode rejects this setting unless API authentication is also ready. Only
 the operator role can start an assessment. The URL must already match the persisted
@@ -33,10 +33,14 @@ Engagement hostname/CIDR, scheme, port, path, and time window.
 
 ## Web console
 
-Open `/#assessments`, select a Project, enter a hostname-based HTTP(S) URL, confirm
-that you are authorized to assess the exact target, and start the assessment. The
-wizard creates a 24-hour L0 Engagement limited to that hostname, scheme, port, and
-path. It then shows the terminal Action state and Evidence/Finding counts and can
+Open `/#assessments`, enter a hostname-based HTTP(S) URL, acknowledge that you are
+authorized, and start. The acknowledgement is remembered in that browser; it is not
+an extra step on every run. The first run creates a private workspace automatically.
+Project selection remains available under advanced organization options.
+
+The wizard creates a 24-hour L0 Engagement limited to the exact hostname, scheme,
+port, and path. These controls stay behind the interface. The result view shows
+Finding details, terminal Action state, Evidence count and chain integrity, and can
 download the current JSON or Markdown engagement report.
 
 Authenticated deployments can enter the operator token through **Operator access**.
