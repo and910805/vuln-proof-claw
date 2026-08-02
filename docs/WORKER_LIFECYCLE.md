@@ -2,7 +2,7 @@
 
 [繁體中文](WORKER_LIFECYCLE.zh-TW.md) | **English**
 
-Version 0.0.17 provides an internal lifecycle coordinator, restricted-container
+Version 0.0.18 provides an internal lifecycle coordinator, restricted-container
 policy adapter, and authenticated Engine-gateway client/server boundary. It is not a public scanning
 endpoint and does not enable a Docker or network execution adapter.
 
@@ -39,6 +39,6 @@ append safe engagement audit events. See [Runtime resource janitor](RUNTIME_JANI
 The process-local lifecycle now accepts a complete restricted-container policy
 adapter with digest pinning, fixed privilege controls, resource ceilings, bounded
 protocol I/O, inventory, cleanup, and an authenticated bounded Engine client/server boundary. A
-privileged Engine adapter, scoped egress, worker executor, startup wiring, and isolated end-to-end target tests
+scoped egress, worker executor capability, digest publication, startup wiring, and isolated end-to-end target tests
 remain required before target-facing execution can be enabled. The default
 `DisabledWorkerManager` still fails closed.

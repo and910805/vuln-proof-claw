@@ -55,7 +55,7 @@ Docker socket 存取權實質上等同 host 管理權限。擁有不受限制 so
 控制平面目前已定義並測試生命週期狀態機、持久化 registry、Action 綁定、Approval
 消耗、response 綁定、Evidence 驗證、稽核軌跡、timeout、取消、清理與 fail-closed
 重啟 reconciliation、orphan-resource janitor、完整受限 container policy adapter 與
-authenticated Engine client/server 邊界，但尚未提供 privileged Engine adapter、scope egress、
+authenticated Engine client/server 邊界與固定欄位 local Unix-socket adapter，但尚未提供 scope egress、
 Worker executor、啟動 wiring 或安全測試工具。在完成並驗證 network policy
-enforcement、privileged Engine adapter、啟動整合與隔離式端對端目標前，internal-only Worker
+enforcement、Docker adapter deployment isolation、啟動整合與隔離式端對端目標前，internal-only Worker
 network 會維持封閉。

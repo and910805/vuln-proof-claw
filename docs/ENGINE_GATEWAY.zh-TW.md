@@ -2,7 +2,7 @@
 
 **繁體中文** | [English](ENGINE_GATEWAY.md)
 
-0.0.17 版完成控制平面與獨立高權限 Engine process 之間的窄版 HTTP 邊界。API
+0.0.18 版完成控制平面與獨立高權限 Engine process 之間的窄版 HTTP 邊界。API
 process 不掛載 Engine socket，也不呼叫 container CLI。
 
 ## 信任邊界
@@ -12,8 +12,8 @@ credential、path、query 或 fragment，並停用 redirect 與環境 proxy 探�
 必須使用相同的 32–4096 字元 Bearer secret，而且不得與任何 API role token 相同。
 
 Server 預設關閉，沒有明確 enable 與 token 就拒絕建立；OpenAPI 與互動文件端點也已
-關閉。0.0.17 尚未包含真正的高權限 backend，因此未注入 backend 時會刻意保持
-unready，只回傳安全的 unavailable code。
+關閉。0.0.18 可注入另外明確啟用的固定欄位 Docker adapter；未配置完整 backend
+policy 時會刻意保持 unready，只回傳安全的 unavailable code。
 
 ## 版本化生命週期契約
 
@@ -48,12 +48,14 @@ Listener 必須以獨立 process 啟動：
 vuln-proof-claw-engine
 ```
 
-必要環境變數記錄於 `.env.example`。在 reviewed backend、transport protection 與部署隔離
-完成前，請維持 `VULN_PROOF_CLAW_ENGINE_SERVER__ENABLED=false`。
+必要環境變數記錄於 `.env.example`。在 Engine process 隔離、精確 image digest 與 internal
+network 配置完成前，請維持 server 與 Docker backend disabled。詳見
+[DOCKER_ENGINE_BACKEND.zh-TW.md](DOCKER_ENGINE_BACKEND.zh-TW.md)。
 
 ## 目前範圍
 
 Client、server、共享 schema、authentication、request/response bounds、admission
-control、安全 error mapping、設定 gate 與記憶體內端到端契約均已完成並測試。Engine
-adapter、受 Scope 約束的 egress、Worker-side executor、startup integration 與隔離 target
-fixture 留待後續版本，因此 Compose runtime 仍預設關閉。
+control、安全 error mapping、設定 gate、記憶體內端到端契約與固定欄位 Unix-socket
+Docker adapter 均已完成並在不存取 daemon 的情況下測試。Scope egress、Worker-side
+executor capability、已發布 Worker image digest、control-plane startup integration 與隔離
+live target fixture 留待後續版本，因此 Compose runtime 仍預設關閉。

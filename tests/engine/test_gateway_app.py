@@ -41,6 +41,10 @@ class RecordingBackend:
             exit_code=0,
             output=successful_response().model_dump_json().encode(),
         )
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
 
     async def check_ready(self) -> None:
         self._record("ready")
@@ -297,3 +301,11 @@ def test_server_configuration_and_secret_representations_fail_closed() -> None:
 
     assert TOKEN not in repr(server_config())
     assert spec().request_payload.decode() not in repr(spec())
+
+
+async def test_application_lifespan_closes_the_privileged_backend() -> None:
+    backend = RecordingBackend()
+    app = create_engine_app(server_config(), backend=backend)
+    async with app.router.lifespan_context(app):
+        assert not backend.closed
+    assert backend.closed

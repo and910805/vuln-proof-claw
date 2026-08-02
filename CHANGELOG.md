@@ -6,6 +6,27 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.18] - 2026-08-02
+
+### Added
+
+- Added an explicitly enabled Docker Engine API v1.44 backend over one configured local Unix socket, injected only into the separate Engine process.
+- Added independent allowlisting for one digest-pinned Worker image and one dedicated internal network, plus Linux, API-version, seccomp, image, and network readiness checks.
+- Added fixed-field create, stdin-only request attachment, start, bounded wait/log decoding, stop, ownership-filtered inventory, and idempotent forced removal operations.
+- Added focused mocked-Engine tests for full lifecycle behavior, exact Docker request hardening, ownership enforcement, attach cleanup, response bounds, raw-stream framing, safe status mapping, readiness failures, process injection, and configuration gates.
+
+### Changed
+
+- Engine application lifespan now closes backend transport resources, and the process entry point injects the Docker adapter only when its separate policy is complete.
+- Advanced the project and Web package version to `0.0.18` and added bilingual Docker backend documentation and runtime status updates.
+
+### Security
+
+- Docker create requests have no caller-controlled command, entrypoint, environment, bind mount, device, published port, namespace, privilege, added capability, daemon URL, or proxy field.
+- Every post-create operation re-inspects the immutable owner label and hardened image, network, root-filesystem, capability, privilege, and security-option state before touching the container.
+- Docker JSON, declared and streamed bytes, attach headers, multiplexed log framing, and Worker output are bounded; daemon messages, socket paths, payloads, and opaque IDs remain out of public failures.
+- Failed stdin attachment force-removes the newly created container and anonymous volumes; create conflicts are idempotent only for the exact same owned request.
+
 ## [0.0.17] - 2026-08-02
 
 ### Added

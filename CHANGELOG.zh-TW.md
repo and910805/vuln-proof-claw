@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## [0.0.18] - 2026-08-02
+
+### 新增
+
+- 新增必須明確啟用、只透過一個 configured local Unix socket 使用 Docker Engine API v1.44 的 backend，而且只注入獨立 Engine process。
+- 新增獨立 policy，只允許一個 digest-pinned Worker image 與一個 dedicated internal network，並檢查 Linux、API version、seccomp、image 與 network readiness。
+- 新增固定欄位 create、stdin-only request attachment、start、有界 wait/log decoding、stop、ownership-filtered inventory 與 idempotent forced removal。
+- 新增 mocked Engine 聚焦測試，涵蓋完整 lifecycle、精確 Docker request hardening、ownership enforcement、attach cleanup、response bound、raw-stream framing、安全 status mapping、readiness failure、process injection 與設定 gate。
+
+### 變更
+
+- Engine application lifespan 現在會關閉 backend transport resource，process entry point 只在獨立 policy 完整時注入 Docker adapter。
+- 專案與 Web package 版號升至 `0.0.18`，並新增雙語 Docker backend 文件與 runtime 狀態更新。
+
+### 安全性
+
+- Docker create request 不含 caller-controlled command、entrypoint、environment、bind mount、device、published port、namespace、privilege、added capability、daemon URL 或 proxy 欄位。
+- 每個 post-create operation 都會重新 inspect immutable owner label，以及 hardened image、network、root filesystem、capability、privilege 與 security-option 狀態後才操作 container。
+- Docker JSON、declared／streamed bytes、attach header、multiplexed log framing 與 Worker output 都受限；daemon message、socket path、payload 與 opaque ID 不會進入公開 failure。
+- Stdin attachment 失敗會強制移除剛建立的 container 與 anonymous volume；create conflict 只對完全相同的 owned request 維持 idempotent。
+
 ## [0.0.17] - 2026-08-02
 
 ### 新增

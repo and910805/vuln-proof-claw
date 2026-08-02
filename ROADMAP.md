@@ -13,11 +13,11 @@ Roadmap items describe intent, not guaranteed release dates.
 
 ## v0.1 — Evidence Core
 
-Current preview: persisted normalized engagement scopes, Flow/Task/Action APIs, authenticated approvals, execution-time approval consumption, an immutable audit trail, transactional evidence chains, separately authorized raw-evidence reads, immutable report exports, a DNS-pinned passive URL assessment pipeline with queryable history, deterministic response-header findings, a durable disposable Worker lifecycle registry, bounded orphan cleanup, a digest-pinned restricted-container policy adapter, and both sides of an authenticated bounded Engine-gateway boundary are implemented. The privileged Engine adapter, scoped egress, worker-side executor, startup integration, crawler, and browser authentication sessions remain in progress.
+Current preview: persisted normalized engagement scopes, Flow/Task/Action APIs, authenticated approvals, execution-time approval consumption, an immutable audit trail, transactional evidence chains, separately authorized raw-evidence reads, immutable report exports, a DNS-pinned passive URL assessment pipeline with queryable history, deterministic response-header findings, a durable disposable Worker lifecycle registry, bounded orphan cleanup, a digest-pinned restricted-container policy adapter, both sides of an authenticated bounded Engine-gateway boundary, and a fixed-field local Unix-socket Docker Engine adapter are implemented. Scoped egress, worker-side executor capability, digest publication, startup integration, crawler, and browser authentication sessions remain in progress.
 
 - Project, Engagement, Scope, and Action persistence.
 - Structured HTTP request/response capture.
-- Disposable Worker lifecycle (durable registry, fail-closed restart reconciliation, immutable ownership labels, orphan cleanup, restricted-container spec enforcement, and authenticated Engine client/server boundary complete; privileged Engine adapter, scoped egress, executor, and startup wiring pending).
+- Disposable Worker lifecycle (durable registry, fail-closed restart reconciliation, immutable ownership labels, orphan cleanup, restricted-container spec enforcement, authenticated Engine client/server boundary, and fixed-field Docker adapter complete; scoped egress, executor capability, digest publication, and startup wiring pending).
 - Evidence hash chain and Markdown/JSON reports.
 
 ## v0.2 — Autonomous Core

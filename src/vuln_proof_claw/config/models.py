@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from ipaddress import ip_address
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -16,6 +17,10 @@ _VISIBLE_ASCII_MINIMUM = 33
 _VISIBLE_ASCII_MAXIMUM = 126
 _MINIMUM_TCP_PORT = 1
 _MAXIMUM_TCP_PORT = 65_535
+_DIGEST_PINNED_IMAGE_PATTERN = re.compile(
+    r"^[a-z0-9][a-z0-9._:/-]{0,180}@sha256:[a-f0-9]{64}$"
+)
+_WORKER_NETWORK_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 class Environment(StrEnum):
@@ -198,6 +203,53 @@ class EngineServerConfig(FrozenConfigModel):
         return self
 
 
+class DockerEngineBackendConfig(FrozenConfigModel):
+    """Explicit local Docker Engine adapter policy for the privileged process."""
+
+    enabled: bool = False
+    socket_path: str = "/var/run/docker.sock"
+    api_version: Literal["v1.44"] = "v1.44"
+    allowed_image: str | None = None
+    allowed_network: str | None = None
+    request_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    maximum_response_bytes: int = Field(
+        default=2 * 1024 * 1024,
+        ge=64 * 1024,
+        le=32 * 1024 * 1024,
+    )
+
+    @field_validator("socket_path")
+    @classmethod
+    def validate_socket_path(cls, value: str) -> str:
+        normalized = value.strip()
+        path = PurePosixPath(normalized)
+        if not path.is_absolute() or str(path) != normalized or "\0" in normalized:
+            raise ValueError("Docker Engine socket path must be absolute")
+        return normalized
+
+    @field_validator("allowed_image")
+    @classmethod
+    def validate_allowed_image(cls, value: str | None) -> str | None:
+        if value is not None and not _DIGEST_PINNED_IMAGE_PATTERN.fullmatch(value):
+            raise ValueError("Docker Engine backend image must be digest-pinned")
+        return value
+
+    @field_validator("allowed_network")
+    @classmethod
+    def validate_allowed_network(cls, value: str | None) -> str | None:
+        if value is not None and not _WORKER_NETWORK_PATTERN.fullmatch(value):
+            raise ValueError("Docker Engine backend network is invalid")
+        return value
+
+    @model_validator(mode="after")
+    def require_complete_policy_when_enabled(self) -> DockerEngineBackendConfig:
+        if self.enabled and (self.allowed_image is None or self.allowed_network is None):
+            raise ValueError(
+                "enabled Docker Engine backend requires an allowed image and network"
+            )
+        return self
+
+
 def _is_loopback_literal(hostname: str) -> bool:
     try:
         return ip_address(hostname).is_loopback
@@ -228,7 +280,7 @@ class AssessmentConfig(FrozenConfigModel):
     enabled: bool = False
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
-    user_agent: str = Field(default="vuln-proof-claw/0.0.17", min_length=1, max_length=255)
+    user_agent: str = Field(default="vuln-proof-claw/0.0.18", min_length=1, max_length=255)
 
     @field_validator("user_agent")
     @classmethod

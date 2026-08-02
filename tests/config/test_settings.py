@@ -10,6 +10,7 @@ from vuln_proof_claw.config.models import (
     AppConfig,
     AssessmentConfig,
     DockerConfig,
+    DockerEngineBackendConfig,
     EngineGatewayConfig,
     EngineServerConfig,
     Environment,
@@ -228,6 +229,25 @@ def test_engine_server_requires_a_distinct_long_token_when_enabled() -> None:
     configured = EngineServerConfig(enabled=True, token=SecretStr("e" * 32))
     assert configured.enabled
     assert "e" * 32 not in repr(configured)
+
+
+def test_docker_engine_backend_requires_a_complete_server_boundary() -> None:
+    backend = DockerEngineBackendConfig(
+        enabled=True,
+        allowed_image=f"ghcr.io/example/worker@sha256:{'a' * 64}",
+        allowed_network="worker-isolated",
+    )
+    with pytest.raises(ValidationError, match="requires the Engine server"):
+        Settings(docker_engine_backend=backend)
+
+    settings = Settings(
+        engine_server=EngineServerConfig(
+            enabled=True,
+            token=SecretStr("e" * 32),
+        ),
+        docker_engine_backend=backend,
+    )
+    assert settings.docker_engine_backend.allowed_network == "worker-isolated"
 
 
 def test_assessment_user_agent_rejects_header_injection() -> None:
