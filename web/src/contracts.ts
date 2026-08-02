@@ -48,6 +48,8 @@ export type AssessmentSummary = {
   replayed: boolean;
   pages_scanned: number;
   crawl_truncated: boolean;
+  active_probes_run: number;
+  active_probe_truncated: boolean;
   report_url: string;
   markdown_report_url: string;
   html_report_url: string;
@@ -96,6 +98,24 @@ export type EngagementReport = {
     scanned_targets: string[];
     candidate_targets: string[];
   };
+  api_inventory: {
+    documents_found: number;
+    operations_total: number;
+    read_operations: number;
+    write_operations: number;
+    safe_probe_operations: number;
+    active_probes_run: number;
+    inventory_truncated: boolean;
+    operations: Array<{
+      method: string;
+      path: string;
+      target: string;
+      operation_id: string | null;
+      requires_authentication: boolean;
+      safe_to_probe: boolean;
+    }>;
+  };
+  execution_available: boolean;
   findings: Array<{
     id: string;
     title: string;

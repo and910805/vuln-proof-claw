@@ -1,4 +1,4 @@
-"""Stable passive URL assessment API contracts."""
+"""Stable bounded Web assessment API contracts."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ class AssessmentCreate(BaseModel):
 
     target: str = Field(min_length=1, max_length=2048)
     preset: Literal["safe", "fast", "deep"] = "safe"
+    mode: Literal["passive", "active-safe"] = "passive"
 
 
 class AssessmentSummary(BaseModel):
@@ -31,6 +32,8 @@ class AssessmentSummary(BaseModel):
     replayed: bool
     pages_scanned: int
     crawl_truncated: bool
+    active_probes_run: int
+    active_probe_truncated: bool
     report_url: str
     markdown_report_url: str
     html_report_url: str
@@ -56,7 +59,7 @@ class AssessmentHistoryItem(BaseModel):
 
 
 class AssessmentListResponse(BaseModel):
-    """Paginated passive-assessment history."""
+    """Paginated assessment history."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

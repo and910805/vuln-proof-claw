@@ -38,15 +38,20 @@ Time Budget。
 - 從 HTML Link、Asset、Form、`robots.txt`、Sitemap Location、JavaScript API Path、
   OpenAPI／Swagger、GraphQL 與常見 Security File 進行 Discovery。
 - Finding 包含 Severity、Remediation、Confidence 與安全轉義 HTML Preview。
-- v0.2.x 後續深度：語意化 OpenAPI Operation Inventory、更完整 Sitemap Index、
-  Content-aware Duplicate Suppression 與 Crawl Progress Streaming。
+- 後續 Discovery 深度：更完整 Sitemap Index、Content-aware Duplicate Suppression
+  與 Crawl Progress Streaming。
 
 ## v0.3 — 已授權的 Active Testing
 
-- 受控 container egress、registry 發布的 Worker digest 與啟動整合。
-- 精選且非破壞性的 active check、隔離 Browser、authenticated session、OpenAPI
-  parameter test 與基礎 service discovery。
-- 對可能影響目標狀態的 Action 提供可重用 Approval preset。
+0.3.0 交付第一條受控 Active 垂直流程：OpenAPI 語意 Inventory，以及無必要參數
+唯讀 Operation 的自動驗證。Web Console 只提供一個安全自動模式，Control Plane 仍逐
+Request 執行 Scope、DNS、Evidence、Request Count 與 Time Budget。
+
+- 已交付：OpenAPI 3.x／Swagger 2.0 Inventory、GET／HEAD-only Safe Probe、宣告驗證
+  異常 Candidate、Active Budget 狀態，以及 Report／UI 整合。
+- v0.3.x 後續：受控 Container Egress、Registry 發布 Worker Digest、隔離 Browser、
+  Authenticated Session、經審查的 Parameter Test 與 Service Discovery。
+- 會改變狀態的 Check 必須先具備可重用 Approval Preset，才會對使用者開放。
 
 ## v0.4 — Autonomous Core
 

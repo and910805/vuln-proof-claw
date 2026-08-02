@@ -9,17 +9,16 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha 狀態：** 0.2.0 提供受 Scope 約束的同源網站探索，以及 Safe、Fast、Deep
-> 三種 Budget。每個擷取頁面都有 Evidence、具優先順序的 Finding，以及 JSON、
-> Markdown 或安全轉義 HTML 報告。目前仍不會登入目標、提交表單、啟動外部掃描器
-> 或送出 exploit payload。
+> **Alpha 狀態：** 0.3.0 在有界 Web Discovery 上加入已授權的安全主動測試。系統會
+> 解析已擷取的 OpenAPI 文件，且只透過既有 Scope、DNS、Evidence 與 Budget 控制驗證
+> 無必要參數的 GET／HEAD Operation；仍不會登入、提交 Form、啟動外部掃描器或送出 Exploit Payload。
 
 ## 為什麼需要 vuln-proof-claw？
 
@@ -43,19 +42,19 @@ vuln-proof-claw 以這些要求作為核心設計：
 | 領域 | Phase 0 已完成 |
 | --- | --- |
 | CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
-| REST API | 版本化 health、project、engagement、passive assessment、workflow、audit、report contract 與 OpenAPI |
-| Web 控制台 | 雙語 URL-first 探索、Safe／Fast／Deep preset、進度、具優先順序 Finding、持久化歷史與報告預覽／下載 |
-| Evidence Core | Scoped 多頁被動探索、transactional Evidence、deterministic Finding 與不可變報告 |
+| REST API | 版本化 health、project、engagement、自動評估、workflow、audit、report contract 與 OpenAPI |
+| Web 控制台 | 雙語 URL-first 安全自動測試、僅探索模式、Safe／Fast／Deep Preset、Finding、歷史與報告 |
+| Evidence Core | 多頁 Discovery、OpenAPI 語意 Inventory、有界唯讀 API 驗證、Transactional Evidence 與不可變報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
 | Authentication | 可選的 API-wide Bearer boundary，以及分離的 operator、approver 與 evidence-reader role |
 | Evidence | Canonical serialization、SHA-256 digest 與防竄改 hash-chain primitives |
 | Persistence | PostgreSQL repository 與 Alembic migration，Domain 不依賴 ORM |
 | Observability | 結構化 human／JSON 日誌與遞迴式機密遮蔽 |
-| Execution | Opt-in DNS-pinned passive GET capture、持久化 Worker、orphan cleanup、受限 container policy、authenticated Engine gateway 與固定欄位 Unix-socket Docker adapter；runtime startup 與任意工具仍停用 |
+| Execution | DNS-pinned GET／HEAD Discovery 與安全 API 驗證、持久化 Worker、orphan cleanup、受限 Container Policy、authenticated Engine gateway 與固定欄位 Unix-socket Docker adapter；任意工具仍停用 |
 | Delivery | 強化的 Docker Compose 基線、雙語檢查、依賴稽核、容器掃描與 SBOM CI |
 
-Authenticated discovery、資安工具與 exploit execution、LLM orchestration、
+Authenticated Browser 測試、資安工具與 Exploit Execution、LLM orchestration、
 Planner／Operator／Verifier agents，以及 SARIF 報告仍屬於後續路線圖。Provider-neutral
 AI 驅動方案記錄於 [AI 驅動架構](docs/AI_DRIVER.zh-TW.md)。
 
@@ -186,10 +185,9 @@ Docker 或 Provider SDK。面向目標的執行會跨越明確的 Worker protoco
 
 ## 專案狀態與路線圖
 
-Phase 0 基礎建設已完成。0.2.0 新增可使用的有界 Crawler、同源 Discovery、逐 Request
-Scope 與 DNS Enforcement、聚合 Evidence／Finding、Severity／Confidence／Remediation，
-以及 JSON、Markdown 或 HTML 報告。Worker Isolation 與 Engine-gateway 基礎仍可使用；
-Authenticated Browser 與 Active Testing Workflow 屬於後續里程碑。
+Phase 0 與有界 Discovery 已完成。0.3.0 新增 OpenAPI Operation 語意 Inventory，以及
+無必要參數唯讀 Operation 的自動驗證；若規格宣告 Authentication 但匿名請求取得 2xx，
+會產生具 Evidence 的候選 Finding。Authenticated Browser 與改變狀態的測試仍屬後續里程碑。
 
 完整規劃請見 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md)。路線圖代表開發方向，不是
 保證的發布日期。

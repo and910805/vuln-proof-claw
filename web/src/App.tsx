@@ -77,9 +77,9 @@ const copy = {
     foundation: "Foundation ready",
     evidenceCore: "Scoped evidence API",
     evidenceCoreText: "Engagement scope evaluation and JSON/Markdown reports are online.",
-    passiveReady: "Passive assessment ready",
-    passiveReadyText: "Scoped, DNS-pinned GET capture is enabled; active probes remain locked.",
-    passiveLocked: "Passive assessment disabled",
+    passiveReady: "Safe automated assessment ready",
+    passiveReadyText: "Scoped, DNS-pinned discovery and read-only API verification are enabled.",
+    passiveLocked: "Target assessment disabled",
     passiveLockedText: "Target traffic is off until an operator explicitly enables it.",
     chain: "Evidence chain",
     chainText: "SHA-256 chaining and persistence primitives are ready.",
@@ -102,6 +102,9 @@ const copy = {
     chooseProject: "Project",
     chooseProjectPlaceholder: "Automatic workspace",
     advancedOptions: "Advanced organization options",
+    testMode: "Assessment mode",
+    modeActiveSafe: "Automated safe testing · discovery + read-only API verification",
+    modePassive: "Discovery only · no semantic active verification",
     scanPreset: "Discovery preset",
     presetSafe: "Safe · up to 5 pages",
     presetFast: "Fast · up to 15 pages + common security files",
@@ -115,7 +118,7 @@ const copy = {
     preparingScope: "Preparing an exact target scope",
     contactingTarget: "Discovering and capturing same-origin pages",
     buildingReport: "Verifying evidence and building the report",
-    assessmentDisabled: "Passive target traffic is disabled in server settings.",
+    assessmentDisabled: "Target assessment traffic is disabled in server settings.",
     assessmentResult: "Latest assessment result",
     actionState: "Action state",
     findingCount: "Findings",
@@ -123,6 +126,9 @@ const copy = {
     evidenceIntegrity: "Evidence integrity",
     pagesScanned: "Pages scanned",
     crawlLimited: "Stopped at the selected discovery budget",
+    activeProbes: "Safe active probes",
+    apiOperations: "API operations",
+    activeLimited: "Stopped at the safe active-probe budget",
     findingDetails: "Finding details",
     noFindings: "No conservative header findings were produced for this response.",
     downloadJson: "Download JSON report",
@@ -141,12 +147,12 @@ const copy = {
     assessmentHistoryFilter: "History project",
     allProjects: "All projects",
     historyCount: "Persisted runs",
-    noAssessmentHistory: "No passive assessments match this project yet.",
+    noAssessmentHistory: "No assessments match this project yet.",
     loadingHistory: "Loading assessment history...",
     completedAt: "Completed",
     pageHints: {
       projects: "Manage authorized assessment boundaries.",
-      assessments: "Run one bounded passive check against a target you are authorized to test.",
+      assessments: "Run bounded discovery and safe read-only verification on an authorized target.",
       approvals: "Review protected actions before execution.",
       evidence: "Inspect immutable tool output and integrity chains.",
       findings: "Review evidence-backed vulnerability claims.",
@@ -154,7 +160,7 @@ const copy = {
     },
     emptyPending: "Nothing is waiting here",
     emptyPendingHint: "This area will populate when execution workflows create records.",
-    unavailableAction: "Active probes, exploit payloads, and arbitrary tools remain disabled.",
+    unavailableAction: "Write probes, exploit payloads, and arbitrary tools remain disabled.",
     error: "The console could not reach the control-plane API.",
   },
   "zh-TW": {
@@ -218,9 +224,9 @@ const copy = {
     foundation: "基礎功能就緒",
     evidenceCore: "範圍與證據 API",
     evidenceCoreText: "評估任務範圍判斷與 JSON／Markdown 報告已可使用。",
-    passiveReady: "被動評估已就緒",
-    passiveReadyText: "已啟用 Scope 與 DNS pinning 保護的 GET 擷取；主動探測仍維持鎖定。",
-    passiveLocked: "被動評估未啟用",
+    passiveReady: "安全自動評估已就緒",
+    passiveReadyText: "已啟用 Scope 與 DNS pinning 保護的 Discovery 及唯讀 API 驗證。",
+    passiveLocked: "目標評估未啟用",
     passiveLockedText: "操作人員明確啟用前，系統不會對目標送出流量。",
     chain: "證據鏈",
     chainText: "SHA-256 鏈結與持久化基礎已完成。",
@@ -243,6 +249,9 @@ const copy = {
     chooseProject: "所屬專案",
     chooseProjectPlaceholder: "自動建立工作區",
     advancedOptions: "進階整理選項",
+    testMode: "評估模式",
+    modeActiveSafe: "安全自動測試 · 探索及唯讀 API 驗證",
+    modePassive: "僅探索 · 不執行語意化主動驗證",
     scanPreset: "探索模式",
     presetSafe: "Safe · 最多 5 頁",
     presetFast: "Fast · 最多 15 頁及常見安全檔案",
@@ -256,7 +265,7 @@ const copy = {
     preparingScope: "建立精確的目標 Scope",
     contactingTarget: "探索並擷取同源頁面",
     buildingReport: "驗證 Evidence 並產生報告",
-    assessmentDisabled: "伺服器設定目前未啟用被動目標流量。",
+    assessmentDisabled: "伺服器設定目前未啟用目標評估流量。",
     assessmentResult: "最近一次評估結果",
     actionState: "動作狀態",
     findingCount: "Finding 數量",
@@ -264,6 +273,9 @@ const copy = {
     evidenceIntegrity: "Evidence 完整性",
     pagesScanned: "已掃描頁面",
     crawlLimited: "已在所選探索預算處停止",
+    activeProbes: "安全主動探針",
+    apiOperations: "API Operation 數量",
+    activeLimited: "已在安全主動探針預算處停止",
     findingDetails: "Finding 明細",
     noFindings: "這次 Response 沒有產生保守的 Header Finding。",
     downloadJson: "下載 JSON 報告",
@@ -279,7 +291,7 @@ const copy = {
     authorizationRequired: "請輸入有效的 Operator Token 以使用受保護功能。",
     pageHints: {
       projects: "管理經授權的評估邊界。",
-      assessments: "針對你確實獲得授權的目標，執行一次有界的被動檢查。",
+      assessments: "針對你確實獲得授權的目標，執行有界探索與安全唯讀驗證。",
       approvals: "執行前審核受保護的動作。",
       evidence: "檢視不可變工具輸出與完整性鏈。",
       findings: "審核由證據支持的漏洞主張。",
@@ -287,7 +299,7 @@ const copy = {
     },
     emptyPending: "目前沒有資料",
     emptyPendingHint: "執行工作流程產生紀錄後，內容會顯示在這裡。",
-    unavailableAction: "主動探測、Exploit Payload 與任意工具執行仍維持停用。",
+    unavailableAction: "寫入型探測、Exploit Payload 與任意工具執行仍維持停用。",
     error: "控制台無法連線至控制平面 API。",
   },
 } as const;
@@ -327,6 +339,7 @@ function App() {
   const [assessmentProjectId, setAssessmentProjectId] = useState("");
   const [assessmentTarget, setAssessmentTarget] = useState("");
   const [assessmentPreset, setAssessmentPreset] = useState<"safe" | "fast" | "deep">("safe");
+  const [assessmentMode, setAssessmentMode] = useState<"passive" | "active-safe">("active-safe");
   const [authorizationConfirmed, setAuthorizationConfirmed] = useState(
     () => localStorage.getItem("proofclaw.authorizationAcknowledged") === "true",
   );
@@ -472,7 +485,11 @@ function App() {
             "Content-Type": "application/json",
             "Idempotency-Key": assessmentIdempotencyKey(),
           },
-          body: JSON.stringify({ target: prepared.displayTarget, preset: assessmentPreset }),
+          body: JSON.stringify({
+            target: prepared.displayTarget,
+            preset: assessmentPreset,
+            mode: assessmentMode,
+          }),
         },
       );
       setAssessmentStage("reporting");
@@ -590,7 +607,7 @@ function App() {
             <span className="phase-kicker">{t.webFoundation}</span>
             <strong>{t.phaseText}</strong>
             <div className="phase-progress"><span /></div>
-            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.2 alpha</small>
+            <small>{appVersion ? `v${appVersion}` : "v—"} · v0.3 alpha</small>
           </div>
         </div>
       </aside>
@@ -671,6 +688,7 @@ function App() {
               latestAssessment={latestAssessment}
               latestReport={latestReport}
               message={assessmentMessage}
+              mode={assessmentMode}
               projectId={assessmentProjectId}
               projects={projects}
               preset={assessmentPreset}
@@ -690,6 +708,7 @@ function App() {
               onHistoryProjectChange={setHistoryProjectId}
               onHistoryView={(assessment) => void viewPersistedReport(assessment)}
               onPreviewHtml={() => void previewHtmlReport()}
+              onModeChange={setAssessmentMode}
               onPresetChange={setAssessmentPreset}
               onProjectChange={setAssessmentProjectId}
               onSubmit={(event) => void runAssessment(event)}

@@ -1,13 +1,15 @@
-"""Transactional orchestration for one idempotent passive URL assessment."""
+"""Transactional orchestration for bounded Web and safe active assessments."""
 
 from __future__ import annotations
 
+import base64
 import json
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from time import monotonic
+from typing import Literal, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -19,9 +21,15 @@ from vuln_proof_claw.assessment.discovery import (
     DiscoveredTarget,
     discover_targets,
 )
+from vuln_proof_claw.assessment.openapi import ApiOperation, OpenApiDocument, parse_openapi_document
 from vuln_proof_claw.audit import record_audit_event
 from vuln_proof_claw.domain.action_state import transition_action
-from vuln_proof_claw.domain.enums import ActionState
+from vuln_proof_claw.domain.enums import (
+    ActionState,
+    FindingConfidence,
+    FindingSeverity,
+    FindingStatus,
+)
 from vuln_proof_claw.domain.identifiers import (
     ActionId,
     EngagementId,
@@ -30,11 +38,14 @@ from vuln_proof_claw.domain.identifiers import (
     ProjectId,
     new_action_id,
 )
-from vuln_proof_claw.domain.models import Action, Flow, Task
+from vuln_proof_claw.domain.models import Action, Finding, Flow, Task
+from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
+from vuln_proof_claw.evidence.store import InvalidEvidenceError
 from vuln_proof_claw.execution.http_capture import (
     HttpCaptureCoordinator,
     HttpCaptureLimits,
     HttpCaptureRequest,
+    HttpCaptureResponse,
     HttpCaptureTransport,
     capture_parameter_digest,
 )
@@ -61,6 +72,12 @@ from vuln_proof_claw.policy.scope import evaluate_scope
 
 _ACTION_TYPE = "passive_fingerprint"
 _DISCOVERY_ACTION_TYPE = "passive_discovery"
+_ACTIVE_API_ACTION_TYPE = "active_safe_api_read"
+_ASSESSMENT_ACTION_TYPES = (_ACTION_TYPE, _DISCOVERY_ACTION_TYPE, _ACTIVE_API_ACTION_TYPE)
+_ACTIVE_PROBE_BUDGET = 10
+_ACTIVE_PROBE_TIME_BUDGET_SECONDS = 45
+_SUCCESS_STATUS_MIN = 200
+_SUCCESS_STATUS_MAX_EXCLUSIVE = 300
 
 
 class AssessmentError(Exception):
@@ -83,6 +100,10 @@ class PassiveAssessmentResult:
     pages_scanned: int = 0
     discovered_targets: tuple[DiscoveredTarget, ...] = ()
     crawl_truncated: bool = False
+    active_probes_run: int = 0
+    active_probe_truncated: bool = False
+    captured_evidence_id: EvidenceId | None = None
+    captured_response: HttpCaptureResponse | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +175,7 @@ class PassiveAssessmentService:
                 .join(EvidenceRecord, EvidenceRecord.action_id == ActionRecord.id)
                 .where(
                     ActionRecord.engagement_id.in_(engagement_ids),
-                    ActionRecord.action_type.in_((_ACTION_TYPE, _DISCOVERY_ACTION_TYPE)),
+                    ActionRecord.action_type.in_(_ASSESSMENT_ACTION_TYPES),
                 )
                 .group_by(ActionRecord.engagement_id)
         ).tuples():
@@ -167,7 +188,7 @@ class PassiveAssessmentService:
                 .join(FindingRecord, FindingRecord.id == finding_evidence.c.finding_id)
                 .where(
                     ActionRecord.engagement_id.in_(engagement_ids),
-                    ActionRecord.action_type.in_((_ACTION_TYPE, _DISCOVERY_ACTION_TYPE)),
+                    ActionRecord.action_type.in_(_ASSESSMENT_ACTION_TYPES),
                 )
                 .group_by(ActionRecord.engagement_id)
         ).tuples():
@@ -254,6 +275,7 @@ class PassiveAssessmentService:
         user_agent: str,
         action_type: str = _ACTION_TYPE,
         include_conventional: bool = False,
+        method: Literal["GET", "HEAD"] = "GET",
     ) -> PassiveAssessmentResult:
         engagement = EngagementRepository(self._session).get(engagement_id)
         scope = ScopeRepository(self._session).get(engagement_id)
@@ -265,7 +287,7 @@ class PassiveAssessmentService:
             engagement_id, protected_key
         )
         if existing is not None:
-            request = self._request(existing.entity.id, target, user_agent)
+            request = self._request(existing.entity.id, target, user_agent, method=method)
             if not self._matches(existing.entity, request, action_type):
                 raise AssessmentConflictError("idempotency_key_conflict")
             if existing.entity.state is not ActionState.QUEUED:
@@ -280,6 +302,7 @@ class PassiveAssessmentService:
                     actor,
                     user_agent,
                     action_type=action_type,
+                    method=method,
                     at=datetime.now(UTC),
                 )
             except IntegrityError as error:
@@ -291,6 +314,7 @@ class PassiveAssessmentService:
                     raced.entity.id if raced is not None else new_action_id(),
                     target,
                     user_agent,
+                    method=method,
                 )
                 if raced is None or not self._matches(raced.entity, request, action_type):
                     raise AssessmentConflictError("assessment_persistence_conflict") from error
@@ -299,7 +323,7 @@ class PassiveAssessmentService:
             if action.state is not ActionState.QUEUED:
                 return self._summary(action, replayed=existing is not None)
 
-        request = self._request(action.id, target, user_agent)
+        request = self._request(action.id, target, user_agent, method=method)
         result = HttpCaptureCoordinator(self._session, transport).capture(
             request,
             limits=limits,
@@ -350,6 +374,8 @@ class PassiveAssessmentService:
                 result.response,
                 include_conventional=include_conventional,
             ),
+            captured_evidence_id=evidence_id,
+            captured_response=result.response,
         )
 
     def crawl(  # noqa: PLR0912, PLR0913 - explicit bounded crawl workflow
@@ -447,6 +473,150 @@ class PassiveAssessmentService:
             crawl_truncated=truncated,
         )
 
+    def probe_openapi(  # noqa: PLR0913 - explicit security inputs remain visible
+        self,
+        engagement_id: EngagementId,
+        root: PassiveAssessmentResult,
+        idempotency_key: str,
+        actor: str,
+        transport: HttpCaptureTransport,
+        *,
+        limits: HttpCaptureLimits,
+        user_agent: str,
+    ) -> PassiveAssessmentResult:
+        """Probe only parameterless read operations from captured OpenAPI documents."""
+        if root.state is not ActionState.SUCCEEDED or root.replayed:
+            return self._summary_by_id(root.action_id, replayed=root.replayed)
+        scope = ScopeRepository(self._session).get(engagement_id)
+        if scope is None:
+            raise AssessmentError("engagement_not_found")
+        documents = self._openapi_documents(engagement_id, root.evidence_ids)
+        operations = tuple(
+            operation
+            for operation in self._safe_probe_operations(documents)
+            if evaluate_scope(operation.target, scope, at=datetime.now(UTC)).allowed
+        )
+        deadline = monotonic() + _ACTIVE_PROBE_TIME_BUDGET_SECONDS
+        probes_run = 0
+        truncated = len(operations) > _ACTIVE_PROBE_BUDGET
+        for operation in operations[:_ACTIVE_PROBE_BUDGET]:
+            if monotonic() >= deadline:
+                truncated = True
+                break
+            digest = sha256(f"{operation.method}:{operation.target}".encode()).hexdigest()[:24]
+            result = self.run(
+                engagement_id,
+                operation.target,
+                f"{idempotency_key}:active-api:{digest}",
+                actor,
+                transport,
+                limits=limits,
+                user_agent=user_agent,
+                action_type=_ACTIVE_API_ACTION_TYPE,
+                method=cast("Literal['GET', 'HEAD']", operation.method),
+            )
+            if result.state is ActionState.SUCCEEDED:
+                probes_run += 1
+            self._record_authentication_finding(engagement_id, operation, result)
+        record_audit_event(
+            self._session,
+            engagement_id,
+            "assessment.active_api_completed",
+            actor,
+            {
+                "action_id": root.action_id,
+                "documents": len(documents),
+                "eligible_operations": len(operations),
+                "probe_budget": _ACTIVE_PROBE_BUDGET,
+                "probes_run": probes_run,
+                "truncated": truncated,
+            },
+        )
+        self._session.commit()
+        return self._summary_by_id(
+            root.action_id,
+            replayed=False,
+            pages_scanned=root.pages_scanned,
+            crawl_truncated=root.crawl_truncated,
+            active_probes_run=probes_run,
+            active_probe_truncated=truncated,
+        )
+
+    def _openapi_documents(
+        self,
+        engagement_id: EngagementId,
+        evidence_ids: tuple[EvidenceId, ...],
+    ) -> tuple[OpenApiDocument, ...]:
+        store = PersistentEvidenceStore(self._session)
+        documents: list[OpenApiDocument] = []
+        for evidence_id in evidence_ids:
+            try:
+                stored = store.get_for_engagement(engagement_id, evidence_id)
+            except InvalidEvidenceError:
+                continue
+            if stored is None:
+                continue
+            try:
+                payload = json.loads(stored.raw_content)
+                request_target = payload["request"]["target"]
+                response_payload = payload["response"]
+                response = HttpCaptureResponse(
+                    status_code=response_payload["status_code"],
+                    final_target=response_payload["final_target"],
+                    headers=tuple(tuple(item) for item in response_payload["headers"]),
+                    body=base64.b64decode(response_payload["body_base64"], validate=True),
+                    duration_ms=0,
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+            document = parse_openapi_document(request_target, response)
+            if document is not None:
+                documents.append(document)
+        return tuple({document.source_url: document for document in documents}.values())
+
+    @staticmethod
+    def _safe_probe_operations(documents: tuple[OpenApiDocument, ...]) -> tuple[ApiOperation, ...]:
+        unique: dict[tuple[str, str], ApiOperation] = {}
+        for document in documents:
+            for operation in document.operations:
+                if operation.safe_to_probe:
+                    unique.setdefault((operation.method, operation.target), operation)
+        return tuple(unique.values())
+
+    def _record_authentication_finding(
+        self,
+        engagement_id: EngagementId,
+        operation: ApiOperation,
+        result: PassiveAssessmentResult,
+    ) -> None:
+        response = result.captured_response
+        evidence_id = result.captured_evidence_id
+        if (
+            not operation.requires_authentication
+            or response is None
+            or evidence_id is None
+            or not _SUCCESS_STATUS_MIN
+            <= response.status_code
+            < _SUCCESS_STATUS_MAX_EXCLUSIVE
+        ):
+            return
+        FindingRepository(self._session).add(
+            Finding(
+                engagement_id=engagement_id,
+                title="Declared protected API operation accepted an unauthenticated request",
+                vulnerability_class="CWE-306",
+                affected_target=operation.target,
+                evidence_ids=(evidence_id,),
+                status=FindingStatus.CANDIDATE,
+                severity=FindingSeverity.HIGH,
+                confidence=FindingConfidence.MEDIUM,
+                remediation=(
+                    "Verify the operation's intended access policy and enforce authentication "
+                    "before returning protected data."
+                ),
+            )
+        )
+
     def _create_action(  # noqa: PLR0913 - creation inputs are protected fields
         self,
         engagement_id: EngagementId,
@@ -456,6 +626,7 @@ class PassiveAssessmentService:
         user_agent: str,
         *,
         action_type: str,
+        method: Literal["GET", "HEAD"],
         at: datetime,
     ) -> Action:
         stored_engagement = EngagementRepository(self._session).get(engagement_id)
@@ -467,7 +638,11 @@ class PassiveAssessmentService:
             objective=(
                 "Bounded same-origin Web discovery"
                 if action_type == _DISCOVERY_ACTION_TYPE
-                else "Passive URL security assessment"
+                else (
+                    "Authorized safe OpenAPI verification"
+                    if action_type == _ACTIVE_API_ACTION_TYPE
+                    else "Passive URL security assessment"
+                )
             ),
             created_at=at,
         )
@@ -476,12 +651,16 @@ class PassiveAssessmentService:
             title=(
                 "Capture and analyze a discovered page"
                 if action_type == _DISCOVERY_ACTION_TYPE
-                else "Capture and analyze the target response"
+                else (
+                    "Verify a parameterless read-only API operation"
+                    if action_type == _ACTIVE_API_ACTION_TYPE
+                    else "Capture and analyze the target response"
+                )
             ),
             created_at=at,
         )
         action_id = new_action_id()
-        request = self._request(action_id, target, user_agent)
+        request = self._request(action_id, target, user_agent, method=method)
         action = Action(
             id=action_id,
             engagement_id=engagement_id,
@@ -534,10 +713,16 @@ class PassiveAssessmentService:
         return saved.entity
 
     @staticmethod
-    def _request(action_id: ActionId, target: str, user_agent: str) -> HttpCaptureRequest:
+    def _request(
+        action_id: ActionId,
+        target: str,
+        user_agent: str,
+        *,
+        method: Literal["GET", "HEAD"] = "GET",
+    ) -> HttpCaptureRequest:
         return HttpCaptureRequest(
             action_id=action_id,
-            method="GET",
+            method=method,
             target=target,
             headers=(
                 ("Accept", "text/html,application/xhtml+xml,application/json"),
@@ -560,7 +745,11 @@ class PassiveAssessmentService:
         error_code: str | None = None,
         discovered_targets: tuple[DiscoveredTarget, ...] = (),
         pages_scanned: int | None = None,
-        crawl_truncated: bool = False,
+        crawl_truncated: bool | None = None,
+        active_probes_run: int | None = None,
+        active_probe_truncated: bool | None = None,
+        captured_evidence_id: EvidenceId | None = None,
+        captured_response: HttpCaptureResponse | None = None,
     ) -> PassiveAssessmentResult:
         stored = ActionRepository(self._session).get(action_id)
         if stored is None:  # pragma: no cover - persistence invariant
@@ -572,6 +761,10 @@ class PassiveAssessmentService:
             discovered_targets=discovered_targets,
             pages_scanned=pages_scanned,
             crawl_truncated=crawl_truncated,
+            active_probes_run=active_probes_run,
+            active_probe_truncated=active_probe_truncated,
+            captured_evidence_id=captured_evidence_id,
+            captured_response=captured_response,
         )
 
     def _summary(  # noqa: PLR0913 - explicit summary state
@@ -582,14 +775,18 @@ class PassiveAssessmentService:
         error_code: str | None = None,
         discovered_targets: tuple[DiscoveredTarget, ...] = (),
         pages_scanned: int | None = None,
-        crawl_truncated: bool = False,
+        crawl_truncated: bool | None = None,
+        active_probes_run: int | None = None,
+        active_probe_truncated: bool | None = None,
+        captured_evidence_id: EvidenceId | None = None,
+        captured_response: HttpCaptureResponse | None = None,
     ) -> PassiveAssessmentResult:
         assessment_action_ids = tuple(
             ActionId(item)
             for item in self._session.scalars(
                 select(ActionRecord.id).where(
                     ActionRecord.engagement_id == action.engagement_id,
-                    ActionRecord.action_type.in_((_ACTION_TYPE, _DISCOVERY_ACTION_TYPE)),
+                    ActionRecord.action_type.in_(_ASSESSMENT_ACTION_TYPES),
                 )
             )
         )
@@ -612,6 +809,7 @@ class PassiveAssessmentService:
             )
         )
         persisted_error = error_code or self._persisted_error_code(action)
+        persisted_progress = self._persisted_progress(action)
         return PassiveAssessmentResult(
             action_id=action.id,
             engagement_id=action.engagement_id,
@@ -623,11 +821,66 @@ class PassiveAssessmentService:
             pages_scanned=(
                 pages_scanned
                 if pages_scanned is not None
-                else len({item.action_id for item in evidence})
+                else persisted_progress.get(
+                    "pages_scanned",
+                    len({item.action_id for item in evidence}),
+                )
             ),
             discovered_targets=discovered_targets,
-            crawl_truncated=crawl_truncated,
+            crawl_truncated=(
+                crawl_truncated
+                if crawl_truncated is not None
+                else bool(persisted_progress.get("crawl_truncated", False))
+            ),
+            active_probes_run=(
+                active_probes_run
+                if active_probes_run is not None
+                else int(persisted_progress.get("active_probes_run", 0))
+            ),
+            active_probe_truncated=(
+                active_probe_truncated
+                if active_probe_truncated is not None
+                else bool(persisted_progress.get("active_probe_truncated", False))
+            ),
+            captured_evidence_id=captured_evidence_id,
+            captured_response=captured_response,
         )
+
+    def _persisted_progress(self, action: Action) -> dict[str, int | bool]:
+        """Recover bounded workflow progress from root-bound immutable audit events."""
+        progress: dict[str, int | bool] = {}
+        events = self._session.scalars(
+            select(AuditEventRecord)
+            .where(
+                AuditEventRecord.engagement_id == action.engagement_id,
+                AuditEventRecord.event_type.in_(
+                    ("assessment.discovery_completed", "assessment.active_api_completed")
+                ),
+            )
+            .order_by(AuditEventRecord.created_at, AuditEventRecord.id)
+        )
+        for event in events:
+            try:
+                payload = json.loads(event.payload)
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+                continue
+            if payload.get("action_id") != action.id:
+                continue
+            if event.event_type == "assessment.discovery_completed":
+                pages = payload.get("pages_scanned")
+                truncated = payload.get("truncated")
+                if isinstance(pages, int):
+                    progress["pages_scanned"] = pages
+                if isinstance(truncated, bool):
+                    progress["crawl_truncated"] = truncated
+            else:
+                probes = payload.get("probes_run")
+                truncated = payload.get("truncated")
+                if isinstance(probes, int):
+                    progress["active_probes_run"] = probes
+                if isinstance(truncated, bool):
+                    progress["active_probe_truncated"] = truncated
+        return progress
 
     def _persisted_error_code(self, action: Action) -> str | None:
         """Recover a safe terminal error from the immutable audit trail."""

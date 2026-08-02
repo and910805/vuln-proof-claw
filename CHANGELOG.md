@@ -6,6 +6,27 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.3.0] - 2026-08-02
+
+### Added
+
+- Added semantic OpenAPI 3.x and Swagger 2.0 operation inventory with bounded document and operation limits.
+- Added an explicit `active-safe` assessment mode that automatically verifies only parameterless GET/HEAD operations and never sends documented write methods.
+- Added evidence-backed CWE-306 candidate detection when an operation declares authentication but accepts an anonymous request with a successful response.
+- Added API operation and active-probe summaries to JSON, Markdown, HTML, and Web console results.
+
+### Changed
+
+- Safe automated testing is now the Web console default; discovery-only mode remains one selection away.
+- Assessment results expose active-probe counts and independent discovery/active budget truncation status.
+- Advanced the Python and Web package versions to `0.3.0`.
+
+### Security
+
+- Every semantic probe remains same-origin or explicitly scoped, is rechecked immediately before DNS-pinned execution, and is bounded to ten operations and 45 seconds.
+- Path/query/header/cookie parameters, templated paths, POST/PUT/PATCH/DELETE and all unknown methods are inventory-only and never automatically executed.
+- Authentication findings remain candidates with medium confidence because an HTTP 2xx alone cannot prove unauthorized data exposure.
+
 ## [0.2.0] - 2026-08-02
 
 ### Added

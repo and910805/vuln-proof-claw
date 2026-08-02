@@ -1,4 +1,4 @@
-"""Operator API for one bounded, evidence-backed passive URL assessment."""
+"""Operator API for bounded, evidence-backed Web assessments."""
 
 from __future__ import annotations
 
@@ -52,6 +52,8 @@ def _summary(result: PassiveAssessmentResult) -> AssessmentSummary:
         replayed=result.replayed,
         pages_scanned=result.pages_scanned,
         crawl_truncated=result.crawl_truncated,
+        active_probes_run=result.active_probes_run,
+        active_probe_truncated=result.active_probe_truncated,
         report_url=f"{prefix}/report",
         markdown_report_url=f"{prefix}/report.md",
         html_report_url=f"{prefix}/report.html",
@@ -101,7 +103,7 @@ def list_assessments(
     "/engagements/{engagement_id}/assessments",
     response_model=AssessmentSummary,
     status_code=status.HTTP_201_CREATED,
-    summary="Run one scoped passive URL assessment",
+    summary="Run one scoped Web assessment",
 )
 def create_assessment(  # noqa: PLR0913, PLR0917 - explicit HTTP dependencies
     engagement_id: str,
@@ -155,6 +157,16 @@ def create_assessment(  # noqa: PLR0913, PLR0917 - explicit HTTP dependencies
             user_agent=settings.assessment.user_agent,
             preset_name=payload.preset,
         )
+        if payload.mode == "active-safe":
+            result = service.probe_openapi(
+                normalized_id,
+                result,
+                normalized_key,
+                principal.identity,
+                transport,
+                limits=limits,
+                user_agent=settings.assessment.user_agent,
+            )
     except DomainValidationError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except AssessmentConflictError as error:

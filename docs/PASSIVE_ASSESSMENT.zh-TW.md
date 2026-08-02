@@ -1,14 +1,15 @@
-# 有界網站探索評估
+# 有界網站探索與安全主動評估
 
 **繁體中文** | [English](PASSIVE_ASSESSMENT.md)
 
-0.2.0 將 target-facing MVP 擴充成有界同源網站探索。輸入已授權 Engagement 內的 URL
+0.3.0 將有界同源網站探索與安全主動 API 驗證組成一條流程。輸入已授權 Engagement 內的 URL
 後，系統會擷取起始頁、解析同源 Candidate、在選定的固定 Budget 內跟進、為每頁保存
 tamper-evident Evidence、產生具優先順序的 Finding，並回傳 JSON、Markdown 與安全
-轉義 HTML 報告。
+轉義 HTML 報告。`active-safe` 模式會解析已擷取的 OpenAPI 文件，並自動驗證符合條件、
+無必要參數的 GET／HEAD Operation。
 
-這不是 autonomous penetration-testing engine。目前不會提交 form、登入目標、跟隨
-redirect、傳送 active payload 或呼叫外部資安工具。
+這還不是完整 autonomous penetration-testing engine。目前不會提交 Form、登入目標、
+跟隨 Redirect、執行規格中的寫入 Operation、傳送 Exploit Payload 或呼叫外部資安工具。
 
 ## 啟用方式
 
@@ -19,7 +20,7 @@ redirect、傳送 active payload 或呼叫外部資安工具。
 VULN_PROOF_CLAW_ASSESSMENT__ENABLED=true
 VULN_PROOF_CLAW_ASSESSMENT__TIMEOUT_SECONDS=10
 VULN_PROOF_CLAW_ASSESSMENT__MAX_RESPONSE_BYTES=1048576
-VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.2.0
+VULN_PROOF_CLAW_ASSESSMENT__USER_AGENT=vuln-proof-claw/0.3.0
 ```
 
 Docker Compose 會把四個有界限的 assessment 設定傳入 container。若要關閉 target
@@ -38,8 +39,9 @@ Project 選擇仍可在進階整理選項內使用。
 
 精靈會在背景建立只允許正規化 hostname、scheme、port 與選定 path prefix 的 24 小時
 L0 Engagement。Safe、Fast、Deep 分別限制 5、15、30 個 Request／頁面。結果會顯示
-Severity、Confidence、Remediation、Evidence Integrity，以及 JSON、Markdown 或 HTML
-報告。
+Severity、Confidence、Remediation、Evidence Integrity、API Operation 數量、安全主動
+Probe，以及 JSON、Markdown 或 HTML 報告。安全自動測試為預設值，仍可用一個選項
+切換成僅 Discovery。
 
 啟用 authentication 的 deployment 可透過「操作員權限」輸入 Operator Token。憑證只
 保存在分頁範圍的 `sessionStorage`，也能在相同對話框清除。精靈不會自動替 IP literal
@@ -53,8 +55,11 @@ Authorization: Bearer <operator token>
 Idempotency-Key: baseline-homepage-1
 Content-Type: application/json
 
-{"target":"https://app.example.test/","preset":"safe"}
+{"target":"https://app.example.test/","preset":"safe","mode":"active-safe"}
 ```
+
+Active 階段另有最多十個 Operation 與 45 秒的硬限制。只有沒有必要參數或模板 Path 的
+GET／HEAD 符合資格；所有寫入 Method 與參數化 Operation 都只列入 Inventory。
 
 Response 會包含 Action state、Evidence／Finding ID 與報告 URL。使用相同 key 與受保護
 target 重送時會直接回傳持久化結果，不會再次送出 network request。同一 key 改用另一

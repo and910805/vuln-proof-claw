@@ -41,15 +41,21 @@ and fixed Safe (5), Fast (15), and Deep (30) page/request/time budgets.
 - Discovery from HTML links, assets and forms, `robots.txt`, sitemap locations,
   JavaScript API paths, OpenAPI/Swagger, GraphQL, and common security files.
 - Findings include severity, remediation, confidence, and an escaped HTML preview.
-- Remaining v0.2.x depth: semantic OpenAPI operation inventory, richer sitemap index
-  handling, content-aware duplicate suppression, and crawl progress streaming.
+- Remaining discovery depth: richer sitemap index handling, content-aware duplicate
+  suppression, and crawl progress streaming.
 
 ## v0.3 — Authorized Active Testing
 
-- Controlled container egress, registry-published Worker digest, and startup integration.
-- Curated non-destructive active checks, isolated browser, authenticated sessions,
-  OpenAPI parameter tests, and basic service discovery.
-- Reusable approval presets for actions that can affect target state.
+Version 0.3.0 delivers the first controlled active vertical slice: semantic OpenAPI
+inventory and automatic verification of parameterless read-only operations. The Web
+console exposes one safe automated mode while the control plane retains per-request
+scope, DNS, evidence, request-count, and time enforcement.
+
+- Delivered: OpenAPI 3.x/Swagger 2.0 inventory, GET/HEAD-only safe probes, declared-auth
+  anomaly candidates, active budget status, and report/UI integration.
+- Remaining v0.3.x: controlled container egress, registry-published Worker digest,
+  isolated browser, authenticated sessions, reviewed parameter tests, and service discovery.
+- State-changing checks require reusable approval presets before they can be exposed.
 
 ## v0.4 — Autonomous Core
 

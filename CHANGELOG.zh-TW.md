@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## [0.3.0] - 2026-08-02
+
+### Added
+
+- 新增 OpenAPI 3.x 與 Swagger 2.0 的語意化 Operation Inventory，並限制文件與 Operation 數量。
+- 新增明確的 `active-safe` 評估模式，只會自動驗證無必要參數的 GET／HEAD，絕不送出規格中的寫入方法。
+- 當 Operation 宣告 Authentication、匿名請求卻取得成功回應時，新增有 Evidence 支持的 CWE-306 候選 Finding。
+- JSON、Markdown、HTML 與 Web Console 報告新增 API Operation 與 Active Probe 摘要。
+
+### Changed
+
+- Web Console 預設改為安全自動測試；使用者仍可用一個選項切回僅 Discovery。
+- Assessment Result 新增 Active Probe 數量，以及分開的 Discovery／Active Budget 截斷狀態。
+- Python 與 Web Package 版本前進至 `0.3.0`。
+
+### Security
+
+- 每個語意化 Probe 都必須維持同源或符合明確 Scope，在 DNS-pinned Execution 前重新檢查，並限制最多十個 Operation 與 45 秒。
+- 具 Path／Query／Header／Cookie 必要參數、模板 Path、POST／PUT／PATCH／DELETE 與未知 Method 只會列入 Inventory，不會自動執行。
+- Authentication Finding 維持 Medium Confidence 的 Candidate，因為 HTTP 2xx 本身不足以證明未授權資料外洩。
+
 ## [0.2.0] - 2026-08-02
 
 ### Added
