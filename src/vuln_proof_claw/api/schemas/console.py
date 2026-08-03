@@ -84,6 +84,7 @@ class EngagementCreate(BaseModel):
     starts_at: datetime
     ends_at: datetime
     maximum_risk: RiskLevel = RiskLevel.L3
+    auto_execute_l1: bool = False
     destructive_actions_enabled: bool = False
     scope: ScopeDefinition
 
@@ -107,6 +108,7 @@ class EngagementSummary(BaseModel):
     starts_at: datetime
     ends_at: datetime
     maximum_risk: RiskLevel
+    auto_execute_l1: bool
     destructive_actions_enabled: bool
     created_at: datetime
     scope: ScopeDefinition

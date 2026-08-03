@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.6.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
@@ -18,6 +18,10 @@
 > **v0.6.0 重大更新：** 新增一鍵 Metadata-only Disclosure Bundle 與離線 SHA-256
 > 驗證；Raw Evidence 與 Secret 仍明確排除。v0.5.0 建立的有界
 > Planner／Operator／Verifier 與本機 MCP 基礎維持不變。
+
+> **v0.7.0 重大更新：** 新增 23 項可擴充工具目錄、Shell／Python／Nmap／密碼測試／
+> Exploit-PoC 的 digest-bound 計畫、Engagement 可設定的 L1 自動執行，以及供
+> Codex／Claude Code 使用的工具規劃與 Agent next-step MCP 控制。
 
 > [!IMPORTANT]
 > **Alpha 狀態：** 0.6.0 已提供可驗證成果交付；Browser、Preset 與
@@ -81,6 +85,7 @@ v0.5.0 的 Browser 與 Automation 目前以 API／MCP 為主；Web Console 操�
 | **v0.4.0** | Operator Finding 審查、樂觀版本檢查與不可變 Audit Event；SARIF 2.1.0 直接報告與具 Idempotency 的不可變匯出；Web console SARIF 下載。 | 尚未提供 Planner／Operator／Verifier 編排、Browser Authentication、寫入 Method 測試、Exploit Payload 或任意工具。 |
 | **v0.5.0** | 一次性 Authenticated Chromium Context、經審查的無害參數變異、四類安全比較、可重用 Approval Preset、Planner／Operator／Verifier 計畫與 Codex／Claude Code stdio MCP 工具。 | 進階路徑仍以 API／MCP 為主；不提供破壞性 Payload、任意 Scanner、自動權限提升或無限制目標存取。 |
 | **v0.6.0** | Metadata-only Disclosure ZIP，包含 JSON／Markdown／HTML／SARIF、Workflow 與 Evidence Chain Metadata、Web 下載及具 ZIP 結構與篡改防護的離線驗證器。 | 不公開 Raw Evidence、不宣稱簽署者身分、不執行任意 Scanner、Exploit Payload 或無限制目標存取。 |
+| **v0.7.0** | 23 項可擴充 Tool Registry、嚴格 Shell／Python／Nmap／密碼／PoC 契約、Tool-plan API／MCP、可設定 L1 自動執行與具 Budget 的 Planner／Operator／Verifier 決策。 | `cataloged` Scanner 仍須逐一完成 Worker Adapter；不內建密碼清單或 Exploit Payload。 |
 
 實作細節與下一階段請參閱 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) 及
 [CHANGELOG.zh-TW.md](CHANGELOG.zh-TW.md) 的版本記錄。

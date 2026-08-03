@@ -98,6 +98,20 @@ Version 0.6.0 delivers a complete offline-verifiable reporting workflow:
   Approval, Evidence, and independent Verifier controls.
 - Remaining: trusted signing identities, attestations, and bug-bounty platform templates.
 
+## v0.7 — Tool Runtime and Bounded Autonomy
+
+Version 0.7.0 establishes an extensible execution contract instead of adding hard-coded
+commands directly to the API:
+
+- Delivered: 23-entry registry with honest integration and executable-availability states.
+- Delivered: strict Shell/Python/Nmap/password/PoC invocation contracts and argv builders.
+- Delivered: policy-bound tool-plan REST/MCP operations and engagement-configurable L1 autonomy.
+- Delivered: deterministic Planner/Operator/Verifier next-step decisions with stopping budgets.
+- Next: complete Worker protocol capture/persistence for Shell/Python/Nmap, then implement
+  reviewed adapters for Nuclei, httpx, ffuf, testssl, ZAP, sqlmap, and Dalfox.
+- Next: persistent autonomous-run state, resumability, live Web progress, and evidence-driven
+  automatic Verifier promotion.
+
 ## v1.0 — Stable Open Source
 
 - Stable REST and plugin APIs, upgrade documentation, security review, signed images, and SBOMs.

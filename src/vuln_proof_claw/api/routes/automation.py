@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.api.audit import record_audit_event
@@ -16,10 +17,21 @@ from vuln_proof_claw.api.dependencies import get_session
 from vuln_proof_claw.api.schemas.automation import (
     AutomationPlanCreate,
     AutomationPlanSummary,
+    AutonomyStepCreate,
+    AutonomyStepSummary,
     ObservationInput,
     PlannedActionSummary,
+    ToolCatalogItem,
+    ToolCatalogSummary,
+    ToolPlanCreate,
+    ToolPlanSummary,
     VerificationCreate,
     VerificationSummary,
+)
+from vuln_proof_claw.automation.autonomy import (
+    AutonomyBudget,
+    AutonomySnapshot,
+    decide_autonomous_step,
 )
 from vuln_proof_claw.automation.mutations import MutationPlan, MutationSpec
 from vuln_proof_claw.automation.security_checks import (
@@ -44,12 +56,13 @@ from vuln_proof_claw.persistence.repositories import (
 )
 from vuln_proof_claw.policy.decision import DecisionKind, PolicyConfig, decide_action
 from vuln_proof_claw.policy.risk import classify_risk
+from vuln_proof_claw.policy.scope import normalize_target
+from vuln_proof_claw.tooling.contracts import validate_tool_invocation
+from vuln_proof_claw.tooling.registry import IntegrationState, get_tool, list_tools
 
 router = APIRouter(tags=["automation"])
 SessionDependency = Annotated[Session, Depends(get_session)]
-OperatorDependency = Annotated[
-    AuthenticatedPrincipal, Depends(require_operator_if_configured)
-]
+OperatorDependency = Annotated[AuthenticatedPrincipal, Depends(require_operator_if_configured)]
 
 _ACTION_TYPES = {
     SecurityCheck.CORS: "public_page_read",
@@ -65,6 +78,139 @@ def _observation(item: ObservationInput) -> ResponseObservation:
         headers=item.headers,
         body_digest=item.body_digest,
         body_size=item.body_size,
+    )
+
+
+@router.get(
+    "/automation/tools",
+    response_model=ToolCatalogSummary,
+    summary="List registered tools, integration state, and local executable availability",
+)
+def tool_catalog() -> ToolCatalogSummary:
+    return ToolCatalogSummary(
+        tools=tuple(ToolCatalogItem(**item.model_dump()) for item in list_tools())
+    )
+
+
+@router.post(
+    "/automation/next-step",
+    response_model=AutonomyStepSummary,
+    summary="Select the next bounded Planner/Operator/Verifier role",
+)
+def next_autonomous_step(payload: AutonomyStepCreate) -> AutonomyStepSummary:
+    outcome = decide_autonomous_step(
+        AutonomySnapshot(**payload.model_dump(exclude={"budget"})),
+        AutonomyBudget(**payload.budget.model_dump()),
+    )
+    return AutonomyStepSummary(decision=outcome.decision, reason=outcome.reason)
+
+
+@router.post(
+    "/engagements/{engagement_id}/tool-plans",
+    response_model=ToolPlanSummary,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create one digest-bound, policy-checked security-tool action",
+)
+def create_tool_plan(
+    engagement_id: str,
+    payload: ToolPlanCreate,
+    session: SessionDependency,
+    principal: OperatorDependency,
+) -> ToolPlanSummary:
+    manifest = get_tool(payload.tool)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail="tool_not_registered")
+    if manifest.integration_state is IntegrationState.CATALOGED:
+        raise HTTPException(status_code=409, detail="tool_adapter_not_ready")
+    normalized_id = EngagementId(engagement_id)
+    stored_engagement = EngagementRepository(session).get(normalized_id)
+    scope = ScopeRepository(session).get(normalized_id)
+    if stored_engagement is None:
+        raise HTTPException(status_code=404, detail="engagement_not_found")
+    if scope is None:
+        raise HTTPException(status_code=409, detail="engagement_scope_missing")
+    try:
+        canonical_target = str(normalize_target(payload.target))
+        invocation = validate_tool_invocation(
+            manifest.name,
+            canonical_target,
+            payload.parameters,
+        )
+        timestamp = datetime.now(UTC)
+        flow = Flow(
+            engagement_id=normalized_id,
+            objective=f"Run {manifest.name} against one reviewed scoped target",
+        )
+        FlowRepository(session).add(flow)
+        task = Task(flow_id=flow.id, title=f"{manifest.name}: collect bounded evidence")
+        TaskRepository(session).add(task)
+        action = Action(
+            engagement_id=normalized_id,
+            task_id=task.id,
+            action_type=manifest.action_type,
+            normalized_target=canonical_target,
+            parameter_digest=invocation.parameter_digest,
+            risk_level=manifest.risk_level,
+            idempotency_key=payload.idempotency_key,
+            created_at=timestamp,
+        )
+        action_repository = ActionRepository(session)
+        action_repository.add(action)
+        stored = action_repository.get(action.id)
+        if stored is None:  # pragma: no cover
+            raise RuntimeError("tool action was not persisted")
+        checking = transition_action(action, ActionState.POLICY_CHECK, at=timestamp)
+        checking_stored = action_repository.save(checking, expected_version=stored.version)
+        engagement = stored_engagement.entity
+        decision = decide_action(
+            checking,
+            scope=scope,
+            config=PolicyConfig(
+                maximum_risk=engagement.maximum_risk,
+                auto_execute_l1=engagement.auto_execute_l1,
+                destructive_actions_enabled=engagement.destructive_actions_enabled,
+            ),
+            at=timestamp,
+        )
+        next_state = {
+            DecisionKind.ALLOW: ActionState.QUEUED,
+            DecisionKind.APPROVAL_REQUIRED: ActionState.PENDING_APPROVAL,
+            DecisionKind.DENY: ActionState.DENIED,
+        }[decision.kind]
+        saved = action_repository.save(
+            transition_action(checking_stored.entity, next_state, at=timestamp),
+            expected_version=checking_stored.version,
+        )
+    except (DomainValidationError, ValidationError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    record_audit_event(
+        session,
+        normalized_id,
+        "automation.tool_plan_created",
+        principal.identity,
+        {
+            "flow_id": flow.id,
+            "task_id": task.id,
+            "action_id": action.id,
+            "tool": manifest.name,
+            "parameter_digest": invocation.parameter_digest,
+            "state": saved.entity.state,
+        },
+        at=timestamp,
+    )
+    session.commit()
+    return ToolPlanSummary(
+        flow_id=flow.id,
+        task_id=task.id,
+        action_id=action.id,
+        engagement_id=engagement_id,
+        tool=manifest.name,
+        capability=manifest.capability,
+        action_type=manifest.action_type,
+        risk_level=manifest.risk_level,
+        state=saved.entity.state,
+        integration_state=manifest.integration_state,
+        parameter_digest=invocation.parameter_digest,
     )
 
 
@@ -148,6 +294,7 @@ def create_automation_plan(
             scope=scope,
             config=PolicyConfig(
                 maximum_risk=engagement.maximum_risk,
+                auto_execute_l1=engagement.auto_execute_l1,
                 destructive_actions_enabled=engagement.destructive_actions_enabled,
             ),
             at=timestamp,

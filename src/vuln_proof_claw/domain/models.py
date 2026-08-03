@@ -89,6 +89,7 @@ class Engagement:
     starts_at: datetime
     ends_at: datetime
     maximum_risk: RiskLevel = RiskLevel.L3
+    auto_execute_l1: bool = False
     destructive_actions_enabled: bool = False
     id: EngagementId = field(default_factory=new_engagement_id)
     created_at: datetime = field(default_factory=utc_now)

@@ -6,6 +6,36 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.7.0] - 2026-08-03
+
+### Added
+
+- Added a 23-entry capability registry with explicit cataloged, contract-ready, and
+  Worker-ready integration states plus local executable discovery.
+- Added strict, digest-bound contracts for exact-argv Shell commands, isolated Python,
+  typed Nmap connect scans, rate-limited password tests using secret references, and
+  artifact-pinned exploit/PoC validation.
+- Added tool catalog and tool-plan REST endpoints plus three MCP tools for catalog discovery,
+  policy-bound tool planning, and autonomous next-step decisions.
+- Added a deterministic Planner/Operator/Verifier controller with step, tool-call, duration,
+  and consecutive-failure budgets.
+- Added engagement-level `auto_execute_l1` policy and Alembic revision
+  `0009_engagement_l1_autonomy`.
+
+### Changed
+
+- Advanced package, Web, Compose, User-Agent, and release metadata to `0.7.0`.
+- Clarified that authorized tests may legitimately trigger defensive alerts.
+
+### Security
+
+- Shell requests are exact argv and never parsed as shell expressions; executables require a
+  Worker allowlist. Nmap exposes a typed connect-scan profile without raw evasion flags.
+- Password plans contain secret references rather than raw passwords and enforce rate and total
+  attempt ceilings. PoC plans bind an exact artifact SHA-256 and success signal.
+- High-risk agents cannot approve their own actions; pending approvals take precedence in the
+  autonomous controller. The project does not bypass or disable EDR or organizational controls.
+
 ## [0.6.0] - 2026-08-03
 
 ### Added
@@ -503,6 +533,6 @@ This is a documentation and release-metadata patch; target-facing behavior remai
 
 ### Security
 
-- Documented EDR-respecting development policy.
+- Documented an alert-aware, no-evasion development policy for EDR and organizational controls.
 - Defined authorized-use, private-reporting, scope, approval, worker-isolation, and evidence-integrity expectations.
 - Kept unavailable target execution visibly locked and enforced all authority on the server side.

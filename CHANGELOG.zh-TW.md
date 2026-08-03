@@ -6,6 +6,34 @@
 
 ## Unreleased
 
+## [0.7.0] - 2026-08-03
+
+### Added
+
+- 新增 23 項能力 Tool Registry，明確區分 `cataloged`、`contract_ready` 與
+  `worker_ready`，並偵測本機執行檔是否存在。
+- 新增 exact-argv Shell、隔離 Python、型別化 Nmap connect scan、使用 Secret Reference
+  的限速密碼測試，以及綁定 Artifact SHA-256 的 Exploit／PoC 嚴格契約。
+- 新增 Tool Catalog／Tool Plan REST API，以及供 MCP 使用的工具查詢、規劃與 Agent
+  next-step 三項工具。
+- 新增具 Step、Tool Call、Duration 與連續失敗上限的 Planner／Operator／Verifier 控制器。
+- 新增 Engagement 層級 `auto_execute_l1` 與 Alembic revision
+  `0009_engagement_l1_autonomy`。
+
+### Changed
+
+- Package、Web、Compose、User-Agent 與 Release metadata 統一更新至 `0.7.0`。
+- 明確說明經授權測試可能正常觸發防禦告警。
+
+### Security
+
+- Shell 只接受 exact argv，不解析 Shell Expression，且 Worker 必須提供執行檔 Allowlist；
+  Nmap 使用不含原始規避 Flag 的型別化 connect-scan Profile。
+- 密碼計畫只保存 Secret Reference，並限制速率與總次數；PoC 計畫綁定 Artifact SHA-256
+  與成功訊號。
+- Agent 不可批准自己的高風險動作；自主控制器會優先等待獨立批准。產品不繞過或停用
+  EDR 與組織安全控制。
+
 ## [0.6.0] - 2026-08-03
 
 ### 新增
@@ -497,6 +525,6 @@
 
 ### Security
 
-- 文件化尊重 EDR 的開發政策。
+- 文件化「可能觸發防禦告警，但不得規避或停用 EDR 與組織安全控制」的開發政策。
 - 定義授權用途、Private Reporting、Scope、Approval、Worker isolation 與 Evidence integrity 要求。
 - 尚未完成的目標執行功能維持明確鎖定，所有授權判斷仍由 Server 強制執行。

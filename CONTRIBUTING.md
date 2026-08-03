@@ -21,7 +21,9 @@ python -m mypy src
 python -m pytest
 ```
 
-Do not bypass EDR, AppLocker, sandbox, or organizational security controls.
+Authorized testing may legitimately trigger EDR and other defensive alerts. Coordinate
+alert expectations with the system owner; do not bypass, disable, tamper with, or design
+around EDR, AppLocker, sandbox, or organizational security controls.
 
 ## Pull requests
 

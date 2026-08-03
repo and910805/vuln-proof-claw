@@ -38,6 +38,11 @@ def test_mcp_initializes_lists_tools_and_returns_structured_content() -> None:
     assert initialized is not None
     assert initialized["result"]["serverInfo"]["name"] == "vuln-proof-claw"
     assert listed is not None
-    assert len(listed["result"]["tools"]) == 6
+    assert len(listed["result"]["tools"]) == 9
+    assert {
+        "proofclaw_list_tools",
+        "proofclaw_create_tool_plan",
+        "proofclaw_next_autonomous_step",
+    } <= {tool["name"] for tool in listed["result"]["tools"]}
     assert called is not None
     assert called["result"]["structuredContent"]["name"] == "proofclaw_health"
