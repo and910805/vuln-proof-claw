@@ -134,6 +134,7 @@ const copy = {
     downloadJson: "Download JSON report",
     downloadMarkdown: "Download Markdown report",
     downloadSarif: "Download SARIF report",
+    downloadBundle: "Download verifiable bundle",
     previewHtml: "Preview HTML report",
     viewResult: "View result",
     assessmentSuccess: "Assessment completed and persisted.",
@@ -282,6 +283,7 @@ const copy = {
     downloadJson: "下載 JSON 報告",
     downloadMarkdown: "下載 Markdown 報告",
     downloadSarif: "下載 SARIF 報告",
+    downloadBundle: "下載可驗證報告包",
     previewHtml: "預覽 HTML 報告",
     viewResult: "查看結果",
     assessmentSuccess: "評估已完成並保存。",
@@ -520,7 +522,7 @@ function App() {
   };
 
   const downloadReport = async (
-    format: "json" | "markdown" | "sarif",
+    format: "json" | "markdown" | "sarif" | "bundle",
     assessment: AssessmentSummary | AssessmentHistoryItem | null = latestAssessment,
   ) => {
     if (!assessment) return;
@@ -528,10 +530,16 @@ function App() {
       ? assessment.report_url
       : format === "markdown"
         ? assessment.markdown_report_url
-        : "sarif_report_url" in assessment
-          ? assessment.sarif_report_url
-          : `/api/v1/engagements/${assessment.engagement_id}/report.sarif`;
-    const extension = format === "json" ? "json" : format === "markdown" ? "md" : "sarif";
+        : format === "bundle"
+          ? assessment.bundle_report_url
+          : "sarif_report_url" in assessment
+            ? assessment.sarif_report_url
+            : `/api/v1/engagements/${assessment.engagement_id}/report.sarif`;
+    const extension = format === "json"
+      ? "json"
+      : format === "markdown"
+        ? "md"
+        : format === "bundle" ? "disclosure.zip" : "sarif";
     try {
       await downloadApiFile(path, operatorToken, `proofclaw-${assessment.action_id}.${extension}`);
     } catch (downloadError) {

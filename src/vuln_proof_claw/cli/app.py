@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from vuln_proof_claw.cli.doctor import diagnose
 from vuln_proof_claw.cli.version import print_version
+from vuln_proof_claw.reporting.bundle import verify_disclosure_bundle
 
 app = typer.Typer(
     add_completion=False,
@@ -52,6 +54,34 @@ def doctor_command(
             typer.echo(f"[{marker}] {check.name}: {check.code}")
         typer.echo("doctor: ready" if report.ready else "doctor: not ready")
     if not report.ready:
+        raise typer.Exit(code=1)
+
+
+@app.command("verify-bundle")
+def verify_bundle_command(
+    bundle: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, readable=True, resolve_path=True),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the stable machine-readable v1 result."),
+    ] = False,
+) -> None:
+    """Verify a ProofClaw disclosure bundle without network access."""
+    result = verify_disclosure_bundle(bundle)
+    if json_output:
+        typer.echo(json.dumps(result.as_dict(), separators=(",", ":"), sort_keys=True))
+    elif result.valid:
+        typer.echo(
+            f"bundle: valid ({result.files_checked} files, engagement {result.engagement_id})"
+        )
+        typer.echo(f"archive sha256: {result.archive_sha256}")
+    else:
+        typer.echo("bundle: invalid")
+        for error in result.errors:
+            typer.echo(f"[failed] {error}")
+    if not result.valid:
         raise typer.Exit(code=1)
 
 

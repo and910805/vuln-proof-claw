@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -11,6 +12,7 @@ from typer.testing import CliRunner
 from vuln_proof_claw import __version__
 from vuln_proof_claw.cli.app import app
 from vuln_proof_claw.cli.doctor import DoctorCheck, DoctorReport
+from vuln_proof_claw.reporting.bundle import BundleVerification
 
 runner = CliRunner()
 
@@ -21,6 +23,7 @@ def test_help_lists_doctor_command() -> None:
     assert result.exit_code == 0
     assert "Evidence-driven autonomous Web and API security testing platform." in result.output
     assert "doctor" in result.output
+    assert "verify-bundle" in result.output
 
 
 def test_version_is_available_as_eager_option() -> None:
@@ -71,3 +74,39 @@ def test_doctor_failure_is_nonzero_and_credential_free(
     assert "[failed] database: database_unavailable" in result.output
     assert "password" not in result.output.lower()
     assert "postgresql://" not in result.output
+
+
+def test_verify_bundle_has_machine_readable_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cli_module = importlib.import_module("vuln_proof_claw.cli.app")
+    bundle = tmp_path / "bundle.zip"
+    bundle.write_bytes(b"fixture")
+    monkeypatch.setattr(
+        cli_module,
+        "verify_disclosure_bundle",
+        lambda _path: BundleVerification(True, (), "engagement-1", 5, "a" * 64),
+    )
+
+    result = runner.invoke(app, ["verify-bundle", str(bundle), "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["valid"] is True
+
+
+def test_verify_bundle_returns_nonzero_for_tampering(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cli_module = importlib.import_module("vuln_proof_claw.cli.app")
+    bundle = tmp_path / "bundle.zip"
+    bundle.write_bytes(b"fixture")
+    monkeypatch.setattr(
+        cli_module,
+        "verify_disclosure_bundle",
+        lambda _path: BundleVerification(False, ("digest_mismatch:report.md",)),
+    )
+
+    result = runner.invoke(app, ["verify-bundle", str(bundle)])
+
+    assert result.exit_code == 1
+    assert "digest_mismatch:report.md" in result.output

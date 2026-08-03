@@ -280,7 +280,7 @@ class AssessmentConfig(FrozenConfigModel):
     enabled: bool = False
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
-    user_agent: str = Field(default="vuln-proof-claw/0.5.0", min_length=1, max_length=255)
+    user_agent: str = Field(default="vuln-proof-claw/0.6.0", min_length=1, max_length=255)
 
     @field_validator("user_agent")
     @classmethod

@@ -58,6 +58,7 @@ def _summary(result: PassiveAssessmentResult) -> AssessmentSummary:
         markdown_report_url=f"{prefix}/report.md",
         html_report_url=f"{prefix}/report.html",
         sarif_report_url=f"{prefix}/report.sarif",
+        bundle_report_url=f"{prefix}/report.bundle.zip",
     )
 
 
@@ -93,6 +94,9 @@ def list_assessments(
                 error_code=item.error_code,
                 report_url=f"/api/v1/engagements/{item.engagement_id}/report",
                 markdown_report_url=f"/api/v1/engagements/{item.engagement_id}/report.md",
+                bundle_report_url=(
+                    f"/api/v1/engagements/{item.engagement_id}/report.bundle.zip"
+                ),
             )
             for item in page.items
         ),

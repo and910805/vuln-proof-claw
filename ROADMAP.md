@@ -84,6 +84,20 @@ Version 0.5.0 delivers the first bounded autonomous-core vertical slice:
   multi-principal session handles in a dedicated secret store, add live progress and Web controls,
   and promote candidates only through evidence-backed Verifier decisions.
 
+## v0.6 — Verifiable Disclosure Delivery
+
+Version 0.6.0 delivers a complete offline-verifiable reporting workflow:
+
+- Delivered: one-click metadata-only bundles with four report formats, workflow summary,
+  Evidence-chain metadata, verification instructions, and a versioned SHA-256 manifest.
+- Delivered: a network-free CLI verifier with strict ZIP path, count, size,
+  compression-ratio, declared-member, digest, and chain-link validation.
+- Delivered: bundle downloads from current results and persisted Web-console history.
+- Next: a PentAGI-inspired persistent Flow view with live Task/Subtask state, operator
+  steering, bounded retries, and resumability—implemented behind ProofClaw Scope,
+  Approval, Evidence, and independent Verifier controls.
+- Remaining: trusted signing identities, attestations, and bug-bounty platform templates.
+
 ## v1.0 — Stable Open Source
 
 - Stable REST and plugin APIs, upgrade documentation, security review, signed images, and SBOMs.

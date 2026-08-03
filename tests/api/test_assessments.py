@@ -215,6 +215,7 @@ async def test_assessment_creates_evidence_findings_report_and_audit_idempotentl
         "error_code": None,
         "report_url": f"/api/v1/engagements/{engagement_id}/report",
         "markdown_report_url": f"/api/v1/engagements/{engagement_id}/report.md",
+        "bundle_report_url": f"/api/v1/engagements/{engagement_id}/report.bundle.zip",
     }
     assert project_history.json()["total"] == 1
     assert next_page.json() == {"schema_version": "v1", "items": [], "total": 1}

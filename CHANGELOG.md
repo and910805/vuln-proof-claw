@@ -6,6 +6,27 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.6.0] - 2026-08-03
+
+### Added
+
+- Added a one-click metadata-only disclosure ZIP containing JSON, Markdown, escaped HTML,
+  SARIF, a README, workflow summary, and a versioned SHA-256 manifest.
+- Added the offline `vuln-proof-claw verify-bundle` command with human and stable JSON output.
+- Added Web-console bundle downloads for current results and persisted assessment history.
+
+### Changed
+
+- Added bundle URLs to assessment contracts and advanced package, Web, Compose, and
+  assessment User-Agent metadata to `0.6.0`.
+
+### Security
+
+- Bundles exclude raw Evidence, credentials, cookies, browser storage, provider secrets, and
+  environment configuration.
+- Verification rejects unsafe paths, duplicate or encrypted members, undeclared files, ZIP
+  bombs, excessive sizes, broken Evidence-chain links, and digest mismatches.
+
 ## [0.5.0] - 2026-08-03
 
 ### Added

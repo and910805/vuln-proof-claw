@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+## [0.6.0] - 2026-08-03
+
+### 新增
+
+- 新增一鍵下載 Metadata-only Disclosure ZIP，包含 JSON、Markdown、安全轉義 HTML、
+  SARIF、文字說明、Workflow Summary 及具 SHA-256 的版本化 Manifest。
+- 新增離線 `vuln-proof-claw verify-bundle` 指令，支援人類可讀與穩定 JSON 輸出。
+- 最新結果與持久化評估歷史都可從 Web Console 下載 Bundle。
+
+### 變更
+
+- Assessment Contract 新增 Bundle URL；Package、Web、Compose 與 Assessment User-Agent
+  版本統一更新至 `0.6.0`。
+
+### 安全性
+
+- Bundle 不包含 Raw Evidence、憑證、Cookie、Browser Storage、Provider Secret 或環境設定。
+- 驗證會拒絕不安全路徑、重複或加密 Entry、未宣告檔案、ZIP Bomb、超過大小限制、
+  Evidence Chain 斷裂與 Digest 不符。
+
 ## [0.5.0] - 2026-08-03
 
 ### Added

@@ -59,6 +59,7 @@ from vuln_proof_claw.persistence.repositories import (
     ScopeRepository,
 )
 from vuln_proof_claw.policy.scope import EngagementScope
+from vuln_proof_claw.reporting.bundle import build_disclosure_bundle
 
 router = APIRouter(tags=["reports"])
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -574,6 +575,29 @@ def engagement_report_sarif(engagement_id: str, session: SessionDependency) -> R
             "Cache-Control": "no-store",
             "Content-Disposition": "inline; filename=engagement.sarif",
         },
+    )
+
+
+@router.get(
+    "/engagements/{engagement_id}/report.bundle.zip",
+    summary="Download a self-verifiable metadata-only disclosure bundle",
+)
+def engagement_report_bundle(engagement_id: str, session: SessionDependency) -> Response:
+    report = build_engagement_report(session, engagement_id)
+    try:
+        content = build_disclosure_bundle(
+            report,
+            markdown=render_markdown(report).encode(),
+            html=render_html(report).encode(),
+            sarif=render_sarif(report),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=413, detail="report_bundle_too_large") from error
+    return _download_response(
+        content,
+        media_type="application/zip",
+        filename=f"engagement-{engagement_id}-disclosure.zip",
+        digest=hashlib.sha256(content).hexdigest(),
     )
 
 

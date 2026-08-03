@@ -9,17 +9,19 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
-> **v0.5.0 重大更新：** 新增一次性 Authenticated Chromium Session、經審查的無害參數變異、四類安全比較、可重用 Approval Preset、Planner／Operator／Verifier 計畫，以及 Codex／Claude Code stdio MCP Server。進階流程目前以 API／MCP 為主，仍不發送 Exploit Payload。
+> **v0.6.0 重大更新：** 新增一鍵 Metadata-only Disclosure Bundle 與離線 SHA-256
+> 驗證；Raw Evidence 與 Secret 仍明確排除。v0.5.0 建立的有界
+> Planner／Operator／Verifier 與本機 MCP 基礎維持不變。
 
 > [!IMPORTANT]
-> **Alpha 狀態：** 0.5.0 已提供隔離登入 Session 與經審查自動化核心，但 Browser、Preset 與
-> Planner／Operator／Verifier 目前以 API／MCP 為主；仍不會送出破壞性 Payload 或任意執行掃描器。
+> **Alpha 狀態：** 0.6.0 已提供可驗證成果交付；Browser、Preset 與
+> Planner／Operator／Verifier 仍以 API／MCP 為主，不會送出破壞性 Payload 或任意執行掃描器。
 >
 > 0.3.0 在有界 Web Discovery 上加入已授權的安全主動測試。系統會
 > 解析已擷取的 OpenAPI 文件，且只透過既有 Scope、DNS、Evidence 與 Budget 控制驗證
@@ -46,9 +48,9 @@ vuln-proof-claw 以這些要求作為核心設計：
 
 | 領域 | 目前版本 |
 | --- | --- |
-| CLI | 版本指令與不洩漏憑證的 `doctor` 環境診斷 |
+| CLI | 版本、不洩漏憑證的 `doctor`，以及不需網路的 `verify-bundle` |
 | REST API | 版本化 health、project、engagement、自動評估、workflow、audit、report contract 與 OpenAPI |
-| Web 控制台 | 雙語 URL-first 安全自動測試、僅探索模式、Safe／Fast／Deep Preset、Finding、歷史與報告 |
+| Web 控制台 | 雙語 URL-first 安全自動測試、Discovery fallback、Safe／Fast／Deep、Finding、歷史、四種報告與可驗證 Disclosure Bundle |
 | Evidence Core | 多頁 Discovery、OpenAPI 語意 Inventory、有界唯讀 API 驗證、Transactional Evidence 與不可變報告 |
 | Domain | Project、Engagement、Task、Flow、Action、Approval、Evidence 與 Finding |
 | Policy | Web／API 目標正規化、default-deny scope、L0–L4 風險與動作綁定批准 |
@@ -78,6 +80,7 @@ v0.5.0 的 Browser 與 Automation 目前以 API／MCP 為主；Web Console 操�
 | **v0.3.1** | 文件與 Release Metadata 更新：版本歷史、修正 Quick Start 說明，以及同步 Package／User-Agent 版本。 | 沒有新增目標流量能力；安全邊界與 v0.3.0 相同。 |
 | **v0.4.0** | Operator Finding 審查、樂觀版本檢查與不可變 Audit Event；SARIF 2.1.0 直接報告與具 Idempotency 的不可變匯出；Web console SARIF 下載。 | 尚未提供 Planner／Operator／Verifier 編排、Browser Authentication、寫入 Method 測試、Exploit Payload 或任意工具。 |
 | **v0.5.0** | 一次性 Authenticated Chromium Context、經審查的無害參數變異、四類安全比較、可重用 Approval Preset、Planner／Operator／Verifier 計畫與 Codex／Claude Code stdio MCP 工具。 | 進階路徑仍以 API／MCP 為主；不提供破壞性 Payload、任意 Scanner、自動權限提升或無限制目標存取。 |
+| **v0.6.0** | Metadata-only Disclosure ZIP，包含 JSON／Markdown／HTML／SARIF、Workflow 與 Evidence Chain Metadata、Web 下載及具 ZIP 結構與篡改防護的離線驗證器。 | 不公開 Raw Evidence、不宣稱簽署者身分、不執行任意 Scanner、Exploit Payload 或無限制目標存取。 |
 
 實作細節與下一階段請參閱 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) 及
 [CHANGELOG.zh-TW.md](CHANGELOG.zh-TW.md) 的版本記錄。
@@ -101,6 +104,7 @@ HTTP(S) 網址、完成一次授權聲明並開始。第一次執行會自動建
 模式會探索同源頁面並驗證符合條件的唯讀 API，也可在表單切換成僅 Discovery、Fast
 或 Deep。結果頁會顯示 Finding、API Inventory、Active Probe 數量、Evidence 完整性，
 並提供 JSON、Markdown、安全轉義 HTML 與 SARIF 2.1.0 報告。
+結果與歷史頁面也能下載可自行驗證的 Disclosure Bundle。
 
 檢查服務：
 
@@ -155,6 +159,12 @@ python3 -m venv .venv
 ```
 
 使用 `doctor --json` 可以取得穩定、適合程式處理的 v1 診斷結果。
+
+不連線 API 或目標即可驗證下載的 Disclosure Bundle：
+
+```bash
+vuln-proof-claw verify-bundle engagement-disclosure.zip
+```
 
 ## 風險與批准模型
 
@@ -235,6 +245,7 @@ Phase 0 與有界 Discovery 已完成。0.4.0 新增具 Evidence 的 Finding Ope
 | 控制平面工作流程 API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication 與 Approval | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | Evidence 存取與報告匯出 | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
+| 可驗證 Disclosure Bundle | [docs/DISCLOSURE_BUNDLES.md](docs/DISCLOSURE_BUNDLES.md) | [docs/DISCLOSURE_BUNDLES.zh-TW.md](docs/DISCLOSURE_BUNDLES.zh-TW.md) |
 | Passive URL assessment | [docs/PASSIVE_ASSESSMENT.md](docs/PASSIVE_ASSESSMENT.md) | [docs/PASSIVE_ASSESSMENT.zh-TW.md](docs/PASSIVE_ASSESSMENT.zh-TW.md) |
 | AI 驅動架構 | [docs/AI_DRIVER.md](docs/AI_DRIVER.md) | [docs/AI_DRIVER.zh-TW.md](docs/AI_DRIVER.zh-TW.md) |
 | 拋棄式 Worker lifecycle | [docs/WORKER_LIFECYCLE.md](docs/WORKER_LIFECYCLE.md) | [docs/WORKER_LIFECYCLE.zh-TW.md](docs/WORKER_LIFECYCLE.zh-TW.md) |

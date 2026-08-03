@@ -75,6 +75,20 @@ v0.5.0 交付第一條有界 Autonomous Core 垂直流程：
   保存多 Principal Session Handle、加入即時進度與 Web 操作介面，並只允許 Evidence-backed
   Verifier Decision 將 Candidate 升級。
 
+## v0.6 — 可驗證成果交付
+
+v0.6.0 交付一條完整的離線可驗證報告流程：
+
+- 已完成：一鍵 Metadata-only Bundle，包含四種報告、Workflow Summary、Evidence Chain
+  Metadata、驗證說明與版本化 SHA-256 Manifest。
+- 已完成：不需要網路的 CLI 驗證器，強制檢查 ZIP 路徑、檔案數、大小、壓縮比、
+  Manifest 宣告、Digest 與 Chain Link。
+- 已完成：Web Console 的最新結果與持久化歷史都能下載 Bundle。
+- 下一步：參考 PentAGI 的持久化 Flow 與 Task／Subtask 可觀測設計，加入即時狀態、
+  Operator Steering、有界重試與續跑；但仍由 ProofClaw Scope、Approval、Evidence 與
+  獨立 Verifier 強制管控。
+- 待完成：受信任簽章身分、Attestation 與 Bug-bounty 平台範本。
+
 ## v1.0 — 穩定開源版本
 
 - 穩定 REST 與 Plugin API、Upgrade 文件、Security review、簽章 Image 與 SBOM。

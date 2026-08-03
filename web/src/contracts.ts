@@ -54,6 +54,7 @@ export type AssessmentSummary = {
   markdown_report_url: string;
   html_report_url: string;
   sarif_report_url: string;
+  bundle_report_url: string;
 };
 
 export type AssessmentHistoryItem = {
@@ -69,6 +70,7 @@ export type AssessmentHistoryItem = {
   error_code: string | null;
   report_url: string;
   markdown_report_url: string;
+  bundle_report_url: string;
 };
 
 export type AssessmentList = {

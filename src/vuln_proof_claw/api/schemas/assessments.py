@@ -38,6 +38,7 @@ class AssessmentSummary(BaseModel):
     markdown_report_url: str
     html_report_url: str
     sarif_report_url: str
+    bundle_report_url: str
 
 
 class AssessmentHistoryItem(BaseModel):
@@ -57,6 +58,7 @@ class AssessmentHistoryItem(BaseModel):
     error_code: str | None
     report_url: str
     markdown_report_url: str
+    bundle_report_url: str
 
 
 class AssessmentListResponse(BaseModel):
