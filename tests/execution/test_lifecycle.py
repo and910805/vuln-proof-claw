@@ -287,7 +287,10 @@ async def test_restart_reconciliation_closes_running_action_as_worker_lost(
     runtime = FakeRuntime()
     session_factory = create_session_factory(engine)
     with session_factory.begin() as session:
-        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: NOW),
+        )
         handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
 
     with session_factory.begin() as session:

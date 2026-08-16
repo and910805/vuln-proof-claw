@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -80,10 +81,15 @@ async def test_project_name_rejects_whitespace_only_value(tmp_path: Path) -> Non
 
 
 async def test_scoped_engagement_can_be_created_listed_and_reported(tmp_path: Path) -> None:
+    # Use a window around the current instant so scope evaluation stays valid
+    # regardless of the calendar date the suite runs on.
+    now = datetime.now(UTC).replace(microsecond=0)
+    starts_at = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ends_at = (now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "name": "Production API assessment",
-        "starts_at": "2026-08-01T00:00:00Z",
-        "ends_at": "2026-08-02T00:00:00Z",
+        "starts_at": starts_at,
+        "ends_at": ends_at,
         "maximum_risk": "L2",
         "scope": {
             "allowed_hostnames": ["API.Example.TEST."],
@@ -117,8 +123,8 @@ async def test_scoped_engagement_can_be_created_listed_and_reported(tmp_path: Pa
     assert created.json()["scope"]["allowed_hostnames"] == ["api.example.test"]
     assert created.json()["scope"]["allowed_schemes"] == ["https"]
     assert created.json()["scope"]["allowed_paths"] == ["/v1"]
-    assert created.json()["scope"]["valid_from"] == "2026-08-01T00:00:00Z"
-    assert created.json()["scope"]["valid_until"] == "2026-08-02T00:00:00Z"
+    assert created.json()["scope"]["valid_from"] == starts_at
+    assert created.json()["scope"]["valid_until"] == ends_at
     assert listed.json()["items"] == [created.json()]
     assert fetched.json() == created.json()
     assert allowed.json() == {
