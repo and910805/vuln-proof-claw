@@ -3,14 +3,16 @@
 The worker runs inside an isolated, egress-restricted container. It reads a
 single authorized :class:`WorkerRequest` from the environment, re-evaluates the
 engagement scope for the target *inside* the sandbox (defence in depth), performs
-one redirect-free ``GET`` with conservative limits, and writes a terminal
-:class:`WorkerResponse` as the last line of standard output for the control
-plane to parse. It never follows redirects, sends credentials, or contacts any
-host outside the scope it was given.
+one redirect-free ``GET`` with conservative limits, and writes two lines to
+standard output: a :class:`CaptureEnvelope` describing exactly what it observed
+(so the control plane can persist tamper-evident evidence) followed by a terminal
+:class:`WorkerResponse`. It never follows redirects, sends credentials, or
+contacts any host outside the scope it was given.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import sys
@@ -22,7 +24,7 @@ import httpx
 from pydantic import ValidationError
 
 from vuln_proof_claw.domain.identifiers import new_evidence_id
-from vuln_proof_claw.evidence.canonical import canonical_json
+from vuln_proof_claw.execution.capture_envelope import CaptureEnvelope
 from vuln_proof_claw.execution.protocol import (
     WorkerRequest,
     WorkerResponse,
@@ -32,7 +34,7 @@ from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope
 
 _REQUEST_ENV = "VULN_PROOF_CLAW_WORKER_REQUEST"
 _MAX_RESPONSE_BYTES = 1024 * 1024
-_CAPTURE_SCHEMA = "worker-capture-v1"
+_MAX_CAPTURED_HEADERS = 100
 
 
 class FetchTimeoutError(Exception):
@@ -49,6 +51,7 @@ class FetchResult:
 
     status_code: int
     final_url: str
+    headers: tuple[tuple[str, str], ...]
     body: bytes
     duration_ms: int
 
@@ -74,18 +77,18 @@ def run_capture(
     fetch: Fetcher,
     *,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
-) -> tuple[dict[str, object], WorkerResponse]:
-    """Perform one capture and return a human summary plus a terminal response."""
+) -> tuple[CaptureEnvelope, WorkerResponse]:
+    """Perform one capture and return the capture envelope plus a terminal response."""
     started_at = now()
 
     def terminal(
         status: WorkerResultStatus,
+        envelope: CaptureEnvelope,
         *,
         error_code: str | None = None,
         evidence_id: str | None = None,
         exit_code: int | None = None,
-        summary: dict[str, object] | None = None,
-    ) -> tuple[dict[str, object], WorkerResponse]:
+    ) -> tuple[CaptureEnvelope, WorkerResponse]:
         response = WorkerResponse(
             request_id=request.request_id,
             engagement_id=request.engagement_id,
@@ -97,11 +100,21 @@ def run_capture(
             exit_code=exit_code,
             error_code=error_code,
         )
-        return summary or {"capture_schema": _CAPTURE_SCHEMA, "status": status.value}, response
+        return envelope, response
+
+    def failure(
+        error_code: str,
+        status: WorkerResultStatus,
+    ) -> tuple[CaptureEnvelope, WorkerResponse]:
+        return terminal(
+            status,
+            CaptureEnvelope(status="failed", error_code=error_code),
+            error_code=error_code,
+        )
 
     scope = _scope_from_request(request)
     if not evaluate_scope(request.normalized_target, scope, at=started_at).allowed:
-        return terminal(WorkerResultStatus.FAILED, error_code="scope_denied")
+        return failure("scope_denied", WorkerResultStatus.FAILED)
 
     try:
         result = fetch(
@@ -110,31 +123,30 @@ def run_capture(
             _MAX_RESPONSE_BYTES,
         )
     except FetchTimeoutError:
-        return terminal(WorkerResultStatus.TIMED_OUT, error_code="worker_timed_out")
+        return failure("worker_timed_out", WorkerResultStatus.TIMED_OUT)
     except FetchError:
-        return terminal(WorkerResultStatus.FAILED, error_code="transport_failure")
+        return failure("transport_failure", WorkerResultStatus.FAILED)
 
     if result.final_url != request.normalized_target:
-        return terminal(WorkerResultStatus.FAILED, error_code="redirect_or_target_change_rejected")
+        return failure("redirect_or_target_change_rejected", WorkerResultStatus.FAILED)
     if len(result.body) > _MAX_RESPONSE_BYTES:
-        return terminal(WorkerResultStatus.FAILED, error_code="response_body_too_large")
+        return failure("response_body_too_large", WorkerResultStatus.FAILED)
 
     evidence_id = new_evidence_id()
-    summary = {
-        "capture_schema": _CAPTURE_SCHEMA,
-        "status": WorkerResultStatus.SUCCEEDED.value,
-        "target": request.normalized_target,
-        "status_code": result.status_code,
-        "body_bytes": len(result.body),
-        "body_sha256": hashlib.sha256(result.body).hexdigest(),
-        "duration_ms": result.duration_ms,
-        "evidence_id": evidence_id,
-    }
+    envelope = CaptureEnvelope(
+        status="succeeded",
+        status_code=result.status_code,
+        final_target=result.final_url,
+        headers=result.headers,
+        body_base64=base64.b64encode(result.body).decode("ascii"),
+        body_sha256=hashlib.sha256(result.body).hexdigest(),
+        duration_ms=result.duration_ms,
+    )
     return terminal(
         WorkerResultStatus.SUCCEEDED,
+        envelope,
         evidence_id=evidence_id,
         exit_code=0,
-        summary=summary,
     )
 
 
@@ -151,6 +163,9 @@ def _httpx_fetch(target: str, timeout_seconds: float, max_bytes: int) -> FetchRe
                 body.extend(chunk)
                 if len(body) > max_bytes:
                     break
+            captured_headers = tuple(
+                (name.lower(), value) for name, value in list(response.headers.items())
+            )[:_MAX_CAPTURED_HEADERS]
     except httpx.TimeoutException as error:
         raise FetchTimeoutError(str(error)) from error
     except httpx.HTTPError as error:
@@ -159,32 +174,28 @@ def _httpx_fetch(target: str, timeout_seconds: float, max_bytes: int) -> FetchRe
     return FetchResult(
         status_code=response.status_code,
         final_url=str(response.url),
+        headers=captured_headers,
         body=bytes(body),
         duration_ms=duration_ms,
     )
 
 
-def _write_line(payload: dict[str, object] | WorkerResponse) -> None:
-    if isinstance(payload, WorkerResponse):
-        sys.stdout.write(payload.model_dump_json() + "\n")
-    else:
-        sys.stdout.write(canonical_json(payload).decode("utf-8") + "\n")
-    sys.stdout.flush()
-
-
 def main() -> None:
-    """Read the request, perform the capture, and emit a terminal response."""
+    """Read the request, perform the capture, and emit the envelope and response."""
     raw_request = os.environ.get(_REQUEST_ENV, "")
     try:
         request = WorkerRequest.model_validate_json(raw_request)
     except ValidationError:
-        sys.stdout.write('{"capture_schema":"worker-capture-v1","status":"worker_error"}\n')
+        sys.stdout.write(
+            CaptureEnvelope(status="failed", error_code="worker_error").model_dump_json() + "\n"
+        )
         sys.stdout.flush()
         raise SystemExit(2) from None
 
-    summary, response = run_capture(request, _httpx_fetch)
-    _write_line(summary)
-    _write_line(response)
+    envelope, response = run_capture(request, _httpx_fetch)
+    sys.stdout.write(envelope.model_dump_json() + "\n")
+    sys.stdout.write(response.model_dump_json() + "\n")
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":

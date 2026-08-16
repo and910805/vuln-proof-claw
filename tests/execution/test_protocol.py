@@ -190,6 +190,7 @@ def test_worker_entry_point_without_request_fails_safely(
         worker_main()
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["status"] == "worker_error"
+    assert payload["status"] == "failed"
+    assert payload["error_code"] == "worker_error"
     assert "target" not in payload
     assert "credential" not in payload

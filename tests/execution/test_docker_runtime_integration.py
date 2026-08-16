@@ -12,6 +12,7 @@ Run manually with, for example::
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 from collections.abc import AsyncIterator
@@ -33,6 +34,7 @@ from vuln_proof_claw.execution.protocol import (
     WorkerResultStatus,
     WorkerScope,
 )
+from vuln_proof_claw.execution.worker_capture import DockerWorkerCaptureRunner
 
 _WORKER_IMAGE = "vuln-proof-claw-worker:dev"
 
@@ -216,3 +218,41 @@ async def _run(runtime: DockerWorkerRuntime, worker_request: WorkerRequest) -> W
         return await runtime.wait(reference)
     finally:
         await runtime.destroy(reference)
+
+
+async def test_capture_runner_returns_envelope_with_the_target_body(
+    runner: SubprocessDockerCommandRunner,
+    internal_network: str,
+) -> None:
+    image_present = await runner.run(["image", "inspect", _WORKER_IMAGE])
+    if image_present.returncode != 0:
+        pytest.skip(f"{_WORKER_IMAGE} is not built")
+
+    host = f"target-cap-{_SUFFIX}"
+    page = (
+        "mkdir -p /www && printf '<html>captured</html>' > /www/index.html "
+        "&& httpd -f -p 8080 -h /www"
+    )
+    started = await runner.run(
+        ["run", "-d", "--rm", "--name", host, "--network", internal_network,
+         _TARGET_IMAGE, "sh", "-c", page]
+    )
+    assert started.returncode == 0, started.stderr
+
+    config = DockerConfig(
+        runtime_enabled=True,
+        worker_image=_WORKER_IMAGE,
+        worker_network=internal_network,
+        ownership_label=f"com.vuln-proof-claw.capture-itest-{_SUFFIX}",
+    )
+    try:
+        capture_runner = DockerWorkerCaptureRunner(config)
+        envelope = await capture_runner.run(
+            _worker_request(f"http://{host}:8080/", host, 8080, "http")
+        )
+        assert envelope.status == "succeeded"
+        assert envelope.status_code == 200
+        assert envelope.body_base64 is not None
+        assert base64.b64decode(envelope.body_base64) == b"<html>captured</html>"
+    finally:
+        await runner.run(["rm", "--force", host])

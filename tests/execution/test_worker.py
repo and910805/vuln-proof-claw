@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import UTC, datetime, timedelta
 
 from tests.execution.test_protocol import request
@@ -20,7 +21,7 @@ def _clock() -> datetime:
     return NOW
 
 
-def test_successful_capture_reports_evidence_and_summary() -> None:
+def test_successful_capture_reports_full_envelope_and_evidence() -> None:
     worker_request = request()
     body = b"<html>ok</html>"
 
@@ -28,16 +29,23 @@ def test_successful_capture_reports_evidence_and_summary() -> None:
         assert target == worker_request.normalized_target
         assert timeout == worker_request.limits.timeout_seconds
         assert max_bytes > 0
-        return FetchResult(status_code=200, final_url=target, body=body, duration_ms=12)
+        return FetchResult(
+            status_code=200,
+            final_url=target,
+            headers=(("content-type", "text/html"),),
+            body=body,
+            duration_ms=12,
+        )
 
-    summary, response = run_capture(worker_request, fetch, now=_clock)
+    envelope, response = run_capture(worker_request, fetch, now=_clock)
 
+    assert envelope.status == "succeeded"
+    assert envelope.status_code == 200
+    assert envelope.headers == (("content-type", "text/html"),)
+    assert base64.b64decode(envelope.body_base64 or "") == body
     assert response.status is WorkerResultStatus.SUCCEEDED
     assert len(response.evidence_ids) == 1
     assert response.exit_code == 0
-    assert summary["status_code"] == 200
-    assert summary["body_bytes"] == len(body)
-    assert summary["evidence_id"] == response.evidence_ids[0]
 
 
 def test_out_of_scope_target_is_refused_without_fetching() -> None:
@@ -52,9 +60,11 @@ def test_out_of_scope_target_is_refused_without_fetching() -> None:
         calls.append(target)
         raise AssertionError("fetch must not run for an out-of-scope target")
 
-    _summary, response = run_capture(worker_request, fetch, now=_clock)
+    envelope, response = run_capture(worker_request, fetch, now=_clock)
 
     assert calls == []
+    assert envelope.status == "failed"
+    assert envelope.error_code == "scope_denied"
     assert response.status is WorkerResultStatus.FAILED
     assert response.error_code == "scope_denied"
 
@@ -68,8 +78,8 @@ def test_timeout_and_transport_errors_map_to_safe_codes() -> None:
     def failing(target: str, timeout: float, max_bytes: int) -> FetchResult:
         raise FetchError("connection refused")
 
-    _s1, timed_out = run_capture(worker_request, timing_out, now=_clock)
-    _s2, failed = run_capture(worker_request, failing, now=_clock)
+    _e1, timed_out = run_capture(worker_request, timing_out, now=_clock)
+    _e2, failed = run_capture(worker_request, failing, now=_clock)
 
     assert timed_out.status is WorkerResultStatus.TIMED_OUT
     assert timed_out.error_code == "worker_timed_out"
@@ -84,12 +94,14 @@ def test_redirect_or_target_change_is_rejected() -> None:
         return FetchResult(
             status_code=302,
             final_url="https://example.test:443/api/elsewhere",
+            headers=(),
             body=b"",
             duration_ms=3,
         )
 
-    _summary, response = run_capture(worker_request, redirecting, now=_clock)
+    envelope, response = run_capture(worker_request, redirecting, now=_clock)
 
+    assert envelope.status == "failed"
     assert response.status is WorkerResultStatus.FAILED
     assert response.error_code == "redirect_or_target_change_rejected"
 
@@ -99,9 +111,15 @@ def test_oversized_response_is_rejected() -> None:
     oversized = b"x" * (1024 * 1024 + 1)
 
     def big(target: str, timeout: float, max_bytes: int) -> FetchResult:
-        return FetchResult(status_code=200, final_url=target, body=oversized, duration_ms=7)
+        return FetchResult(
+            status_code=200,
+            final_url=target,
+            headers=(),
+            body=oversized,
+            duration_ms=7,
+        )
 
-    _summary, response = run_capture(worker_request, big, now=_clock)
+    _envelope, response = run_capture(worker_request, big, now=_clock)
 
     assert response.status is WorkerResultStatus.FAILED
     assert response.error_code == "response_body_too_large"
@@ -112,8 +130,14 @@ def test_completed_at_is_not_earlier_than_started_at() -> None:
     ticks = iter([NOW, NOW + timedelta(seconds=2)])
 
     def fetch(target: str, timeout: float, max_bytes: int) -> FetchResult:
-        return FetchResult(status_code=200, final_url=target, body=b"ok", duration_ms=1)
+        return FetchResult(
+            status_code=200,
+            final_url=target,
+            headers=(),
+            body=b"ok",
+            duration_ms=1,
+        )
 
-    _summary, response = run_capture(worker_request, fetch, now=lambda: next(ticks))
+    _envelope, response = run_capture(worker_request, fetch, now=lambda: next(ticks))
 
     assert response.completed_at >= response.started_at

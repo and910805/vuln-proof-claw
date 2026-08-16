@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.15] - 2026-08-16
+
+### 新增
+
+- 新增 `WorkerCaptureCoordinator`：授權已排入佇列的 Action、執行拋棄式 worker，並在轉換 Action 狀態前，將擷取到的回應落地成不可竄改的證據。
+- 新增共用的 `CaptureEnvelope` worker 對控制平面的傳輸格式，攜帶完整且有界的回應。
+- 讓 worker 在輸出終端回應的同時，也輸出 `CaptureEnvelope`（狀態、標頭與 base64 內容）。
+- 新增 Docker-gated 整合測試，涵蓋 worker capture runner 對本地靶機的實際擷取。
+
+### 安全性
+
+- worker 完全不碰資料庫；控制平面握有所有權限並負責證據持久化。
+- 落地的證據會進入各 engagement 的雜湊鏈並端到端驗證；實際執行已確認還原的內容與靶機相符、且鏈驗證通過。
+- worker 執行失敗、擷取失敗、以及未知或未授權的 Action，一律 fail closed 成 FAILED 狀態並附上穩定的 error code。
+
 ## [0.0.14] - 2026-08-16
 
 ### 新增

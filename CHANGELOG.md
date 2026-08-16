@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.15] - 2026-08-16
+
+### Added
+
+- Added a `WorkerCaptureCoordinator` that authorizes a queued Action, runs a disposable worker, and persists the captured response as tamper-evident evidence before transitioning the Action.
+- Added a shared `CaptureEnvelope` worker-to-control-plane wire format carrying the full bounded response.
+- Made the worker emit a `CaptureEnvelope` (status, headers, and base64 body) alongside its terminal response.
+- Added a Docker-gated integration test covering the worker capture runner against a live local target.
+
+### Security
+
+- The worker never touches the database; the control plane holds all authority and owns evidence persistence.
+- Persisted evidence enters the per-engagement hash chain and is verified end to end; a live run confirmed the recovered body matches the target and the chain validates.
+- Worker runtime failures, failed captures, and unknown or unauthorized Actions fail closed to a FAILED Action with a stable error code.
+
 ## [0.0.14] - 2026-08-16
 
 ### Added
