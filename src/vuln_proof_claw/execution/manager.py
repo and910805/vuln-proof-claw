@@ -131,6 +131,19 @@ class LifecycleWorkerManager:
     def runtime_identity(self) -> str:
         return self._runtime.identity
 
+    def live_runtime_references(self) -> frozenset[str]:
+        """Return privileged references this process still owns for non-terminal Workers.
+
+        The orphan-runtime janitor treats these as protected so a concurrent sweep
+        never destroys a Worker that is still tracked in this process. The references
+        stay within the privileged control plane and are never persisted or audited.
+        """
+        return frozenset(
+            managed.runtime_reference
+            for managed in self._workers.values()
+            if not managed.handle.state.terminal
+        )
+
     async def submit(self, request: WorkerRequest) -> WorkerHandle:
         async with self._lock:
             existing_id = self._request_index.get(request.request_id)

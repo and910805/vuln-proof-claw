@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.11] - 2026-08-16
+
+### Added
+
+- Added an orphan-runtime janitor that reclaims disposable-Worker runtime resources with no live in-process owner.
+- Added a reapable runtime capability that enumerates and idempotently destroys platform-owned Workers.
+- Added a system-level audit helper for control-plane events not bound to a single engagement.
+- Exposed the live runtime references a manager still owns so a concurrent sweep never destroys a tracked Worker.
+
+### Security
+
+- Treats every enumerated runtime reference as an orphan after a restart, closing the gap left by unpersisted runtime references.
+- Never destroys a reference protected by a live manager, and fails the sweep closed when enumeration fails.
+- Records only reference-free reclamation counts in the audit trail, and skips audit writes for no-op sweeps.
+
 ## [0.0.10] - 2026-08-01
 
 ### Added

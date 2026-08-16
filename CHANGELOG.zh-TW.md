@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.11] - 2026-08-16
+
+### 新增
+
+- 新增 orphan-runtime janitor，回收沒有存活的行程內擁有者的拋棄式 Worker runtime 資源。
+- 新增可回收（reapable）runtime 能力，可列舉並具冪等性地銷毀平台擁有的 Worker。
+- 新增系統層級稽核輔助函式，用於不綁定單一 Engagement 的控制平面事件。
+- 對外提供 manager 仍擁有的存活 runtime reference，讓並行的清掃永遠不會銷毀仍被追蹤的 Worker。
+
+### 安全性
+
+- 重啟後將所有列舉到的 runtime reference 一律視為孤兒，補上 runtime reference 不持久化所留下的缺口。
+- 絕不銷毀受存活 manager 保護的 reference，且列舉失敗時清掃會 fail closed。
+- 稽核軌跡僅記錄不含 reference 的回收計數，且對無動作的清掃略過稽核寫入。
+
 ## [0.0.10] - 2026-08-01
 
 ### 新增

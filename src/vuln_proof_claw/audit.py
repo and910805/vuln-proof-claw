@@ -31,3 +31,23 @@ def record_audit_event(  # noqa: PLR0913 - explicit fields prevent ambiguous rec
             created_at=at or datetime.now(UTC),
         )
     )
+
+
+def record_system_audit_event(
+    session: Session,
+    event_type: str,
+    actor: str,
+    payload: dict[str, object],
+    *,
+    at: datetime | None = None,
+) -> None:
+    """Append one immutable event not bound to any single engagement."""
+    AuditEventRepository(session).add(
+        AuditEvent(
+            engagement_id=None,
+            event_type=event_type,
+            actor=actor,
+            payload=canonical_json(payload),
+            created_at=at or datetime.now(UTC),
+        )
+    )
