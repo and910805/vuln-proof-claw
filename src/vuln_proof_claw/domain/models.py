@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from vuln_proof_claw.domain.enums import (
     ActionState,
     ArtifactKind,
+    AuthSessionState,
     FindingStatus,
     ReportFormat,
     RiskLevel,
@@ -20,6 +21,7 @@ from vuln_proof_claw.domain.identifiers import (
     ApprovalId,
     ArtifactId,
     AuditEventId,
+    AuthSessionId,
     EngagementId,
     EvidenceId,
     FindingId,
@@ -32,6 +34,7 @@ from vuln_proof_claw.domain.identifiers import (
     new_approval_id,
     new_artifact_id,
     new_audit_event_id,
+    new_auth_session_id,
     new_engagement_id,
     new_evidence_id,
     new_finding_id,
@@ -198,6 +201,62 @@ class WorkerExecution:
             raise DomainValidationError("cleaned_up requires a terminal Worker state")
         if self.error_code is not None:
             _require_text(self.error_code, "error_code")
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticationSession:
+    """Metadata for one captured browser authentication session.
+
+    The captured material (cookies, tokens, and storage state) never lives on
+    this value object; only its digest, byte size, and the redacted names of the
+    secret keys it contains are kept so that no secret value can appear in a
+    representation, log, or report.
+    """
+
+    engagement_id: EngagementId
+    label: str
+    digest: str
+    size: int
+    created_by: str
+    expires_at: datetime
+    secret_key_names: tuple[str, ...] = ()
+    id: AuthSessionId = field(default_factory=new_auth_session_id)
+    state: AuthSessionState = AuthSessionState.ACTIVE
+    created_at: datetime = field(default_factory=utc_now)
+    revoked_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.label, "label")
+        _require_text(self.created_by, "created_by")
+        _require_sha256(self.digest, "digest")
+        if self.size < 0:
+            raise DomainValidationError("size must not be negative")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.expires_at, "expires_at")
+        if self.expires_at <= self.created_at:
+            raise DomainValidationError("expires_at must be later than created_at")
+        for name in self.secret_key_names:
+            _require_text(name, "secret_key_name")
+        if self.state is AuthSessionState.REVOKED:
+            if self.revoked_at is None:
+                raise DomainValidationError("revoked sessions require revoked_at")
+            _require_aware(self.revoked_at, "revoked_at")
+            if self.revoked_at < self.created_at:
+                raise DomainValidationError("revoked_at must not be earlier than created_at")
+        elif self.revoked_at is not None:
+            raise DomainValidationError("active sessions must not have revoked_at")
+
+    def is_usable(self, *, at: datetime) -> bool:
+        """Return whether this session may authorize work at the given instant."""
+        _require_aware(at, "at")
+        return self.state is AuthSessionState.ACTIVE and self.created_at <= at < self.expires_at
+
+    def revoke(self, *, at: datetime) -> AuthenticationSession:
+        """Return a revoked copy, rejecting revocation of a non-active session."""
+        _require_aware(at, "at")
+        if self.state is not AuthSessionState.ACTIVE:
+            raise DomainValidationError("only active sessions can be revoked")
+        return replace(self, state=AuthSessionState.REVOKED, revoked_at=at)
 
 
 @dataclass(frozen=True, slots=True)

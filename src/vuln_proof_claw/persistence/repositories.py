@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from vuln_proof_claw.domain.enums import (
     ActionState,
     ArtifactKind,
+    AuthSessionState,
     FindingStatus,
     ReportFormat,
     RiskLevel,
@@ -21,6 +23,7 @@ from vuln_proof_claw.domain.identifiers import (
     ApprovalId,
     ArtifactId,
     AuditEventId,
+    AuthSessionId,
     EngagementId,
     EvidenceId,
     FindingId,
@@ -35,6 +38,7 @@ from vuln_proof_claw.domain.models import (
     Approval,
     Artifact,
     AuditEvent,
+    AuthenticationSession,
     Engagement,
     Evidence,
     Finding,
@@ -49,6 +53,7 @@ from vuln_proof_claw.persistence.models import (
     ApprovalRecord,
     ArtifactRecord,
     AuditEventRecord,
+    AuthenticationSessionRecord,
     EngagementRecord,
     EngagementScopeRecord,
     EvidenceRecord,
@@ -581,6 +586,127 @@ class WorkerExecutionRepository:
             error_code=row.error_code,
             created_at=_utc(row.created_at),
             updated_at=_utc(row.updated_at),
+        )
+
+
+class AuthenticationSessionRepository:
+    """Persist captured authentication sessions and guard access to their material."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(
+        self,
+        session_entity: AuthenticationSession,
+        material: bytes,
+    ) -> Stored[AuthenticationSession]:
+        """Persist metadata and opaque material after verifying both agree."""
+        immutable = bytes(material)
+        if len(immutable) != session_entity.size:
+            raise ValueError("authentication session size does not match material")
+        if hashlib.sha256(immutable).hexdigest() != session_entity.digest:
+            raise ValueError("authentication session digest does not match material")
+        row = AuthenticationSessionRecord(
+            id=session_entity.id,
+            engagement_id=session_entity.engagement_id,
+            label=session_entity.label,
+            digest=session_entity.digest,
+            size=session_entity.size,
+            secret_key_names=list(session_entity.secret_key_names),
+            material=immutable,
+            state=session_entity.state.value,
+            created_by=session_entity.created_by,
+            created_at=session_entity.created_at,
+            expires_at=session_entity.expires_at,
+            revoked_at=session_entity.revoked_at,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    def get(self, session_id: AuthSessionId) -> Stored[AuthenticationSession] | None:
+        row = self._session.get(AuthenticationSessionRecord, session_id)
+        if row is None:
+            return None
+        return Stored(self._domain_from_record(row), row.version)
+
+    def list_for_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[AuthenticationSession, ...]:
+        rows = self._session.scalars(
+            select(AuthenticationSessionRecord)
+            .where(AuthenticationSessionRecord.engagement_id == engagement_id)
+            .order_by(
+                AuthenticationSessionRecord.created_at.desc(),
+                AuthenticationSessionRecord.id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return tuple(self._domain_from_record(row) for row in rows)
+
+    def read_material(
+        self,
+        engagement_id: EngagementId,
+        session_id: AuthSessionId,
+    ) -> bytes | None:
+        """Return material only for the owning engagement; no public API exposes this.
+
+        The stored size and SHA-256 are recomputed before release so tampered or
+        truncated material fails closed instead of being handed to a caller.
+        """
+        row = self._session.scalar(
+            select(AuthenticationSessionRecord).where(
+                AuthenticationSessionRecord.id == session_id,
+                AuthenticationSessionRecord.engagement_id == engagement_id,
+            )
+        )
+        if row is None:
+            return None
+        material = bytes(row.material)
+        if len(material) != row.size:
+            raise ValueError("authentication session material size mismatch")
+        if hashlib.sha256(material).hexdigest() != row.digest:
+            raise ValueError("authentication session material digest mismatch")
+        return material
+
+    def save(
+        self,
+        session_entity: AuthenticationSession,
+        *,
+        expected_version: int,
+    ) -> Stored[AuthenticationSession]:
+        row = self._session.scalar(
+            select(AuthenticationSessionRecord).where(
+                AuthenticationSessionRecord.id == session_entity.id,
+                AuthenticationSessionRecord.version == expected_version,
+            )
+        )
+        if row is None:
+            raise ConcurrentUpdateError
+        row.state = session_entity.state.value
+        row.revoked_at = session_entity.revoked_at
+        self._session.flush()
+        return Stored(self._domain_from_record(row), row.version)
+
+    @staticmethod
+    def _domain_from_record(row: AuthenticationSessionRecord) -> AuthenticationSession:
+        return AuthenticationSession(
+            id=AuthSessionId(row.id),
+            engagement_id=EngagementId(row.engagement_id),
+            label=row.label,
+            digest=row.digest,
+            size=row.size,
+            secret_key_names=tuple(row.secret_key_names),
+            created_by=row.created_by,
+            state=AuthSessionState(row.state),
+            created_at=_utc(row.created_at),
+            expires_at=_utc(row.expires_at),
+            revoked_at=_utc(row.revoked_at) if row.revoked_at else None,
         )
 
 

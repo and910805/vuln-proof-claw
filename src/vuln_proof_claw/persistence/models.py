@@ -184,6 +184,33 @@ class WorkerExecutionRecord(Base):
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
 
 
+class AuthenticationSessionRecord(Base):
+    __tablename__ = "authentication_sessions"
+    __table_args__ = (
+        Index("ix_authentication_sessions_engagement_state", "engagement_id", "state"),
+        CheckConstraint("state IN ('active', 'revoked')", name="state"),
+        CheckConstraint("size >= 0", name="size"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"),
+        index=True,
+    )
+    label: Mapped[str] = mapped_column(String(255))
+    digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
+    size: Mapped[int] = mapped_column(Integer)
+    secret_key_names: Mapped[list[str]] = mapped_column(JSON)
+    material: Mapped[bytes] = mapped_column(LargeBinary)
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    created_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
 class EvidenceRecord(Base):
     __tablename__ = "evidence"
     __table_args__ = (

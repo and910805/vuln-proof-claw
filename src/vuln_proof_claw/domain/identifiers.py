@@ -58,6 +58,7 @@ ApprovalId = NewType("ApprovalId", str)
 FindingId = NewType("FindingId", str)
 AuditEventId = NewType("AuditEventId", str)
 WorkerId = NewType("WorkerId", str)
+AuthSessionId = NewType("AuthSessionId", str)
 
 
 def uuid7(*, timestamp_ms: int | None = None) -> UUID:
@@ -131,6 +132,10 @@ def new_audit_event_id() -> AuditEventId:
 
 def new_worker_id() -> WorkerId:
     return WorkerId(new_identifier())
+
+
+def new_auth_session_id() -> AuthSessionId:
+    return AuthSessionId(new_identifier())
 
 
 @dataclass(frozen=True, slots=True)

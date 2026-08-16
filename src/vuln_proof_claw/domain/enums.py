@@ -56,6 +56,13 @@ class WorkerState(StrEnum):
         }
 
 
+class AuthSessionState(StrEnum):
+    """Durable state for one captured browser authentication session."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
 class FindingStatus(StrEnum):
     """Verification lifecycle for a potential finding."""
 

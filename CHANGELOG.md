@@ -6,6 +6,20 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.12] - 2026-08-16
+
+### Added
+
+- Added an engagement-bound registry for captured browser authentication sessions with Alembic revision `0006_authentication_sessions`.
+- Added a session service that captures, revokes, and releases authentication material transactionally with audit events.
+- Added optimistic-version revocation and time-and-state-bounded usability for authentication sessions.
+
+### Security
+
+- Keeps captured material out of the domain model, logs, and audit payloads; only a digest, byte size, and redacted key names are retained.
+- Releases material only to the owning engagement through a usable session, recomputing size and SHA-256 before release.
+- Fails closed for revoked, expired, cross-engagement, oversized, or tampered sessions.
+
 ## [0.0.11] - 2026-08-16
 
 ### Added
