@@ -6,6 +6,21 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.14] - 2026-08-16
+
+### Added
+
+- Replaced the placeholder worker entry point with a disposable worker that performs one bounded HTTP capture and emits a terminal `WorkerResponse`.
+- Re-evaluates the engagement scope for the target inside the sandbox before any request is made.
+- Made `DockerWorkerRuntime.wait` tolerant of diagnostic output by treating the last parseable response line as authoritative.
+- Added a Docker integration test that runs the real worker against a local target and confirms the internet is unreachable.
+
+### Security
+
+- The worker performs a single redirect-free `GET`, sends no credentials, and bounds the response body.
+- Out-of-scope targets, redirects or target changes, timeouts, oversized bodies, and transport failures each map to a stable, detail-free error code.
+- A live end-to-end run confirmed the worker captures an in-scope local target but cannot reach an internet host on the isolated network.
+
 ## [0.0.13] - 2026-08-16
 
 ### Added

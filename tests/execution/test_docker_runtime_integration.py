@@ -20,10 +20,21 @@ import pytest
 
 from tests.execution.test_protocol import request
 from vuln_proof_claw.config.models import DockerConfig
+from vuln_proof_claw.domain.enums import RiskLevel
+from vuln_proof_claw.domain.identifiers import ActionId, EngagementId
 from vuln_proof_claw.execution.docker_runtime import (
     DockerWorkerRuntime,
     SubprocessDockerCommandRunner,
 )
+from vuln_proof_claw.execution.protocol import (
+    WorkerLimits,
+    WorkerRequest,
+    WorkerResponse,
+    WorkerResultStatus,
+    WorkerScope,
+)
+
+_WORKER_IMAGE = "vuln-proof-claw-worker:dev"
 
 _OPT_IN = os.getenv("VULN_PROOF_CLAW_DOCKER_INTEGRATION") == "1"
 _TARGET_IMAGE = "busybox"
@@ -130,3 +141,78 @@ async def test_created_container_is_hardened_listed_and_reaped(
 
     remaining = await runtime.list_owned()
     assert not any(reference.startswith(short) for short in remaining)
+
+
+def _worker_request(target_url: str, host: str, port: int, scheme: str) -> WorkerRequest:
+    return WorkerRequest(
+        request_id="itest-1",
+        engagement_id=EngagementId("00000000-0000-7000-8000-000000000001"),
+        action_id=ActionId("00000000-0000-7000-8000-000000000002"),
+        action_type="public_page_read",
+        normalized_target=target_url,
+        parameter_digest="a" * 64,
+        risk_level=RiskLevel.L0,
+        idempotency_key="itest-1",
+        capabilities=("http_client",),
+        scope=WorkerScope(
+            allowed_hostnames=(host,),
+            allowed_ports=(port,),
+            allowed_schemes=(scheme,),
+            allowed_paths=("/",),
+        ),
+        limits=WorkerLimits(
+            timeout_seconds=8,
+            memory_megabytes=256,
+            cpu_count=1.0,
+            process_limit=64,
+        ),
+    )
+
+
+async def test_real_worker_captures_local_target_but_not_the_internet(
+    runner: SubprocessDockerCommandRunner,
+    internal_network: str,
+) -> None:
+    image_present = await runner.run(["image", "inspect", _WORKER_IMAGE])
+    if image_present.returncode != 0:
+        pytest.skip(f"{_WORKER_IMAGE} is not built")
+
+    host = f"target-{_SUFFIX}"
+    page = (
+        "mkdir -p /www && printf '<html>hi</html>' > /www/index.html "
+        "&& httpd -f -p 8080 -h /www"
+    )
+    started = await runner.run(
+        ["run", "-d", "--rm", "--name", host, "--network", internal_network,
+         _TARGET_IMAGE, "sh", "-c", page]
+    )
+    assert started.returncode == 0, started.stderr
+
+    config = DockerConfig(
+        runtime_enabled=True,
+        worker_image=_WORKER_IMAGE,
+        worker_network=internal_network,
+        ownership_label=f"com.vuln-proof-claw.worker-itest-{_SUFFIX}",
+    )
+    runtime = DockerWorkerRuntime(config, runner)
+    try:
+        local = await _run(runtime, _worker_request(f"http://{host}:8080/", host, 8080, "http"))
+        assert local.status is WorkerResultStatus.SUCCEEDED
+        assert len(local.evidence_ids) == 1
+
+        internet = await _run(
+            runtime, _worker_request("http://example.com:80/", "example.com", 80, "http")
+        )
+        assert internet.status is WorkerResultStatus.FAILED
+        assert internet.error_code == "transport_failure"
+    finally:
+        await runner.run(["rm", "--force", host])
+
+
+async def _run(runtime: DockerWorkerRuntime, worker_request: WorkerRequest) -> WorkerResponse:
+    reference = await runtime.create(worker_request)
+    try:
+        await runtime.start(reference)
+        return await runtime.wait(reference)
+    finally:
+        await runtime.destroy(reference)

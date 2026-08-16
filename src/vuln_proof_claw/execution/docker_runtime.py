@@ -141,15 +141,24 @@ class DockerWorkerRuntime:
             raise WorkerManagerError("docker_start_failed")
 
     async def wait(self, runtime_reference: str) -> WorkerResponse:
-        """Block until the container exits, then parse its stdout as a response."""
+        """Block until the container exits, then parse the terminal response.
+
+        The worker may print diagnostic lines before its terminal response, so the
+        last line that parses as a :class:`WorkerResponse` is authoritative.
+        """
         await self._runner.run(["wait", runtime_reference])
         logs = await self._runner.run(["logs", runtime_reference])
         if logs.returncode != 0:
             raise WorkerManagerError("docker_logs_failed")
-        try:
-            return WorkerResponse.model_validate_json(logs.stdout.strip())
-        except ValidationError as error:
-            raise WorkerManagerError("worker_response_invalid") from error
+        for line in reversed(logs.stdout.splitlines()):
+            candidate = line.strip()
+            if not candidate:
+                continue
+            try:
+                return WorkerResponse.model_validate_json(candidate)
+            except ValidationError:
+                continue
+        raise WorkerManagerError("worker_response_invalid")
 
     async def cancel(self, runtime_reference: str) -> None:
         result = await self._runner.run(["stop", "--time", "5", runtime_reference])

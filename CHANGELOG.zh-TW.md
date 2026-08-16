@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## [0.0.14] - 2026-08-16
+
+### 新增
+
+- 將佔位版的 worker entry point 換成真正的拋棄式 worker：執行一次有界的 HTTP capture 並輸出終端 `WorkerResponse`。
+- 在沙箱內、送出任何請求前，先重新評估目標的 engagement scope。
+- 讓 `DockerWorkerRuntime.wait` 容許診斷輸出：以最後一行可解析的 response 為準。
+- 新增 Docker 整合測試：對本地靶機執行真正的 worker，並確認連不到網際網路。
+
+### 安全性
+
+- worker 只做一次不跟隨 redirect 的 `GET`、不送任何憑證，並限制回應內容大小。
+- 對超出範圍的目標、redirect 或目標變更、逾時、過大內容與傳輸失敗，一律對應到穩定、不含細節的 error code。
+- 實際端到端執行已確認：worker 能擷取範圍內的本地靶機，但在隔離網路上無法連到網際網路主機。
+
 ## [0.0.13] - 2026-08-16
 
 ### 新增

@@ -180,13 +180,16 @@ async def test_disabled_manager_fails_closed() -> None:
     assert await manager.collect("missing") is None
 
 
-def test_phase_zero_worker_entry_point_emits_only_safe_failure(
+def test_worker_entry_point_without_request_fails_safely(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("VULN_PROOF_CLAW_WORKER_REQUEST", raising=False)
+
     with pytest.raises(SystemExit, match="2"):
         worker_main()
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["error_code"] == "worker_execution_not_implemented"
+    assert payload["status"] == "worker_error"
     assert "target" not in payload
     assert "credential" not in payload

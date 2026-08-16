@@ -132,6 +132,16 @@ async def test_wait_parses_terminal_worker_response() -> None:
     assert ["logs", "container-abc"] in runner.calls
 
 
+async def test_wait_selects_response_after_a_summary_line() -> None:
+    runner = FakeDockerCommandRunner()
+    summary = '{"capture_schema":"worker-capture-v1","status":"succeeded"}'
+    runner.program("logs", CommandResult(0, f"{summary}\n{_response_json()}\n", ""))
+
+    response = await _runtime(runner).wait("container-abc")
+
+    assert response.status is WorkerResultStatus.SUCCEEDED
+
+
 async def test_wait_rejects_unparseable_or_missing_logs() -> None:
     invalid = FakeDockerCommandRunner()
     invalid.program("logs", CommandResult(0, "not-json", ""))
