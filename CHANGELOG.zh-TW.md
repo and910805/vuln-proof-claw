@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+## [0.0.13] - 2026-08-16
+
+### 新增
+
+- 新增具體的 Docker Worker runtime，以強化的拋棄式容器填補 `WorkerRuntime` 介面。
+- 新增 fail-closed 的 manager 工廠：未明確啟用 runtime 時一律回傳停用的 worker manager。
+- 新增可注入的 Docker CLI 執行器，讓 runtime 可做單元測試；並加入需選擇性開啟的真實 Docker 整合測試。
+- 新增帶所有權標籤的容器與 `list_owned` 能力，供 orphan-runtime janitor 回收。
+
+### 安全性
+
+- 每個 Worker 啟動時都 drop 所有 Linux capability、rootfs 唯讀、no-new-privileges，並套用 process／記憶體／CPU 上限。
+- Worker 只接上隔離的 worker 網路，因此無法連到公開網際網路。
+- 當 `docker.runtime_enabled` 為 false 時拒絕建構或執行，讓 target-facing 執行維持預設停用。
+- 對 create、start、wait、cancel、remove、list 的失敗一律回傳穩定、不含細節的 error code。
+
 ## [0.0.12] - 2026-08-16
 
 ### 新增

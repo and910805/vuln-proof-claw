@@ -6,6 +6,22 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.13] - 2026-08-16
+
+### Added
+
+- Added a concrete Docker worker runtime that fills the `WorkerRuntime` seam with hardened disposable containers.
+- Added a fail-closed manager factory that returns the disabled worker manager unless the runtime is explicitly enabled.
+- Added an injected Docker CLI runner that keeps the runtime unit-testable, plus an opt-in live Docker integration test.
+- Added ownership-labelled containers and a `list_owned` capability the orphan-runtime janitor can reclaim.
+
+### Security
+
+- Launches every worker with all Linux capabilities dropped, a read-only root filesystem, no new privileges, and process, memory, and CPU ceilings.
+- Attaches workers only to the isolated worker network, so a worker cannot reach the public internet.
+- Refuses to construct or execute while `docker.runtime_enabled` is false, keeping target-facing execution disabled by default.
+- Surfaces stable, detail-free error codes for create, start, wait, cancel, remove, and list failures.
+
 ## [0.0.12] - 2026-08-16
 
 ### Added

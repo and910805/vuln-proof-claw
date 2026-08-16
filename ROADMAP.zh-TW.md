@@ -13,11 +13,11 @@ Roadmap 表達預定方向，不保證 Release 日期。
 
 ## v0.1 — Evidence Core
 
-目前預覽進度：已完成持久化且正規化的評估範圍、Flow／Task／Action 提案 API、具 authentication 的單一 Action approval decision、執行時 Approval 消耗、不可變稽核軌跡、transactional raw evidence chain、獨立授權且留有稽核紀錄的 raw evidence 讀取、具完整性狀態的報告、不可變報告匯出、資料庫重驗證、fail-closed HTTP capture contract，具持久化 registry 與重啟 reconciliation 的拋棄式 Worker lifecycle，回收外洩 Worker runtime 資源的 orphan-runtime janitor，以及綁定 Engagement 的擷取式瀏覽器認證工作階段登錄表。具體受限 runtime 與負責擷取認證工作階段的瀏覽器 runtime 仍在進行中。
+目前預覽進度：已完成持久化且正規化的評估範圍、Flow／Task／Action 提案 API、具 authentication 的單一 Action approval decision、執行時 Approval 消耗、不可變稽核軌跡、transactional raw evidence chain、獨立授權且留有稽核紀錄的 raw evidence 讀取、具完整性狀態的報告、不可變報告匯出、資料庫重驗證、fail-closed HTTP capture contract，具持久化 registry 與重啟 reconciliation 的拋棄式 Worker lifecycle，回收外洩 Worker runtime 資源的 orphan-runtime janitor，綁定 Engagement 的擷取式瀏覽器認證工作階段登錄表，以及強化且 fail-closed、預設停用的 Docker Worker runtime。負責實際對目標執行工具的 worker image，以及負責擷取認證工作階段的瀏覽器 runtime 仍在進行中。
 
 - Project、Engagement、Scope 與 Action persistence。
 - 結構化 HTTP Request/Response capture。
-- 拋棄式 Worker lifecycle（持久化 registry 與 fail-closed 重啟 reconciliation 已完成；受限 runtime 待完成）。
+- 拋棄式 Worker lifecycle（持久化 registry、fail-closed 重啟 reconciliation 與強化 Docker runtime 已完成；對目標執行工具的 worker image 待完成）。
 - Evidence hash chain 與 Markdown/JSON report。
 
 ## v0.2 — Autonomous Core

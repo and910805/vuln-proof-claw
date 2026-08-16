@@ -87,6 +87,9 @@ class DockerConfig(FrozenConfigModel):
     worker_image: str = "vuln-proof-claw-worker:dev"
     worker_network: str = "vuln-proof-claw-workers"
     default_timeout_seconds: int = Field(default=300, ge=1, le=10_800)
+    runtime_enabled: bool = False
+    ownership_label: str = Field(default="com.vuln-proof-claw.owned", min_length=1, max_length=255)
+    cli_path: str = Field(default="docker", min_length=1, max_length=1024)
 
 
 class LoggingConfig(FrozenConfigModel):
