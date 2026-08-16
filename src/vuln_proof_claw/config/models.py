@@ -85,6 +85,7 @@ class DockerConfig(FrozenConfigModel):
     """Worker-manager Docker configuration."""
 
     worker_image: str = "vuln-proof-claw-worker:dev"
+    browser_image: str = "vuln-proof-claw-browser:dev"
     worker_network: str = "vuln-proof-claw-workers"
     default_timeout_seconds: int = Field(default=300, ge=1, le=10_800)
     runtime_enabled: bool = False

@@ -6,6 +6,22 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.0.16] - 2026-08-17
+
+### Added
+
+- Added a disposable Playwright browser worker that performs one form login and captures the resulting storage state.
+- Added a `BrowserSessionCaptureCoordinator` that scope-checks the login target, runs the browser worker, and persists the captured session through the authentication session registry.
+- Added a shared `SessionCaptureEnvelope` and `LoginInstruction` wire format and a `docker/browser` image built on Python 3.12 with a pinned Chromium.
+- Added a Docker-gated integration test that logs into a disposable local form and confirms the session cookie is captured.
+
+### Security
+
+- Login credentials establish the session only; they never enter the persisted material or the audit trail.
+- Only the captured storage state is persisted, as tamper-evident session material with redacted cookie and storage key names.
+- The browser worker drops all Linux capabilities, gains no new privileges, and is attached only to the isolated worker network, so it cannot reach the public internet.
+- Login targets outside the engagement scope, failed captures, and runtime failures fail closed with stable error codes and persist nothing.
+
 ## [0.0.15] - 2026-08-16
 
 ### Added

@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+## [0.0.16] - 2026-08-17
+
+### 新增
+
+- 新增拋棄式 Playwright 瀏覽器 worker：執行一次表單登入並擷取產生的 storage state。
+- 新增 `BrowserSessionCaptureCoordinator`：對登入目標做範圍檢查、執行瀏覽器 worker，並透過認證工作階段登錄表把擷取到的工作階段落地。
+- 新增共用的 `SessionCaptureEnvelope` 與 `LoginInstruction` 傳輸格式，以及以 Python 3.12＋釘選 Chromium 建置的 `docker/browser` 映像。
+- 新增 Docker-gated 整合測試：登入一個拋棄式的本地表單，確認工作階段 cookie 被擷取。
+
+### 安全性
+
+- 登入憑證只用來建立工作階段；絕不進入落地的素材或稽核軌跡。
+- 只有擷取到的 storage state 會被落地，作為不可竄改的工作階段素材，並僅保留去識別化的 cookie 與 storage key 名稱。
+- 瀏覽器 worker drop 所有 Linux capability、no-new-privileges，且只接上隔離的 worker 網路，因此無法連到公開網際網路。
+- 登入目標超出 engagement 範圍、擷取失敗與 runtime 失敗一律 fail closed、回傳穩定 error code，且不落地任何資料。
+
 ## [0.0.15] - 2026-08-16
 
 ### 新增

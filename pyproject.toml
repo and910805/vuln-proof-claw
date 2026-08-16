@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vuln-proof-claw"
-version = "0.0.15"
+version = "0.0.16"
 description = "Evidence-driven autonomous Web and API security testing platform"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -85,6 +85,10 @@ files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
 
+[[tool.mypy.overrides]]
+module = ["playwright.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
 asyncio_mode = "auto"
@@ -122,4 +126,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["PLR2004"]
+"tests/**/*.py" = ["PLR2004", "S105", "S106", "S107"]

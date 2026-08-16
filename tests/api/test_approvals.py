@@ -17,9 +17,9 @@ from vuln_proof_claw.config.settings import Settings
 from vuln_proof_claw.persistence.base import Base
 from vuln_proof_claw.persistence.session import create_engine
 
-OPERATOR_TOKEN = "operator-token-00000000000000000001"  # noqa: S105 - test credential
-APPROVER_TOKEN = "approver-token-00000000000000000001"  # noqa: S105 - test credential
-EVIDENCE_READER_TOKEN = "evidence-reader-00000000000000000001"  # noqa: S105
+OPERATOR_TOKEN = "operator-token-00000000000000000001"
+APPROVER_TOKEN = "approver-token-00000000000000000001"
+EVIDENCE_READER_TOKEN = "evidence-reader-00000000000000000001"
 OPERATOR_HEADERS = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
 APPROVER_HEADERS = {"Authorization": f"Bearer {APPROVER_TOKEN}"}
 EVIDENCE_READER_HEADERS = {"Authorization": f"Bearer {EVIDENCE_READER_TOKEN}"}
