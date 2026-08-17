@@ -6,6 +6,18 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.7.1] - 2026-08-17
+
+### Added
+
+- Added an opt-in `assessment.allow_private_targets` setting that lets the bounded assessment transport reach private, loopback, or otherwise non-global targets for authorized local testing.
+
+### Security
+
+- The setting defaults to disabled, so the SSRF guard keeps rejecting non-global resolved addresses (`resolved_address_not_public`) unless an operator explicitly enables it.
+- Enabling it relaxes only the public-address requirement; scope, DNS pinning, denied networks, redirect rejection, and byte limits are unchanged.
+- The local Docker Compose profile enables it because it is loopback-bound and intended for local targets; production and library defaults remain fail-closed.
+
 ## [0.7.0] - 2026-08-03
 
 ### Added
