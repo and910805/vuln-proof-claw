@@ -44,6 +44,74 @@ vuln-proof-claw is being built around those requirements:
 - **Fail closed** — unknown actions default to a conservative risk level, invalid
   scope is denied, and unfinished execution paths remain disabled.
 
+## Console tour
+
+The bilingual web console below is a local run against a disposable target
+container. One control switches the whole interface between English and 繁體中文.
+
+**Overview** — projects, live counters, capability status, and the default
+L0–L4 execution guardrails at a glance.
+
+![Overview dashboard](docs/img/overview.png)
+
+**Assess a URL** — one authorized target, a safe automated or discovery-only
+mode, and Safe/Fast/Deep budgets. Authorization is acknowledged before anything
+runs.
+
+![Assess a URL](docs/img/assess.png)
+
+**Result** — action state, finding count, evidence-record count, and evidence
+integrity, followed by CWE-classified findings with their locations and
+remediation. Every finding points back to the evidence that supports it.
+
+![Assessment result](docs/img/result.png)
+
+## How evidence is stored
+
+Every target-facing action records exactly one immutable **evidence record**: the
+raw bytes that were captured plus canonical metadata describing how they were
+captured. Records are linked into a per-engagement **SHA-256 hash chain**, so any
+later change to a byte, a metadata field, or the ordering of records is
+detectable.
+
+```mermaid
+flowchart LR
+    RAW["Raw response bytes"] --> DIG
+    META["Canonical metadata<br/>NFC · sorted keys · UTC"] --> DIG
+    PREV["previous_digest"] --> DIG
+    DIG["SHA-256 digest<br/>domain-separated · length-framed"] --> REC["Evidence record N"]
+    REC -. "digest becomes the next previous_digest" .-> NEXT["Evidence record N+1"]
+```
+
+1. **Canonical metadata.** Before hashing, metadata is serialized
+   deterministically — Unicode NFC normalization, sorted object keys,
+   timezone-aware microsecond UTC timestamps, signed 64-bit integer bounds, and
+   no floating point — so the same logical metadata always yields the same bytes.
+   Committed fields include the evidence, engagement, action, and approval
+   identifiers, tool name and version, normalized parameters, capture time and
+   duration, worker image, environment, scope decision, and media type.
+2. **Domain-separated digest.** The digest hashes a length-prefixed framing of
+   `previous_digest`, the canonical metadata, and the raw bytes, behind a
+   versioned domain separator (`vuln-proof-claw:evidence:v1`). The length
+   prefixes and separator keep the metadata and content regions unambiguous, so
+   no crafted content can imitate a different record.
+3. **Chain linking.** Each record stores the previous record's digest for the
+   same engagement; the first record links to 32 zero bytes. Appends take a row
+   lock on the engagement, so the chain grows serially with a gap-free index.
+4. **Persistence.** PostgreSQL keeps two rows per record: a metadata row
+   (identifiers, tool, digest, previous digest, capture time) and a payload row
+   (engagement, chain index, canonical-metadata bytes, raw bytes, size). Raw
+   payloads are size-capped and are never returned by any public API — reports
+   and disclosure bundles expose metadata and digests only.
+5. **Verification.** Verification recomputes every digest from the stored
+   canonical metadata and raw bytes and re-checks the ordering and links,
+   reporting the first record that fails and why. The offline `verify-bundle`
+   command runs the same check against a downloaded bundle without contacting the
+   API or the target.
+
+The implementation lives in [`src/vuln_proof_claw/evidence/`](src/vuln_proof_claw/evidence)
+(`canonical.py`, `hash_chain.py`, `models.py`, `persistence.py`).
+
 ## Current capabilities
 
 | Area | Current release |

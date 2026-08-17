@@ -48,6 +48,65 @@ vuln-proof-claw 以這些要求作為核心設計：
 - **預設安全失敗**——未知動作採保守風險等級、無效範圍直接拒絕，未完成的執行
   路徑維持停用。
 
+## 介面導覽
+
+以下是雙語 Web 控制台在本機對一次性目標容器執行的畫面；只要一個切換鍵，整個
+介面就會在 English 與繁體中文之間切換。
+
+**總覽**——一眼看見 Project、即時計數、能力狀態，以及預設的 L0–L4 執行安全邊界。
+
+![總覽控制台](docs/img/overview.zh-TW.png)
+
+**網址評估**——單一已授權目標、安全自動或僅 Discovery 模式，以及 Safe／Fast／Deep
+預算；在任何動作開始前，都必須先完成授權聲明。
+
+![網址評估](docs/img/assess.zh-TW.png)
+
+**評估結果**——動作狀態、Finding 數量、Evidence 數量與 Evidence 完整性，接著是
+以 CWE 分類、附上位置與修補建議的 Finding；每一項 Finding 都能回溯到支持它的
+Evidence。
+
+![評估結果](docs/img/result.zh-TW.png)
+
+## Evidence 如何儲存
+
+每個面向目標的動作只會記錄一筆不可變的 **Evidence 紀錄**：擷取到的原始位元組，
+加上描述「如何擷取」的 canonical metadata。這些紀錄會依 Engagement 串成一條
+**SHA-256 hash chain**，因此之後只要有任何一個位元組、metadata 欄位或紀錄順序被
+更動，都可以被偵測出來。
+
+```mermaid
+flowchart LR
+    RAW["原始回應位元組"] --> DIG
+    META["Canonical metadata<br/>NFC · 排序鍵 · UTC"] --> DIG
+    PREV["previous_digest"] --> DIG
+    DIG["SHA-256 digest<br/>domain-separated · 長度框定"] --> REC["Evidence 紀錄 N"]
+    REC -. "digest 成為下一筆的 previous_digest" .-> NEXT["Evidence 紀錄 N+1"]
+```
+
+1. **Canonical metadata。** 雜湊前，metadata 會以決定性方式序列化——Unicode NFC
+   正規化、物件鍵排序、帶時區的微秒級 UTC 時間戳、signed 64-bit 整數範圍、且不允許
+   浮點數——因此相同語意的 metadata 一定產生相同位元組。納入雜湊的欄位包含
+   Evidence／Engagement／Action／Approval 識別碼、工具名稱與版本、正規化參數、
+   擷取時間與耗時、Worker 映像、環境、Scope 判定與 Media type。
+2. **Domain-separated digest。** digest 會在一個帶版本的 domain separator
+   （`vuln-proof-claw:evidence:v1`）之下，對 `previous_digest`、canonical metadata
+   與原始位元組進行「長度前綴框定」後再雜湊。長度前綴與 separator 讓 metadata 與
+   內容區段沒有歧義，任何精心構造的內容都無法冒充成另一筆紀錄。
+3. **鏈結。** 每筆紀錄都會存放同一 Engagement 上一筆紀錄的 digest；第一筆則鏈結到
+   32 個位元組的 0。Append 時會對該 Engagement 取得資料列鎖，因此鏈會依序、無間隙
+   地成長。
+4. **持久化。** PostgreSQL 每筆紀錄存兩列：一列 metadata（識別碼、工具、digest、
+   previous digest、擷取時間），一列 payload（Engagement、chain index、
+   canonical-metadata 位元組、原始位元組、大小）。原始 payload 有大小上限，且任何
+   公開 API 都不會回傳——報告與 Disclosure Bundle 只公開 metadata 與 digest。
+5. **驗證。** 驗證會從儲存的 canonical metadata 與原始位元組重新計算每一個 digest，
+   並重新檢查順序與鏈結，回報第一筆失敗的紀錄與原因。離線的 `verify-bundle` 指令
+   會對下載的 Bundle 執行相同檢查，完全不需連線 API 或目標。
+
+實作位於 [`src/vuln_proof_claw/evidence/`](src/vuln_proof_claw/evidence)
+（`canonical.py`、`hash_chain.py`、`models.py`、`persistence.py`）。
+
 ## 目前具備的能力
 
 | 領域 | 目前版本 |
