@@ -1,0 +1,17 @@
+# Trivy ignore file for the Container security workflow.
+#
+# Each entry is a HIGH/CRITICAL advisory that cannot be resolved by upgrading a
+# first-party dependency and does not affect the runtime security of the image.
+# Keep this list short and justified; remove entries once an upstream fix ships.
+
+# msgpack is vendored inside pip's private `_vendor` tree (pip/_vendor/msgpack)
+# and is used only by pip itself. The application never imports it, and the
+# runtime images do not install packages at run time, so it is not reachable.
+# No published pip release bundles the fixed msgpack (>=1.2.1) yet.
+GHSA-6v7p-g79w-8964
+
+# setuptools PackageIndex path traversal. The application venv ships the fixed
+# setuptools (>=78.1.1); the only remaining match is a transient copy pulled in
+# by the Playwright browser install layer. The vulnerable code path (using
+# setuptools' PackageIndex to download packages) is never invoked at run time.
+CVE-2025-47273
