@@ -36,6 +36,7 @@ from vuln_proof_claw.api.schemas.reports import (
     ReportExportCreate,
     ReportExportList,
     ReportExportSummary,
+    WorkflowStepItem,
 )
 from vuln_proof_claw.assessment.discovery import discover_targets
 from vuln_proof_claw.assessment.openapi import OpenApiDocument, parse_openapi_document
@@ -201,6 +202,7 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
         for action in actions
         if action.action_type == "active_safe_api_read" and action.state == "succeeded"
     )
+    steps = _build_steps(actions, evidence_rows, finding_rows, evidence_ids_by_finding)
     return EngagementReport(
         generated_at=datetime.now(UTC),
         engagement_id=engagement.id,
@@ -215,6 +217,7 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             findings=len(finding_rows),
         ),
         action_states=action_states,
+        steps=tuple(steps),
         evidence_integrity=integrity,
         discovery=DiscoverySummary(
             pages_scanned=len(scanned_targets),
@@ -273,6 +276,43 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
     )
 
 
+def _build_steps(
+    actions: tuple[ActionRecord, ...],
+    evidence_rows: tuple[EvidenceRecord, ...],
+    finding_rows: tuple[FindingRecord, ...],
+    evidence_ids_by_finding: dict[str, tuple[str, ...]],
+) -> tuple[WorkflowStepItem, ...]:
+    """Correlate each action with its captured evidence and evidence-linked findings."""
+    evidence_by_action: dict[str, EvidenceRecord] = {}
+    for row in evidence_rows:
+        evidence_by_action.setdefault(row.action_id, row)
+    action_by_evidence = {row.id: row.action_id for row in evidence_rows}
+    findings_by_action: dict[str, list[FindingRecord]] = {}
+    for finding in finding_rows:
+        for evidence_id in evidence_ids_by_finding.get(finding.id, ()):
+            owning_action = action_by_evidence.get(evidence_id)
+            if owning_action is not None:
+                findings_by_action.setdefault(owning_action, []).append(finding)
+    steps: list[WorkflowStepItem] = []
+    for index, action in enumerate(actions, start=1):
+        captured = evidence_by_action.get(action.id)
+        step_findings = findings_by_action.get(action.id, [])
+        steps.append(
+            WorkflowStepItem(
+                index=index,
+                action_id=action.id,
+                action_type=action.action_type,
+                target=action.normalized_target,
+                state=action.state,
+                evidence_id=captured.id if captured else None,
+                evidence_digest=captured.digest if captured else None,
+                finding_count=len(step_findings),
+                finding_titles=tuple(dict.fromkeys(finding.title for finding in step_findings)),
+            )
+        )
+    return tuple(steps)
+
+
 def _markdown_cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
@@ -307,9 +347,37 @@ def render_markdown(report: EngagementReport) -> str:
         f"- Safe active API probes: {report.api_inventory.active_probes_run}",
         f"- Evidence integrity: {report.evidence_integrity.status}",
         "",
-        "## Findings",
+        "## Execution steps",
         "",
     ]
+    if report.steps:
+        lines.extend(
+            (
+                "| Step | Target | Action | State | Evidence digest | Findings |",
+                "| --- | --- | --- | --- | --- | --- |",
+            )
+        )
+        lines.extend(
+            "| "
+            + " | ".join(
+                _markdown_cell(value)
+                for value in (
+                    step.index,
+                    step.target,
+                    step.action_type,
+                    step.state,
+                    step.evidence_digest or "—",
+                    f"{step.finding_count}: {'; '.join(step.finding_titles)}"
+                    if step.finding_count
+                    else "0",
+                )
+            )
+            + " |"
+            for step in report.steps
+        )
+    else:
+        lines.append("No execution steps have been recorded.")
+    lines.extend(("", "## Findings", ""))
     if report.findings:
         lines.extend(
             (
@@ -378,6 +446,20 @@ def render_html(report: EngagementReport) -> str:
     target_rows = "".join(
         f"<li><code>{escape(item)}</code></li>" for item in report.discovery.scanned_targets
     )
+    step_rows = "".join(
+        "<tr>"
+        f"<td>{step.index}</td><td><code>{escape(step.target)}</code></td>"
+        f"<td>{escape(step.action_type)}</td><td>{escape(step.state)}</td>"
+        f"<td><code>{escape(step.evidence_digest or '—')}</code></td>"
+        f"<td>{step.finding_count}"
+        + (
+            f"<br><small>{escape('; '.join(step.finding_titles))}</small>"
+            if step.finding_titles
+            else ""
+        )
+        + "</td></tr>"
+        for step in report.steps
+    ) or '<tr><td colspan="6">No execution steps recorded.</td></tr>'
     operation_rows = "".join(
         "<tr>"
         f"<td><strong>{escape(item.method)}</strong></td><td><code>{escape(item.path)}</code></td>"
@@ -415,6 +497,9 @@ table {{ display:block; overflow:auto; }} }}
 {report.api_inventory.operations_total}</div>API operations</div>
 <div class="card"><div class="value">
 {report.api_inventory.active_probes_run}</div>Safe active probes</div></section>
+<h2>Execution steps</h2><div class="card"><table><thead><tr><th>#</th><th>Target</th>
+<th>Action</th><th>State</th><th>Evidence digest</th><th>Findings</th></tr></thead>
+<tbody>{step_rows}</tbody></table></div>
 <h2>Findings</h2><div class="card"><table><thead><tr><th>Severity</th>
 <th>Confidence</th><th>Class</th><th>Finding</th><th>Remediation</th></tr></thead>
 <tbody>{finding_rows}</tbody></table></div>

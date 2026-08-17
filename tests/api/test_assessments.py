@@ -124,7 +124,7 @@ async def assessment_client(
         yield client
 
 
-async def test_assessment_creates_evidence_findings_report_and_audit_idempotently(
+async def test_assessment_creates_evidence_findings_report_and_audit_idempotently(  # noqa: PLR0915
     tmp_path: Path,
 ) -> None:
     transport = FakeAssessmentTransport()
@@ -181,6 +181,10 @@ async def test_assessment_creates_evidence_findings_report_and_audit_idempotentl
             f"/api/v1/engagements/{engagement_id}/report",
             headers=OPERATOR_HEADERS,
         )
+        report_md = await client.get(
+            f"/api/v1/engagements/{engagement_id}/report.md",
+            headers=OPERATOR_HEADERS,
+        )
         audit = await client.get(
             f"/api/v1/engagements/{engagement_id}/audit-events",
             headers=OPERATOR_HEADERS,
@@ -223,6 +227,15 @@ async def test_assessment_creates_evidence_findings_report_and_audit_idempotentl
     assert conflict.status_code == 409
     assert len(transport.calls) == 1
     assert report.json()["counts"] == {"actions": 1, "evidence": 1, "findings": 8}
+    steps = report.json()["steps"]
+    assert len(steps) == 1
+    assert steps[0]["index"] == 1
+    assert steps[0]["state"] == "succeeded"
+    assert steps[0]["evidence_id"] == created.json()["evidence_ids"][0]
+    assert steps[0]["evidence_digest"] is not None
+    assert steps[0]["finding_count"] == 8
+    assert "## Execution steps" in report_md.text
+    assert steps[0]["evidence_digest"] in report_md.text
     assert dashboard.json()["execution_available"] is True
     event_types = [item["event_type"] for item in audit.json()["items"]]
     assert event_types[:3] == [

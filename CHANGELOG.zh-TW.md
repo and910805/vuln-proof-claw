@@ -11,6 +11,7 @@
 ### 新增
 
 - 新增可選用的 `assessment.allow_private_targets` 設定，讓有界評估的傳輸層能連到私有、loopback 或其他非全球位址的目標，供已授權的本地測試使用。
+- 在 engagement 報告（JSON、Markdown、HTML）加入逐步執行軌跡：逐一列出每個 action 的目標、狀態、擷取到的證據 digest，以及該證據所支撐的 findings。
 
 ### 安全性
 
