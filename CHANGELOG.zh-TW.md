@@ -6,6 +6,18 @@
 
 ## Unreleased
 
+## [0.7.1] - 2026-08-17
+
+### 新增
+
+- 新增可選用的 `assessment.allow_private_targets` 設定，讓有界評估的傳輸層能連到私有、loopback 或其他非全球位址的目標，供已授權的本地測試使用。
+
+### 安全性
+
+- 此設定預設關閉，因此 SSRF 防護仍會拒絕非全球的解析位址（`resolved_address_not_public`），除非操作員明確開啟。
+- 開啟後只放寬「必須是公開位址」這一項；scope、DNS pinning、拒絕網段、redirect 拒絕與位元組上限都不變。
+- 本地 Docker Compose profile 會開啟它，因為它綁定 loopback、專供本地目標；production 與函式庫預設維持 fail-closed。
+
 ## [0.7.0] - 2026-08-03
 
 ### Added
