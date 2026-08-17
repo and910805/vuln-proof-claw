@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+## [0.1.0] - 2026-08-17
+
+第一個標記版本的 **Evidence Core** 里程碑，整合 `0.0.1`–`0.0.16` 預覽系列。
+
+### 重點
+
+- 持久化 Project、Engagement、正規化 Scope 與 Action 生命週期，並具備不可變、綁定 actor 的稽核軌跡。
+- 具 authentication 的核准流程，核准為單次、於執行時消耗。
+- 不可竄改的 Evidence 雜湊鏈、具完整性狀態的報告，以及不可變的 JSON／Markdown 報告匯出，並有獨立授權的 raw evidence 讀取。
+- 強化且 fail-closed 的拋棄式 worker 平台：持久化 registry、重啟 reconciliation、orphan-runtime janitor，以及會 drop 所有 capability、禁止提權、封鎖對外 egress 的具體 Docker runtime。
+- 真正的範圍檢查 HTTP capture，其證據會透過控制平面落地進不可竄改的雜湊鏈。
+- 將認證工作階段擷取進綁定 engagement 的登錄表的拋棄式 Playwright 瀏覽器 runtime。
+
+### 備註
+
+- target-facing 執行維持預設停用；Docker worker 與瀏覽器 runtime 僅在設定 `docker.runtime_enabled` 時啟用。
+- 每個元件都已對真實 Docker daemon 端到端驗證。
+
 ## [0.0.16] - 2026-08-17
 
 ### 新增

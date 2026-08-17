@@ -6,6 +6,24 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+## [0.1.0] - 2026-08-17
+
+First tagged **Evidence Core** milestone, consolidating the `0.0.1`–`0.0.16` preview series.
+
+### Highlights
+
+- Persisted Projects, Engagements, normalized Scopes, and the Action lifecycle with an immutable, actor-attributed audit trail.
+- Authenticated approval workflow with single-use, execution-time approval consumption.
+- Tamper-evident evidence hash chains, integrity-aware reports, and immutable JSON/Markdown report exports with a separately authorized raw-evidence reader.
+- A hardened, fail-closed disposable-worker platform: durable registry, restart reconciliation, an orphan-runtime janitor, and a concrete Docker runtime that drops all capabilities, forbids new privileges, and blocks internet egress.
+- Real scope-checked HTTP capture whose evidence is persisted through the control plane into the tamper-evident chain.
+- A disposable Playwright browser runtime that captures authentication sessions into the engagement-bound session registry.
+
+### Notes
+
+- Target-facing execution remains disabled by default; the Docker worker and browser runtimes activate only when `docker.runtime_enabled` is set.
+- Every component was verified end to end against a live Docker daemon.
+
 ## [0.0.16] - 2026-08-17
 
 ### Added
