@@ -76,6 +76,22 @@ class ApiInventorySummary(BaseModel):
     operations: tuple[ApiOperationSummary, ...]
 
 
+class WorkflowStepItem(BaseModel):
+    """One executed step: an action, its captured evidence, and its findings."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    index: int
+    action_id: str
+    action_type: str
+    target: str
+    state: str
+    evidence_id: str | None
+    evidence_digest: str | None
+    finding_count: int
+    finding_titles: tuple[str, ...]
+
+
 class ReportCounts(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -103,6 +119,7 @@ class EngagementReport(ReportSchema):
     scope: ScopeDefinition
     counts: ReportCounts
     action_states: dict[str, int]
+    steps: tuple[WorkflowStepItem, ...] = ()
     evidence_integrity: EvidenceIntegrity
     discovery: DiscoverySummary
     api_inventory: ApiInventorySummary

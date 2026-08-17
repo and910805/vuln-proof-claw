@@ -11,6 +11,7 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 ### Added
 
 - Added an opt-in `assessment.allow_private_targets` setting that lets the bounded assessment transport reach private, loopback, or otherwise non-global targets for authorized local testing.
+- Added a per-step execution trail to engagement reports (JSON, Markdown, and HTML): each action is listed with its target, state, captured evidence digest, and the findings that evidence backs.
 
 ### Security
 
