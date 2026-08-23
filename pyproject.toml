@@ -37,7 +37,7 @@ dependencies = [
   # constraints during reflection and batch operations, which doubles their
   # prefixes (ck_t_ck_t_x) and breaks autogenerate checks and batch drops.
   # Cap below it until a fixed release lands.
-  "alembic>=1.16,<1.19",
+  "alembic>=1.16,<1.20",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "psycopg[binary]>=3.2,<4",
