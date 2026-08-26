@@ -141,10 +141,20 @@ def _safe_member_name(name: str) -> bool:
     path = PurePosixPath(name)
     return (
         bool(name)
+        # Keep: live on POSIX, where a backslash is an ordinary filename character and
+        # zipfile does not touch it. On Windows this clause never fires because
+        # ZipInfo.__init__ rewrites os.sep to "/", so a stored "a\b.txt" arrives as
+        # "a/b.txt". Deleting it because Windows coverage shows it dead would be a real
+        # regression for Linux reviewers verifying a bundle.
         and "\\" not in name
         and not path.is_absolute()
         and not name.endswith("/")
+        and bool(path.parts)
         and ":" not in path.parts[0]
+        # Keep the set complete. Only ".." can fire today: pathlib collapses single "."
+        # components and never yields an empty one. That is an implementation detail of
+        # pathlib, not a guarantee of this module, and the cost of stating all three
+        # unsafe components outright is nil.
         and all(part not in {"", ".", ".."} for part in path.parts)
     )
 
@@ -156,6 +166,17 @@ def _valid_sha256(value: object) -> bool:
         and all(character in string.hexdigits for character in value)
         and value == value.lower()
     )
+
+
+def _valid_size(value: object, length: int) -> bool:
+    """Return whether a manifest-declared size is an int equal to ``length``.
+
+    The declared size comes from attacker-controlled JSON, so the type is checked before
+    the value. ``bool`` is an ``int`` subclass and ``True == 1``, and ``1.0 == 1``, so a
+    bare ``!=`` comparison lets ``"size": true`` or ``"size": 1.0`` stand in for a real
+    byte count.
+    """
+    return isinstance(value, int) and not isinstance(value, bool) and value == length
 
 
 def _manifest_file_map(manifest: dict[str, Any], errors: list[str]) -> dict[str, dict[str, Any]]:
@@ -259,10 +280,14 @@ def _verify_open_archive(
         errors.append("archive_members_do_not_match_manifest")
     files_checked = 0
     for name, entry in file_map.items():
+        # Keep the _safe_member_name re-check: _validate_archive_members already returned
+        # early on any unsafe name, so it cannot fire here today. It guards the one place
+        # that turns a manifest-supplied name into a read, and is deliberately not relying
+        # on a caller two frames up having bailed out first.
         if name not in names or not _safe_member_name(name):
             continue
         content = archive.read(name)
-        if entry.get("size") != len(content):
+        if not _valid_size(entry.get("size"), len(content)):
             errors.append(f"size_mismatch:{name}")
         if entry.get("sha256") != _sha256(content):
             errors.append(f"digest_mismatch:{name}")
