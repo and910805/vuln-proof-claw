@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -94,6 +95,9 @@ class TaskRecord(Base):
     flow_id: Mapped[str] = mapped_column(ForeignKey("flows.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    state: Mapped[str] = mapped_column(String(32), nullable=False, server_default="planned")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
 
 class ApprovalRecord(Base):
@@ -297,6 +301,12 @@ finding_evidence = Table(
         primary_key=True,
     ),
     Column(
+        "role",
+        String(16),
+        nullable=False,
+        server_default="payload",
+    ),
+    Column(
         "evidence_id",
         String(ID_LENGTH),
         ForeignKey("evidence.id", ondelete="RESTRICT"),
@@ -316,6 +326,10 @@ class FindingRecord(Base):
     title: Mapped[str] = mapped_column(String(500))
     vulnerability_class: Mapped[str] = mapped_column(String(255))
     affected_target: Mapped[str] = mapped_column(Text)
+    cwe_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verification_method: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="observed"
+    )
     status: Mapped[str] = mapped_column(String(32), index=True)
     severity: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="informational"
@@ -329,6 +343,37 @@ class FindingRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class UsageSampleRecord(Base):
+    __tablename__ = "usage_samples"
+    __table_args__ = (
+        Index("ix_usage_samples_engagement_recorded", "engagement_id", "recorded_at"),
+        CheckConstraint("quantity >= 0", name="quantity"),
+        CheckConstraint("input_tokens >= 0", name="input_tokens"),
+        CheckConstraint("output_tokens >= 0", name="output_tokens"),
+        CheckConstraint("cost_micros >= 0", name="cost_micros"),
+        CheckConstraint("wall_milliseconds >= 0", name="wall_milliseconds"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"),
+        index=True,
+    )
+    action_id: Mapped[str | None] = mapped_column(
+        ForeignKey("actions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_micros: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    wall_milliseconds: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    engine: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
 
 
 class AuditEventRecord(Base):

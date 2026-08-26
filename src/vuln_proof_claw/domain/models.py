@@ -14,6 +14,9 @@ from vuln_proof_claw.domain.enums import (
     FindingStatus,
     ReportFormat,
     RiskLevel,
+    TaskState,
+    UsageKind,
+    VerificationMethod,
     WorkerState,
 )
 from vuln_proof_claw.domain.errors import DomainValidationError
@@ -29,6 +32,7 @@ from vuln_proof_claw.domain.identifiers import (
     ProjectId,
     ReportExportId,
     TaskId,
+    UsageSampleId,
     WorkerId,
     new_action_id,
     new_approval_id,
@@ -41,10 +45,12 @@ from vuln_proof_claw.domain.identifiers import (
     new_project_id,
     new_report_export_id,
     new_task_id,
+    new_usage_sample_id,
     new_worker_id,
 )
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+_MAX_CWE_DIGITS = 5
 
 
 def utc_now() -> datetime:
@@ -65,6 +71,13 @@ def _require_aware(value: datetime, field_name: str) -> None:
 def _require_sha256(value: str, field_name: str) -> None:
     if not _SHA256_PATTERN.fullmatch(value):
         raise DomainValidationError(f"{field_name} must be a lowercase SHA-256 digest")
+
+
+def _require_cwe(value: str) -> None:
+    prefix, separator, number = value.partition("-")
+    numbered = number.isdigit() and 1 <= len(number) <= _MAX_CWE_DIGITS
+    if not (prefix == "CWE" and separator and numbered):
+        raise DomainValidationError("cwe_id must look like CWE-79")
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,16 +135,28 @@ class Flow:
 
 @dataclass(frozen=True, slots=True)
 class Task:
-    """A planned unit of work within a flow."""
+    """A planned unit of work within a flow, carrying its own progress.
+
+    A plan is only useful for resuming a run if each step records where it got
+    to. Without a state a killed run cannot be told apart from one that never
+    started, and work already completed has to be repeated.
+    """
 
     flow_id: FlowId
     title: str
+    sequence: int = 0
+    state: TaskState = TaskState.PLANNED
+    attempts: int = 0
     id: TaskId = field(default_factory=new_task_id)
     created_at: datetime = field(default_factory=utc_now)
 
     def __post_init__(self) -> None:
         _require_text(self.title, "title")
         _require_aware(self.created_at, "created_at")
+        if self.sequence < 0:
+            raise DomainValidationError("sequence must not be negative")
+        if self.attempts < 0:
+            raise DomainValidationError("attempts must not be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,6 +344,9 @@ class Finding:
     vulnerability_class: str
     affected_target: str
     evidence_ids: tuple[EvidenceId, ...] = ()
+    control_evidence_ids: tuple[EvidenceId, ...] = ()
+    verification_method: VerificationMethod = VerificationMethod.OBSERVED
+    cwe_id: str | None = None
     status: FindingStatus = FindingStatus.CANDIDATE
     severity: FindingSeverity = FindingSeverity.INFORMATIONAL
     confidence: FindingConfidence = FindingConfidence.MEDIUM
@@ -332,8 +360,63 @@ class Finding:
         _require_text(self.affected_target, "affected_target")
         _require_text(self.remediation, "remediation")
         _require_aware(self.created_at, "created_at")
+        if self.cwe_id is not None:
+            _require_cwe(self.cwe_id)
+        if set(self.evidence_ids) & set(self.control_evidence_ids):
+            raise DomainValidationError("one evidence record cannot be both payload and control")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")
+
+    @property
+    def dedupe_key(self) -> str:
+        """Return a stable key for collapsing repeats of the same finding.
+
+        Repeated runs of the same target report the same vulnerability more
+        than once. Grouping on this key keeps one vulnerability from being
+        counted as several hits.
+        """
+        return "|".join(
+            (
+                (self.cwe_id or "").upper(),
+                self.vulnerability_class.strip().lower(),
+                self.affected_target.strip().lower().rstrip("/"),
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class UsageSample:
+    """One point on the cost and effort timeline of an engagement.
+
+    Counts are kept apart on purpose. Conversation threads, tool invocations
+    and commands actually issued at the target are different numbers, and a
+    report that mixes them misstates how much work was done.
+    """
+
+    engagement_id: EngagementId
+    kind: UsageKind
+    recorded_at: datetime = field(default_factory=utc_now)
+    action_id: ActionId | None = None
+    quantity: int = 1
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_micros: int = 0
+    wall_milliseconds: int = 0
+    engine: str = ""
+    model: str = ""
+    id: UsageSampleId = field(default_factory=new_usage_sample_id)
+
+    def __post_init__(self) -> None:
+        _require_aware(self.recorded_at, "recorded_at")
+        for name in (
+            "quantity",
+            "input_tokens",
+            "output_tokens",
+            "cost_micros",
+            "wall_milliseconds",
+        ):
+            if getattr(self, name) < 0:
+                raise DomainValidationError(f"{name} must not be negative")
 
 
 @dataclass(frozen=True, slots=True)

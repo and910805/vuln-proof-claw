@@ -16,6 +16,9 @@ from vuln_proof_claw.domain.enums import (
     FindingStatus,
     ReportFormat,
     RiskLevel,
+    TaskState,
+    UsageKind,
+    VerificationMethod,
     WorkerState,
 )
 from vuln_proof_claw.domain.identifiers import (
@@ -30,6 +33,7 @@ from vuln_proof_claw.domain.identifiers import (
     ProjectId,
     ReportExportId,
     TaskId,
+    UsageSampleId,
     WorkerId,
 )
 from vuln_proof_claw.domain.models import (
@@ -44,6 +48,7 @@ from vuln_proof_claw.domain.models import (
     Project,
     ReportExport,
     Task,
+    UsageSample,
     WorkerExecution,
 )
 from vuln_proof_claw.persistence.models import (
@@ -59,6 +64,7 @@ from vuln_proof_claw.persistence.models import (
     ProjectRecord,
     ReportExportRecord,
     TaskRecord,
+    UsageSampleRecord,
     WorkerExecutionRecord,
     finding_evidence,
 )
@@ -283,6 +289,10 @@ class FlowRepository:
         )
 
 
+_PAYLOAD_ROLE = "payload"
+_CONTROL_ROLE = "control"
+
+
 class TaskRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -294,6 +304,9 @@ class TaskRepository:
                 flow_id=task.flow_id,
                 title=task.title,
                 created_at=task.created_at,
+                sequence=task.sequence,
+                state=task.state.value,
+                attempts=task.attempts,
             )
         )
         self._session.flush()
@@ -307,6 +320,9 @@ class TaskRepository:
             flow_id=FlowId(row.flow_id),
             title=row.title,
             created_at=_utc(row.created_at),
+            sequence=row.sequence,
+            state=TaskState(row.state),
+            attempts=row.attempts,
         )
 
     def list_for_flow(
@@ -329,9 +345,41 @@ class TaskRepository:
                 flow_id=FlowId(row.flow_id),
                 title=row.title,
                 created_at=_utc(row.created_at),
+                sequence=row.sequence,
+                state=TaskState(row.state),
+                attempts=row.attempts,
             )
             for row in rows
         )
+
+    def plan_for_flow(self, flow_id: FlowId) -> tuple[Task, ...]:
+        """Return the whole plan in execution order, for resuming a run."""
+        rows = self._session.scalars(
+            select(TaskRecord)
+            .where(TaskRecord.flow_id == flow_id)
+            .order_by(TaskRecord.sequence.asc(), TaskRecord.created_at.asc(), TaskRecord.id.asc())
+        )
+        return tuple(
+            Task(
+                id=TaskId(row.id),
+                flow_id=FlowId(row.flow_id),
+                title=row.title,
+                created_at=_utc(row.created_at),
+                sequence=row.sequence,
+                state=TaskState(row.state),
+                attempts=row.attempts,
+            )
+            for row in rows
+        )
+
+    def save_state(self, task: Task) -> None:
+        """Persist a task's progress so an interrupted run can be resumed."""
+        row = self._session.get(TaskRecord, task.id)
+        if row is None:
+            raise KeyError(task.id)
+        row.state = task.state.value
+        row.attempts = task.attempts
+        self._session.flush()
 
 
 class ApprovalRepository:
@@ -756,6 +804,8 @@ class FindingRepository:
                 title=finding.title,
                 vulnerability_class=finding.vulnerability_class,
                 affected_target=finding.affected_target,
+                cwe_id=finding.cwe_id,
+                verification_method=finding.verification_method.value,
                 status=finding.status.value,
                 severity=finding.severity.value,
                 confidence=finding.confidence.value,
@@ -764,27 +814,40 @@ class FindingRepository:
             )
         )
         self._session.flush()
-        if finding.evidence_ids:
-            self._session.execute(
-                insert(finding_evidence),
-                [
-                    {"finding_id": finding.id, "evidence_id": evidence_id}
-                    for evidence_id in finding.evidence_ids
-                ],
+        self._insert_links(finding.id, finding.evidence_ids, _PAYLOAD_ROLE)
+        self._insert_links(finding.id, finding.control_evidence_ids, _CONTROL_ROLE)
+
+    def _insert_links(
+        self,
+        finding_id: FindingId,
+        evidence_ids: tuple[EvidenceId, ...],
+        role: str,
+    ) -> None:
+        if not evidence_ids:
+            return
+        self._session.execute(
+            insert(finding_evidence),
+            [
+                {"finding_id": finding_id, "evidence_id": evidence_id, "role": role}
+                for evidence_id in evidence_ids
+            ],
+        )
+
+    def _linked(self, finding_id: FindingId, role: str) -> tuple[EvidenceId, ...]:
+        return tuple(
+            EvidenceId(value)
+            for value in self._session.scalars(
+                select(finding_evidence.c.evidence_id).where(
+                    finding_evidence.c.finding_id == finding_id,
+                    finding_evidence.c.role == role,
+                )
             )
+        )
 
     def get(self, finding_id: FindingId) -> Stored[Finding] | None:
         row = self._session.get(FindingRecord, finding_id)
         if row is None:
             return None
-        evidence_ids = tuple(
-            EvidenceId(value)
-            for value in self._session.scalars(
-                select(finding_evidence.c.evidence_id).where(
-                    finding_evidence.c.finding_id == finding_id
-                )
-            )
-        )
         return Stored(
             Finding(
                 id=FindingId(row.id),
@@ -792,7 +855,10 @@ class FindingRepository:
                 title=row.title,
                 vulnerability_class=row.vulnerability_class,
                 affected_target=row.affected_target,
-                evidence_ids=evidence_ids,
+                cwe_id=row.cwe_id,
+                verification_method=VerificationMethod(row.verification_method),
+                evidence_ids=self._linked(finding_id, _PAYLOAD_ROLE),
+                control_evidence_ids=self._linked(finding_id, _CONTROL_ROLE),
                 status=FindingStatus(row.status),
                 severity=FindingSeverity(row.severity),
                 confidence=FindingConfidence(row.confidence),
@@ -802,15 +868,24 @@ class FindingRepository:
             row.version,
         )
 
-    def replace_evidence(self, finding_id: FindingId, evidence_ids: tuple[EvidenceId, ...]) -> None:
+    def replace_evidence(
+        self,
+        finding_id: FindingId,
+        evidence_ids: tuple[EvidenceId, ...],
+        *,
+        role: str = _PAYLOAD_ROLE,
+    ) -> None:
         self._session.execute(
-            delete(finding_evidence).where(finding_evidence.c.finding_id == finding_id)
+            delete(finding_evidence).where(
+                finding_evidence.c.finding_id == finding_id,
+                finding_evidence.c.role == role,
+            )
         )
         if evidence_ids:
             self._session.execute(
                 insert(finding_evidence),
                 [
-                    {"finding_id": finding_id, "evidence_id": evidence_id}
+                    {"finding_id": finding_id, "evidence_id": evidence_id, "role": role}
                     for evidence_id in evidence_ids
                 ],
             )
@@ -880,3 +955,65 @@ class AuditEventRepository:
             )
             for row in rows
         )
+
+class UsageSampleRepository:
+    """Append-only cost and effort timeline for an engagement."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, sample: UsageSample) -> None:
+        self._session.add(
+            UsageSampleRecord(
+                id=sample.id,
+                engagement_id=sample.engagement_id,
+                action_id=sample.action_id,
+                kind=sample.kind.value,
+                recorded_at=sample.recorded_at,
+                quantity=sample.quantity,
+                input_tokens=sample.input_tokens,
+                output_tokens=sample.output_tokens,
+                cost_micros=sample.cost_micros,
+                wall_milliseconds=sample.wall_milliseconds,
+                engine=sample.engine,
+                model=sample.model,
+            )
+        )
+        self._session.flush()
+
+    def timeline(self, engagement_id: EngagementId) -> tuple[UsageSample, ...]:
+        """Return every sample in recording order, so cost can be read over time."""
+        rows = self._session.scalars(
+            select(UsageSampleRecord)
+            .where(UsageSampleRecord.engagement_id == engagement_id)
+            .order_by(UsageSampleRecord.recorded_at.asc(), UsageSampleRecord.id.asc())
+        )
+        return tuple(
+            UsageSample(
+                id=UsageSampleId(row.id),
+                engagement_id=EngagementId(row.engagement_id),
+                action_id=ActionId(row.action_id) if row.action_id else None,
+                kind=UsageKind(row.kind),
+                recorded_at=_utc(row.recorded_at),
+                quantity=row.quantity,
+                input_tokens=row.input_tokens,
+                output_tokens=row.output_tokens,
+                cost_micros=row.cost_micros,
+                wall_milliseconds=row.wall_milliseconds,
+                engine=row.engine,
+                model=row.model,
+            )
+            for row in rows
+        )
+
+    def totals(self, engagement_id: EngagementId) -> dict[str, int]:
+        """Return per-kind counts kept apart, plus token and cost totals."""
+        samples = self.timeline(engagement_id)
+        totals = {kind.value: 0 for kind in UsageKind}
+        for sample in samples:
+            totals[sample.kind.value] += sample.quantity
+        totals["input_tokens"] = sum(sample.input_tokens for sample in samples)
+        totals["output_tokens"] = sum(sample.output_tokens for sample in samples)
+        totals["cost_micros"] = sum(sample.cost_micros for sample in samples)
+        totals["wall_milliseconds"] = sum(sample.wall_milliseconds for sample in samples)
+        return totals

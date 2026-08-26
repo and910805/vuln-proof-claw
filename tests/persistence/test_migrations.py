@@ -27,6 +27,7 @@ EXPECTED_TABLES = {
     "projects",
     "report_exports",
     "tasks",
+    "usage_samples",
     "worker_executions",
 }
 

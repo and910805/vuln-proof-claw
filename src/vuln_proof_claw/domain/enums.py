@@ -90,9 +90,16 @@ class ArtifactKind(StrEnum):
     SCREENSHOT = "screenshot"
     HTTP_ARCHIVE = "http_archive"
     PROOF_OF_CONCEPT = "proof_of_concept"
+    BASELINE = "baseline"
+    NEGATIVE_CONTROL = "negative_control"
     DOWNLOAD = "download"
     REPORT = "report"
     OTHER = "other"
+
+    @property
+    def is_control(self) -> bool:
+        """Return whether this artifact acts as a comparison for a payload result."""
+        return self in {ArtifactKind.BASELINE, ArtifactKind.NEGATIVE_CONTROL}
 
 
 class ReportFormat(StrEnum):
@@ -101,3 +108,47 @@ class ReportFormat(StrEnum):
     JSON = "json"
     MARKDOWN = "markdown"
     SARIF = "sarif"
+
+
+class TaskState(StrEnum):
+    """Progress of one planned unit of work, so a run can be resumed."""
+
+    PLANNED = "planned"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ABANDONED = "abandoned"
+
+    @property
+    def terminal(self) -> bool:
+        """Return whether no further work will be done on this task."""
+        return self in {TaskState.COMPLETED, TaskState.ABANDONED}
+
+    @property
+    def resumable(self) -> bool:
+        """Return whether a fresh worker may pick this task up again."""
+        return self in {TaskState.PLANNED, TaskState.RUNNING, TaskState.FAILED}
+
+
+class VerificationMethod(StrEnum):
+    """How a finding was established."""
+
+    OBSERVED = "observed"
+    DIFFERENTIAL = "differential"
+
+
+class EffortLevel(StrEnum):
+    """Reasoning effort requested for the agent driving an action."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+
+
+class UsageKind(StrEnum):
+    """Countable units that must never be conflated in a report."""
+
+    LLM_CALL = "llm_call"
+    TOOL_INVOCATION = "tool_invocation"
+    TARGET_COMMAND = "target_command"

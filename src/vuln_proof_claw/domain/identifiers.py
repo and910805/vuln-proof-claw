@@ -58,6 +58,7 @@ ApprovalId = NewType("ApprovalId", str)
 FindingId = NewType("FindingId", str)
 AuditEventId = NewType("AuditEventId", str)
 WorkerId = NewType("WorkerId", str)
+UsageSampleId = NewType("UsageSampleId", str)
 
 
 def uuid7(*, timestamp_ms: int | None = None) -> UUID:
@@ -99,6 +100,10 @@ def new_flow_id() -> FlowId:
 
 def new_task_id() -> TaskId:
     return TaskId(new_identifier())
+
+
+def new_usage_sample_id() -> UsageSampleId:
+    return UsageSampleId(new_identifier())
 
 
 def new_action_id() -> ActionId:
