@@ -170,6 +170,7 @@ class ActionWorkerCoordinator:
         handle = await self._manager.status(worker_id)
         if response is None or handle is None:
             raise WorkerLifecycleError("worker_terminal_response_missing")
+        self._verify_response(response, stored_execution.entity)
         self._save_execution(stored_execution, handle, at=timestamp)
         stored_action = ActionRepository(self._session).get(stored_execution.entity.action_id)
         if stored_action is None or stored_action.entity.state is not ActionState.RUNNING:
@@ -323,6 +324,22 @@ class ActionWorkerCoordinator:
         if scope is None:
             raise WorkerLifecycleError("scope_not_found")
         return scope
+
+    @staticmethod
+    def _verify_response(response: WorkerResponse, execution: WorkerExecution) -> None:
+        """Refuse a terminal reply whose identity the durable registry never authorized.
+
+        Every later decision reads an identity field off the response: the evidence
+        binding check compares against ``response.action_id`` and both audit events are
+        written under ``response.engagement_id``. An unbound reply therefore closes the
+        registry's Action as succeeded while its evidence and audit trail land elsewhere.
+        """
+        if (
+            response.request_id != execution.request_id
+            or response.engagement_id != execution.engagement_id
+            or response.action_id != execution.action_id
+        ):
+            raise WorkerLifecycleError("worker_response_registry_binding_mismatch")
 
     def _evidence_belongs_to_action(self, response: WorkerResponse) -> bool:
         repository = EvidenceRepository(self._session)

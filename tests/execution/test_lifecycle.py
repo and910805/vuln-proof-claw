@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 from collections.abc import Generator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -13,7 +14,17 @@ import pytest
 from sqlalchemy import Engine
 
 from vuln_proof_claw.domain.enums import ActionState, RiskLevel, WorkerState
-from vuln_proof_claw.domain.identifiers import EvidenceId, WorkerId, new_action_id
+from vuln_proof_claw.domain.errors import DomainValidationError
+from vuln_proof_claw.domain.identifiers import (
+    ActionId,
+    EngagementId,
+    EvidenceId,
+    WorkerId,
+    new_action_id,
+    new_approval_id,
+    new_engagement_id,
+    new_worker_id,
+)
 from vuln_proof_claw.domain.models import (
     Action,
     Engagement,
@@ -30,6 +41,8 @@ from vuln_proof_claw.execution.manager import (
     DisabledWorkerManager,
     LifecycleWorkerManager,
     RuntimeResource,
+    WorkerHandle,
+    WorkerManagerError,
 )
 from vuln_proof_claw.execution.protocol import (
     WorkerHttpAction,
@@ -41,6 +54,7 @@ from vuln_proof_claw.execution.protocol import (
     WorkerScope,
 )
 from vuln_proof_claw.persistence.base import Base
+from vuln_proof_claw.persistence.models import EngagementScopeRecord
 from vuln_proof_claw.persistence.repositories import (
     ActionRepository,
     AuditEventRepository,
@@ -521,3 +535,685 @@ def _capture_response(
         http_captures=(inline,),
         exit_code=0,
     )
+
+
+class AnonymousRuntime(FakeRuntime):
+    """A runtime that reports no immutable identity for its worker image."""
+
+    identity = ""
+
+
+class UndestroyableRuntime(FakeRuntime):
+    """A runtime whose disposal fails, so the worker cannot be proven destroyed."""
+
+    async def destroy(self, reference: str) -> None:
+        assert reference == "runtime-1"
+        self.calls.append("destroy")
+        raise RuntimeError("private runtime detail")
+
+
+class ScriptedWorkerManager:
+    """A WorkerManager whose every reply is dictated by the test.
+
+    The coordinator must never trust its manager, so this stands in for any other
+    WorkerManager implementation - or a tampered worker channel - that reports a
+    handle or a response the durable registry never authorized.
+    """
+
+    runtime_identity = "scripted-runtime@sha256:lifecycle"
+
+    def __init__(self, request_id: str) -> None:
+        self.handle = WorkerHandle(
+            worker_id=new_worker_id(),
+            request_id=request_id,
+            state=WorkerState.STARTING,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        self.status_handle: WorkerHandle | None = None
+        self.response: WorkerResponse | None = None
+        self.start_error: WorkerManagerError | None = None
+        self.calls: list[str] = []
+
+    async def submit(self, request: WorkerRequest) -> WorkerHandle:
+        del request
+        self.calls.append("submit")
+        return self.handle
+
+    async def start(self, worker_id: str) -> WorkerHandle:
+        del worker_id
+        self.calls.append("start")
+        if self.start_error is not None:
+            raise self.start_error
+        running = replace(self.handle, state=WorkerState.RUNNING)
+        self.status_handle = running
+        return running
+
+    async def status(self, worker_id: str) -> WorkerHandle | None:
+        del worker_id
+        self.calls.append("status")
+        return self.status_handle
+
+    async def cancel(self, worker_id: str) -> WorkerHandle:
+        del worker_id
+        self.calls.append("cancel")
+        return replace(self.handle, state=WorkerState.CANCELLED, cleaned_up=True)
+
+    async def collect(self, worker_id: str) -> WorkerResponse | None:
+        del worker_id
+        self.calls.append("collect")
+        return self.response
+
+
+def _in_flight_execution(
+    worker_request: WorkerRequest,
+    *,
+    request_id: str | None = None,
+    action_id: ActionId | None = None,
+    state: WorkerState = WorkerState.RUNNING,
+) -> WorkerExecution:
+    return WorkerExecution(
+        request_id=request_id or worker_request.request_id,
+        engagement_id=worker_request.engagement_id,
+        action_id=action_id or worker_request.action_id,
+        runtime_identity="previous-runtime@sha256:test",
+        state=state,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def _payloads_for(
+    engine: Engine,
+    engagement_id: EngagementId,
+    event_type: str,
+) -> list[dict[str, object]]:
+    session_factory = create_session_factory(engine)
+    with session_factory() as session:
+        events = AuditEventRepository(session).list_for_engagement(engagement_id)
+    return [json.loads(event.payload) for event in events if event.event_type == event_type]
+
+
+async def test_start_is_refused_when_the_action_is_not_persisted(engine: Engine) -> None:
+    _engagement, _action, worker_request = seed_action(engine)
+    orphan = worker_request.model_copy(update={"action_id": new_action_id()})
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        with pytest.raises(WorkerLifecycleError, match="action_not_found"):
+            await coordinator.start(orphan, actor="operator:test", at=NOW)
+    assert runtime.calls == []
+
+
+async def test_start_is_refused_once_the_action_has_left_the_queue(engine: Engine) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: NOW),
+        )
+        await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        with pytest.raises(WorkerLifecycleError, match="action_not_queued"):
+            await coordinator.start(worker_request, actor="operator:test", at=NOW)
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+    assert stored is not None
+    assert stored.entity.state is ActionState.RUNNING
+    assert runtime.calls == ["create", "start"]
+
+
+async def test_a_second_worker_cannot_be_registered_for_one_action(engine: Engine) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        WorkerExecutionRepository(session).add(
+            _in_flight_execution(worker_request, request_id="worker-request-earlier")
+        )
+
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        with pytest.raises(WorkerLifecycleError, match="worker_execution_already_registered"):
+            await coordinator.start(worker_request, actor="operator:test", at=NOW)
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+    assert stored is not None
+    assert stored.entity.state is ActionState.QUEUED
+    assert runtime.calls == []
+
+
+async def test_a_replayed_request_id_cannot_start_a_second_worker(engine: Engine) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    sibling = replace(action, id=new_action_id(), idempotency_key="lifecycle-2")
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        ActionRepository(session).add(sibling)
+        WorkerExecutionRepository(session).add(
+            _in_flight_execution(worker_request, action_id=sibling.id)
+        )
+
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        with pytest.raises(WorkerLifecycleError, match="worker_request_already_registered"):
+            await coordinator.start(worker_request, actor="operator:test", at=NOW)
+    assert runtime.calls == []
+
+
+async def test_a_worker_is_destroyed_when_its_registry_row_cannot_be_written(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = AnonymousRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: NOW),
+        )
+        with pytest.raises(DomainValidationError, match="runtime_identity"):
+            await coordinator.start(worker_request, actor="operator:test", at=NOW)
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        binding = WorkerExecutionRepository(session).get_for_action(action.id)
+        events = AuditEventRepository(session).list_for_engagement(action.engagement_id)
+    assert runtime.calls == ["create", "cancel", "destroy"]
+    assert binding is None
+    assert stored is not None
+    assert stored.entity.state is ActionState.QUEUED
+    assert events == ()
+
+
+async def test_a_worker_is_destroyed_when_the_running_transition_is_refused(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    before_creation = NOW - timedelta(minutes=30)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: before_creation),
+        )
+        with pytest.raises(DomainValidationError, match="started_at"):
+            await coordinator.start(worker_request, actor="operator:test", at=before_creation)
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        binding = WorkerExecutionRepository(session).get_for_action(action.id)
+        event_types = {
+            event.event_type
+            for event in AuditEventRepository(session).list_for_engagement(action.engagement_id)
+        }
+    assert runtime.calls == ["create", "cancel", "destroy"]
+    assert stored is not None
+    assert stored.entity.state is ActionState.QUEUED
+    assert binding is not None
+    assert binding.entity.state is WorkerState.CANCELLED
+    assert binding.entity.cleaned_up
+    assert event_types == {"worker.created", "worker.destroyed"}
+
+
+async def test_start_refuses_when_a_failed_worker_cannot_be_accounted_for(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    manager = ScriptedWorkerManager(worker_request.request_id)
+    manager.start_error = WorkerManagerError("worker_start_failed")
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, manager)
+        with pytest.raises(WorkerLifecycleError, match="worker_start_failed"):
+            await coordinator.start(worker_request, actor="operator:test", at=NOW)
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        event_types = {
+            event.event_type
+            for event in AuditEventRepository(session).list_for_engagement(action.engagement_id)
+        }
+    assert stored is not None
+    assert stored.entity.state is ActionState.WORKER_LOST
+    assert "worker.start_failed" in event_types
+    assert "worker.destroyed" not in event_types
+
+
+async def test_collect_is_refused_for_a_worker_with_no_registry_binding(engine: Engine) -> None:
+    seed_action(engine)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, DisabledWorkerManager())
+        with pytest.raises(WorkerLifecycleError, match="worker_action_binding_not_found"):
+            await coordinator.collect("wrk_never_registered", at=NOW)
+
+
+async def test_collect_refuses_when_the_manager_cannot_reattach_the_worker(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    execution = _in_flight_execution(worker_request)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        WorkerExecutionRepository(session).add(execution)
+
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, DisabledWorkerManager())
+        with pytest.raises(WorkerLifecycleError, match="worker_terminal_response_missing"):
+            await coordinator.collect(execution.id, at=NOW + timedelta(minutes=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        binding = WorkerExecutionRepository(session).get(execution.id)
+    assert stored is not None
+    assert stored.entity.state is ActionState.QUEUED
+    assert binding is not None
+    assert binding.entity.state is WorkerState.RUNNING
+
+
+async def test_a_late_response_cannot_reopen_an_already_closed_action(engine: Engine) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: NOW),
+        )
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        await coordinator.cancel(handle.worker_id, actor="operator:test", at=NOW)
+        with pytest.raises(WorkerLifecycleError, match="action_not_running"):
+            await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        event_types = {
+            event.event_type
+            for event in AuditEventRepository(session).list_for_engagement(action.engagement_id)
+        }
+    assert stored is not None
+    assert stored.entity.state is ActionState.CANCELLED
+    assert "worker.collected" not in event_types
+
+
+async def test_cancel_is_refused_for_a_worker_with_no_registry_binding(engine: Engine) -> None:
+    seed_action(engine)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, DisabledWorkerManager())
+        with pytest.raises(WorkerLifecycleError, match="worker_action_binding_not_found"):
+            await coordinator.cancel("wrk_never_registered", actor="operator:test", at=NOW)
+
+
+async def test_cancel_cannot_close_an_action_a_second_time(engine: Engine) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: NOW),
+        )
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        await coordinator.cancel(handle.worker_id, actor="operator:test", at=NOW)
+        with pytest.raises(WorkerLifecycleError, match="action_not_running"):
+            await coordinator.cancel(handle.worker_id, actor="operator:test", at=NOW)
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        cancelled_events = [
+            event
+            for event in AuditEventRepository(session).list_for_engagement(action.engagement_id)
+            if event.event_type == "worker.cancelled"
+        ]
+    assert stored is not None
+    assert stored.entity.state is ActionState.CANCELLED
+    assert len(cancelled_events) == 1
+    assert runtime.calls == ["create", "start", "cancel", "destroy"]
+
+
+def test_reconciliation_marks_a_worker_lost_when_its_action_row_is_gone(engine: Engine) -> None:
+    engagement, _action, worker_request = seed_action(engine)
+    execution = _in_flight_execution(
+        worker_request,
+        request_id="worker-request-orphan",
+        action_id=new_action_id(),
+    )
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        WorkerExecutionRepository(session).add(execution)
+
+    with session_factory.begin() as session:
+        reconciled = ActionWorkerCoordinator(
+            session,
+            DisabledWorkerManager(),
+        ).reconcile_after_restart(at=NOW + timedelta(minutes=1))
+
+    assert len(reconciled) == 1
+    assert reconciled[0].state is WorkerState.LOST
+    assert reconciled[0].error_code == "worker_recovery_unavailable"
+    payloads = _payloads_for(engine, engagement.id, "worker.reconciled_lost")
+    assert len(payloads) == 1
+    assert payloads[0]["action_state"] == "missing"
+
+
+def test_reconciliation_does_not_reopen_an_already_terminal_action(engine: Engine) -> None:
+    engagement, action, worker_request = seed_action(engine)
+    closed = replace(
+        action,
+        state=ActionState.SUCCEEDED,
+        started_at=NOW,
+        completed_at=NOW,
+    )
+    execution = _in_flight_execution(worker_request, state=WorkerState.STARTING)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        ActionRepository(session).save(closed, expected_version=1)
+        WorkerExecutionRepository(session).add(execution)
+
+    with session_factory.begin() as session:
+        reconciled = ActionWorkerCoordinator(
+            session,
+            DisabledWorkerManager(),
+        ).reconcile_after_restart(at=NOW + timedelta(minutes=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+    assert len(reconciled) == 1
+    assert reconciled[0].state is WorkerState.LOST
+    assert stored is not None
+    assert stored.entity.state is ActionState.SUCCEEDED
+    payloads = _payloads_for(engine, engagement.id, "worker.reconciled_lost")
+    assert payloads[0]["action_state"] == "succeeded"
+
+
+async def test_a_worker_scope_wider_than_the_engagement_scope_is_refused(engine: Engine) -> None:
+    _engagement, _action, worker_request = seed_action(engine)
+    widened = worker_request.model_copy(
+        update={
+            "scope": WorkerScope(
+                allowed_hostnames=("example.test", "intranet.example.test"),
+                allowed_ports=(443,),
+                allowed_schemes=("https",),
+                allowed_paths=("/public",),
+            )
+        }
+    )
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        with pytest.raises(WorkerLifecycleError, match="worker_request_scope_binding_mismatch"):
+            await coordinator.start(widened, actor="operator:test", at=NOW)
+    assert runtime.calls == []
+
+
+async def test_start_is_refused_when_the_engagement_scope_is_missing(engine: Engine) -> None:
+    engagement, _action, worker_request = seed_action(engine)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        row = session.get(EngagementScopeRecord, engagement.id)
+        assert row is not None
+        session.delete(row)
+
+    runtime = FakeRuntime()
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        with pytest.raises(WorkerLifecycleError, match="scope_not_found"):
+            await coordinator.start(worker_request, actor="operator:test", at=NOW)
+    assert runtime.calls == []
+
+
+async def test_a_capture_for_another_target_is_refused_without_persisting_evidence(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    body = b"hello"
+    # The path is inside scope, so only the action-target binding can refuse this.
+    elsewhere = WorkerHttpCapture(
+        method="GET",
+        request_target="https://example.test:443/public/deeper",
+        status_code=200,
+        final_target="https://example.test:443/public/deeper",
+        body_base64=base64.b64encode(body).decode(),
+        body_sha256=hashlib.sha256(body).hexdigest(),
+        captured_at=NOW,
+        duration_ms=12,
+    )
+    manager = ScriptedWorkerManager(worker_request.request_id)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, manager)
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        manager.status_handle = replace(handle, state=WorkerState.COMPLETED, cleaned_up=True)
+        manager.response = _capture_response(worker_request, capture=elsewhere)
+        response = await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        evidence = EvidenceRepository(session).for_action(action.id)
+    assert response.status is WorkerResultStatus.FAILED
+    assert response.error_code == "worker_capture_binding_invalid"
+    assert response.evidence_ids == ()
+    assert stored is not None
+    assert stored.entity.state is ActionState.FAILED
+    assert evidence == ()
+
+
+async def test_a_handle_for_another_worker_cannot_overwrite_the_registry_row(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    evidence = Evidence(action_id=action.id, tool_name="fake", tool_version="1", digest="b" * 64)
+    manager = ScriptedWorkerManager(worker_request.request_id)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, manager)
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        manager.status_handle = replace(
+            handle,
+            worker_id=new_worker_id(),
+            state=WorkerState.COMPLETED,
+            cleaned_up=True,
+        )
+        manager.response = _response(worker_request, WorkerResultStatus.SUCCEEDED, evidence.id)
+        with pytest.raises(
+            WorkerLifecycleError,
+            match="worker_handle_registry_binding_mismatch",
+        ):
+            await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        binding = WorkerExecutionRepository(session).get(handle.worker_id)
+    assert stored is not None
+    assert stored.entity.state is ActionState.RUNNING
+    assert binding is not None
+    assert binding.entity.state is WorkerState.RUNNING
+
+
+async def test_a_worker_that_cannot_be_destroyed_closes_the_action_as_worker_lost(
+    engine: Engine,
+) -> None:
+    _engagement, action, worker_request = seed_action(engine)
+    evidence = Evidence(
+        action_id=action.id,
+        tool_name="fake-worker",
+        tool_version="1",
+        digest="c" * 64,
+        captured_at=NOW,
+    )
+    runtime = UndestroyableRuntime()
+    runtime.response = _response(worker_request, WorkerResultStatus.SUCCEEDED, evidence.id)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        EvidenceRepository(session).add(evidence)
+        coordinator = ActionWorkerCoordinator(
+            session,
+            LifecycleWorkerManager(runtime, clock=lambda: NOW),
+        )
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        response = await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        binding = WorkerExecutionRepository(session).get(handle.worker_id)
+    assert response.status is WorkerResultStatus.WORKER_ERROR
+    assert response.error_code == "worker_cleanup_failed"
+    assert stored is not None
+    assert stored.entity.state is ActionState.WORKER_LOST
+    assert binding is not None
+    assert binding.entity.state is WorkerState.LOST
+    assert not binding.entity.cleaned_up
+    assert binding.entity.error_code == "worker_cleanup_failed"
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"engagement_id": new_engagement_id()},
+        {"action_type": "exploit_attempt"},
+        {"normalized_target": "https://example.test:443/elsewhere"},
+        {"parameter_digest": "c" * 64},
+        {"risk_level": RiskLevel.L2},
+        {"approval_id": new_approval_id()},
+        {"idempotency_key": "lifecycle-replayed"},
+    ],
+    ids=[
+        "engagement_id",
+        "action_type",
+        "normalized_target",
+        "parameter_digest",
+        "risk_level",
+        "approval_id",
+        "idempotency_key",
+    ],
+)
+async def test_a_worker_request_that_drifts_from_the_action_in_any_field_is_refused(
+    engine: Engine,
+    drift: dict[str, object],
+) -> None:
+    # Each field is a separate authority claim: the engagement the work is billed to, the
+    # risk tier that decided whether an Approval was needed, the Approval itself, and the
+    # replay guard. One test per field, because a single-field case would still pass with
+    # any of the other seven comparisons deleted.
+    _engagement, action, worker_request = seed_action(engine)
+    runtime = FakeRuntime()
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, LifecycleWorkerManager(runtime))
+        with pytest.raises(
+            WorkerLifecycleError,
+            match="worker_request_action_binding_mismatch",
+        ):
+            await coordinator.start(
+                worker_request.model_copy(update=drift),
+                actor="operator:test",
+                at=NOW,
+            )
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        binding = WorkerExecutionRepository(session).get_for_action(action.id)
+    assert runtime.calls == []
+    assert binding is None
+    assert stored is not None
+    assert stored.entity.state is ActionState.QUEUED
+
+
+@pytest.mark.parametrize(
+    ("reported", "expected"),
+    [
+        (WorkerResultStatus.FAILED, ActionState.FAILED),
+        (WorkerResultStatus.TIMED_OUT, ActionState.TIMED_OUT),
+        (WorkerResultStatus.CANCELLED, ActionState.CANCELLED),
+        (WorkerResultStatus.POLICY_DENIED, ActionState.FAILED),
+        (WorkerResultStatus.WORKER_ERROR, ActionState.WORKER_LOST),
+    ],
+    ids=["failed", "timed_out", "cancelled", "policy_denied", "worker_error"],
+)
+async def test_each_unsuccessful_worker_status_closes_the_action_in_its_own_state(
+    engine: Engine,
+    reported: WorkerResultStatus,
+    expected: ActionState,
+) -> None:
+    # The status-to-state table is one dict literal, so line coverage says nothing about
+    # the individual entries. Every one of these must be pinned: a worker that refused on
+    # policy grounds, or crashed, must never leave an Action recorded as succeeded, and a
+    # crashed worker must be distinguishable from a clean failure for reconciliation.
+    _engagement, action, worker_request = seed_action(engine)
+    manager = ScriptedWorkerManager(worker_request.request_id)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, manager)
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        manager.status_handle = replace(handle, state=WorkerState.COMPLETED, cleaned_up=True)
+        manager.response = WorkerResponse(
+            request_id=worker_request.request_id,
+            engagement_id=worker_request.engagement_id,
+            action_id=worker_request.action_id,
+            status=reported,
+            started_at=NOW,
+            completed_at=NOW + timedelta(seconds=1),
+            exit_code=1,
+            error_code="worker_reported_failure",
+        )
+        response = await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        evidence = EvidenceRepository(session).for_action(action.id)
+    assert response.status is reported
+    assert stored is not None
+    assert stored.entity.state is expected
+    assert evidence == ()
+
+
+@pytest.mark.parametrize(
+    "forged",
+    [
+        {"request_id": "worker-request-never-registered"},
+        {"engagement_id": new_engagement_id()},
+        {"action_id": new_action_id()},
+    ],
+    ids=["request_id", "engagement_id", "action_id"],
+)
+async def test_a_response_naming_another_binding_cannot_close_this_action(
+    engine: Engine,
+    forged: dict[str, object],
+) -> None:
+    # Every decision after collect() reads an identity field off the response: the
+    # evidence binding is checked against response.action_id and both audit events are
+    # written under response.engagement_id. Without this refusal a worker naming somebody
+    # else's action closes its own Action as SUCCEEDED holding no evidence, and the real
+    # engagement's audit chain never records the collection.
+    _engagement, action, worker_request = seed_action(engine)
+    manager = ScriptedWorkerManager(worker_request.request_id)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        coordinator = ActionWorkerCoordinator(session, manager)
+        handle = await coordinator.start(worker_request, actor="operator:test", at=NOW)
+        manager.status_handle = replace(handle, state=WorkerState.COMPLETED, cleaned_up=True)
+        manager.response = _capture_response(worker_request).model_copy(update=forged)
+        with pytest.raises(
+            WorkerLifecycleError,
+            match="worker_response_registry_binding_mismatch",
+        ):
+            await coordinator.collect(handle.worker_id, at=NOW + timedelta(seconds=1))
+
+    with session_factory() as session:
+        stored = ActionRepository(session).get(action.id)
+        evidence = EvidenceRepository(session).for_action(action.id)
+        event_types = {
+            event.event_type
+            for event in AuditEventRepository(session).list_for_engagement(action.engagement_id)
+        }
+    assert stored is not None
+    assert stored.entity.state is ActionState.RUNNING
+    assert evidence == ()
+    assert "worker.collected" not in event_types
