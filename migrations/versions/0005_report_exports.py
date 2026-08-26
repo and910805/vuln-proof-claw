@@ -29,8 +29,8 @@ def upgrade() -> None:
         sa.Column("content", sa.LargeBinary(), nullable=False),
         sa.Column("created_by", sa.String(length=320), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("format IN ('json', 'markdown')", name="ck_report_exports_format"),
-        sa.CheckConstraint("size >= 0", name="ck_report_exports_size"),
+        sa.CheckConstraint("format IN ('json', 'markdown')", name="format"),
+        sa.CheckConstraint("size >= 0", name="size"),
         sa.ForeignKeyConstraint(
             ["engagement_id"], ["engagements.id"],
             name="fk_report_exports_engagement_id_engagements", ondelete="CASCADE"

@@ -33,12 +33,12 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "state IN ('starting', 'running', 'completed', 'failed', "
             "'timed_out', 'cancelled', 'lost')",
-            name="ck_worker_executions_state",
+            name="state",
         ),
         sa.CheckConstraint(
             "NOT cleaned_up OR state IN "
             "('completed', 'failed', 'timed_out', 'cancelled', 'lost')",
-            name="ck_worker_executions_cleanup_terminal",
+            name="cleanup_terminal",
         ),
         sa.ForeignKeyConstraint(
             ["action_id"],
