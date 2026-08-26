@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import Any
+from typing import Any, Final
 
 import httpx
 
@@ -98,12 +98,21 @@ TOOLS: tuple[dict[str, Any], ...] = (
     },
 )
 
+_REPORT_TOOLS: Final = frozenset({"proofclaw_get_report", "proofclaw_list_findings"})
+
 
 class ProofClawApiClient:
-    def __init__(self) -> None:
+    """Thin client for the local control plane.
+
+    ``transport`` exists so the adapter can be exercised without a listening
+    API. It is the seam the tests use; leaving it unset talks to the network.
+    """
+
+    def __init__(self, *, transport: httpx.BaseTransport | None = None) -> None:
         self._base_url = os.getenv("PROOFCLAW_API_URL", "http://127.0.0.1:8000").rstrip("/")
         token = os.getenv("PROOFCLAW_API_TOKEN")
         self._headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self._transport = transport
 
     def request(
         self,
@@ -114,7 +123,9 @@ class ProofClawApiClient:
         headers: dict[str, str] | None = None,
     ) -> Any:
         combined = {**self._headers, **(headers or {})}
-        with httpx.Client(timeout=65.0, follow_redirects=False) as client:
+        with httpx.Client(
+            timeout=65.0, follow_redirects=False, transport=self._transport
+        ) as client:
             response = client.request(
                 method, f"{self._base_url}{path}", json=payload, headers=combined
             )
@@ -122,7 +133,10 @@ class ProofClawApiClient:
             body: Any = response.json()
         except ValueError:
             body = {"detail": response.text[:1000]}
-        if response.is_error:
+        # Anything but 2xx, not just 4xx and 5xx. Redirects are deliberately not
+        # followed, so a 3xx would otherwise hand back an empty body as a
+        # successful result - and a missing trailing slash is enough to cause one.
+        if not response.is_success:
             raise RuntimeError(f"ProofClaw API returned {response.status_code}: {body}")
         return body
 
@@ -154,12 +168,15 @@ class ProofClawApiClient:
                 "GET",
                 f"/api/v1/engagements/{engagement_id}/assessments/{arguments['action_id']}",
             )
+        # Reject an unknown name before touching the API. Fetching first meant an
+        # unrecognised tool still issued a request to the target's control plane.
+        if name not in _REPORT_TOOLS:
+            raise ValueError(f"unknown tool: {name}")
         report = self.request("GET", f"/api/v1/engagements/{engagement_id}/report")
         if name == "proofclaw_get_report":
             return report
-        if name == "proofclaw_list_findings":
-            return {"engagement_id": engagement_id, "findings": report.get("findings", [])}
-        raise ValueError(f"unknown tool: {name}")
+        findings = report.get("findings", []) if isinstance(report, dict) else []
+        return {"engagement_id": engagement_id, "findings": findings}
 
 
 def _response(
@@ -206,7 +223,10 @@ def handle_message(  # noqa: PLR0911 - protocol dispatch is intentionally explic
                 identifier,
                 {"content": [{"type": "text", "text": serialized}], "structuredContent": result},
             )
-        except (KeyError, TypeError, ValueError, RuntimeError) as error:
+        # httpx errors are included on purpose: a stdio server that dies when the
+        # control plane is unreachable looks to the caller like a broken adapter,
+        # so an unreachable API has to come back as a tool error instead.
+        except (KeyError, TypeError, ValueError, RuntimeError, httpx.HTTPError) as error:
             return _response(
                 identifier,
                 {"content": [{"type": "text", "text": str(error)}], "isError": True},
