@@ -12,6 +12,7 @@ from contextlib import closing
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.execution.http_capture import (
     CaptureTransportError,
     HttpCaptureLimits,
@@ -160,13 +161,16 @@ class PinnedHttpTransport:
             raise
         except (OSError, ssl.SSLError, http.client.HTTPException) as error:
             raise CaptureTransportError("network_transport_failed") from error
-        return HttpCaptureResponse(
-            status_code=response.status,
-            final_target=request.target,
-            headers=headers,
-            body=body,
-            duration_ms=max(0, round((time.monotonic() - started) * 1000)),
-        )
+        try:
+            return HttpCaptureResponse(
+                status_code=response.status,
+                final_target=request.target,
+                headers=headers,
+                body=body,
+                duration_ms=max(0, round((time.monotonic() - started) * 1000)),
+            )
+        except DomainValidationError as error:
+            raise CaptureTransportError("invalid_response_metadata") from error
 
     def _validated_addresses(self, hostname: str, port: int) -> tuple[str, ...]:
         candidates = self._resolver(hostname, port)
