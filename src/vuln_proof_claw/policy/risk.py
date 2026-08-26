@@ -21,6 +21,7 @@ ACTION_RISK_LEVELS: Final = MappingProxyType(
         "directory_enumeration": RiskLevel.L1,
         "port_scan": RiskLevel.L1,
         "active_api_probe": RiskLevel.L1,
+        "vulnerability_scan": RiskLevel.L1,
         "exploit_attempt": RiskLevel.L2,
         "password_test": RiskLevel.L2,
         "file_upload": RiskLevel.L2,
