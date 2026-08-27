@@ -7,6 +7,8 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
+# Patch build backend tooling so the copied venv carries fixed pip/setuptools/wheel.
+RUN python -m pip install --upgrade pip setuptools wheel
 
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
@@ -20,6 +22,11 @@ LABEL org.opencontainers.image.revision="${VCS_REF}"
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+
+# Apply available Debian security updates to the base image packages.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 10001 claw \
     && useradd --uid 10001 --gid claw --no-create-home --home-dir /nonexistent claw

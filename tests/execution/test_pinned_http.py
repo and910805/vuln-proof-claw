@@ -215,6 +215,25 @@ def test_transport_allows_private_address_only_when_cidr_is_explicitly_scoped() 
     assert transport.send(request(), HttpCaptureLimits()).status_code == 200
 
 
+def test_transport_allows_private_address_when_allow_private_is_enabled() -> None:
+    connection = FakeConnection(FakeResponse())
+    transport = PinnedHttpTransport(
+        scope(),
+        resolver=lambda _host, _port: ("127.0.0.1",),
+        connection_factory=lambda *_args: connection,
+        allow_private=True,
+    )
+
+    assert transport.send(request(), HttpCaptureLimits()).status_code == 200
+
+
+def test_transport_still_denies_private_address_by_default() -> None:
+    transport = PinnedHttpTransport(scope(), resolver=lambda _host, _port: ("127.0.0.1",))
+
+    with pytest.raises(CaptureTransportError, match="resolved_address_not_public"):
+        transport.send(request(), HttpCaptureLimits())
+
+
 def test_transport_rejects_denied_address_and_oversized_content() -> None:
     denied_scope = EngagementScope.create(
         allowed_hostnames=("example.test",),

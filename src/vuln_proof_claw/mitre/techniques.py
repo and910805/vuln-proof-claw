@@ -78,6 +78,12 @@ ACTION_TECHNIQUES: Final = MappingProxyType(
         "port_scan": ("T1595.001",),
         "vulnerability_scan": ("T1595.002",),
         "active_api_probe": ("T1595",),
+        # The Worker runtimes are the interpreter itself, so they map to the
+        # execution technique rather than to whatever the operator ran with it.
+        # A command run through them is classified a second time by
+        # classify_command(), which is what attributes the actual behaviour.
+        "restricted_shell": ("T1059.004",),
+        "isolated_python": ("T1059.006",),
         "exploit_attempt": ("T1190",),
         "password_test": ("T1110.001",),
         "file_upload": ("T1505.003",),
@@ -94,6 +100,7 @@ ACTION_TECHNIQUES: Final = MappingProxyType(
 TECHNIQUE_NAMES: Final = MappingProxyType(
     {
         "T1059.004": "Command and Scripting Interpreter: Unix Shell",
+        "T1059.006": "Command and Scripting Interpreter: Python",
         "T1068": "Exploitation for Privilege Escalation",
         "T1082": "System Information Discovery",
         "T1083": "File and Directory Discovery",

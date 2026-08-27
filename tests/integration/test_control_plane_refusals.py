@@ -19,6 +19,7 @@ from tests.api.test_approvals import (
 )
 from tests.api.test_assessments import FakeAssessmentTransport, assessment_client
 from tests.api.test_workflow import _create_engagement, _create_task
+from vuln_proof_claw.config.models import AssessmentConfig
 
 # Every audit event family that only an executed step may write.
 _EXECUTION_EVENT_PREFIXES = ("worker.", "assessment.", "evidence.", "approval.")
@@ -27,9 +28,12 @@ _EXECUTION_EVENT_PREFIXES = ("worker.", "assessment.", "evidence.", "approval.")
 # workflow API expresses it. Proposing an action with these protected fields lets the
 # assessment endpoint adopt it by idempotency key, which is the only way to drive the
 # pre-execution authorization gate through the public API.
+# The user agent is read from the configured default rather than restated: the
+# adoption path compares the proposal against the request the endpoint builds,
+# so a literal copy here goes red on every version bump for no real reason.
 _ASSESSMENT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/json",
-    "User-Agent": "vuln-proof-claw/0.6.0",
+    "User-Agent": AssessmentConfig().user_agent,
 }
 
 

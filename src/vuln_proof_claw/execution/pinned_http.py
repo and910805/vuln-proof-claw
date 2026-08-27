@@ -114,11 +114,13 @@ class PinnedHttpTransport:
         resolver: AddressResolver = system_resolver,
         ssl_context: ssl.SSLContext | None = None,
         connection_factory: Callable[..., HttpConnection] = _connection_factory,
+        allow_private: bool = False,
     ) -> None:
         self._scope = scope
         self._resolver = resolver
         self._ssl_context = ssl_context or ssl.create_default_context()
         self._connection_factory = connection_factory
+        self._allow_private = allow_private
 
     def send(
         self,
@@ -187,7 +189,7 @@ class PinnedHttpTransport:
             explicitly_allowed = any(
                 address in network for network in self._scope.allowed_networks
             )
-            if not address.is_global and not explicitly_allowed:
+            if not address.is_global and not explicitly_allowed and not self._allow_private:
                 raise CaptureTransportError("resolved_address_not_public")
             validated.append(address)
         ordered = sorted(validated, key=lambda item: (item.version, item.packed))

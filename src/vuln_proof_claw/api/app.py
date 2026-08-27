@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 import structlog
@@ -77,7 +78,10 @@ def create_app(
         app.state.settings = app_settings
         app.state.assessment_transport_factory = assessment_transport_factory
         if app.state.assessment_transport_factory is None and app_settings.assessment.enabled:
-            app.state.assessment_transport_factory = PinnedHttpTransport
+            app.state.assessment_transport_factory = partial(
+                PinnedHttpTransport,
+                allow_private=app_settings.assessment.allow_private_targets,
+            )
         app.state.readiness_service = ReadinessService(app_settings, probe)
         try:
             yield

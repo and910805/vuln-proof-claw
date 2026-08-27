@@ -277,6 +277,23 @@ def test_ping_is_answered_with_an_empty_result() -> None:
     assert response == {"jsonrpc": "2.0", "id": 4, "result": {}}
 
 
+def test_the_advertised_tool_surface_is_pinned() -> None:
+    # A count would go red without saying which tool moved. Pinning the names
+    # means removing a tool, or shipping one the dispatch does not know, is a
+    # readable failure rather than an off-by-one.
+    assert {str(tool["name"]) for tool in TOOLS} == {
+        "proofclaw_health",
+        "proofclaw_run_assessment",
+        "proofclaw_create_automation_plan",
+        "proofclaw_list_tools",
+        "proofclaw_create_tool_plan",
+        "proofclaw_next_autonomous_step",
+        "proofclaw_get_assessment",
+        "proofclaw_get_report",
+        "proofclaw_list_findings",
+    }
+
+
 def test_every_advertised_tool_has_a_closed_schema() -> None:
     for tool in TOOLS:
         schema = tool["inputSchema"]

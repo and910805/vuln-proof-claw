@@ -84,6 +84,7 @@ def _engagement_summary(
         starts_at=engagement.starts_at,
         ends_at=engagement.ends_at,
         maximum_risk=engagement.maximum_risk,
+        auto_execute_l1=engagement.auto_execute_l1,
         destructive_actions_enabled=engagement.destructive_actions_enabled,
         created_at=engagement.created_at,
         scope=_scope_definition(scope),
@@ -200,6 +201,7 @@ def create_engagement(
             starts_at=payload.starts_at,
             ends_at=payload.ends_at,
             maximum_risk=payload.maximum_risk,
+            auto_execute_l1=payload.auto_execute_l1,
             destructive_actions_enabled=payload.destructive_actions_enabled,
         )
         scope_values = payload.scope.model_dump()

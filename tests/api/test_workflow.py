@@ -9,7 +9,12 @@ from httpx import AsyncClient
 from tests.api.test_console import console_client
 
 
-async def _create_engagement(client: AsyncClient, *, maximum_risk: str = "L3") -> str:
+async def _create_engagement(
+    client: AsyncClient,
+    *,
+    maximum_risk: str = "L3",
+    auto_execute_l1: bool = False,
+) -> str:
     project = await client.post("/api/v1/projects", json={"name": "Acme"})
     engagement = await client.post(
         f"/api/v1/projects/{project.json()['id']}/engagements",
@@ -18,6 +23,7 @@ async def _create_engagement(client: AsyncClient, *, maximum_risk: str = "L3") -
             "starts_at": "2026-08-01T00:00:00Z",
             "ends_at": "2027-08-02T00:00:00Z",
             "maximum_risk": maximum_risk,
+            "auto_execute_l1": auto_execute_l1,
             "scope": {
                 "allowed_hostnames": ["api.example.test"],
                 "allowed_ports": [443],

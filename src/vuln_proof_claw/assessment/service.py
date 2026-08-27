@@ -691,6 +691,7 @@ class PassiveAssessmentService:
             scope=scope,
             config=PolicyConfig(
                 maximum_risk=engagement.maximum_risk,
+                auto_execute_l1=engagement.auto_execute_l1,
                 destructive_actions_enabled=engagement.destructive_actions_enabled,
             ),
             at=at,

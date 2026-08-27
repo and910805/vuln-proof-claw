@@ -64,6 +64,59 @@ TOOLS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        "name": "proofclaw_list_tools",
+        "description": (
+            "List registered scanner/runtime capabilities, integration state, risk, "
+            "and availability."
+        ),
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "proofclaw_create_tool_plan",
+        "description": (
+            "Propose one scope-checked and digest-bound Shell/Python/Nmap/password/PoC action."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "engagement_id": {"type": "string"},
+                "tool": {"type": "string"},
+                "target": {"type": "string"},
+                "parameters": {"type": "object"},
+                "idempotency_key": {"type": "string"},
+            },
+            "required": [
+                "engagement_id",
+                "tool",
+                "target",
+                "parameters",
+                "idempotency_key",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "proofclaw_next_autonomous_step",
+        "description": (
+            "Ask the bounded Planner/Operator/Verifier controller which role should act next."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "budget": {"type": "object"},
+                "steps": {"type": "integer", "minimum": 0},
+                "tool_calls": {"type": "integer", "minimum": 0},
+                "elapsed_seconds": {"type": "integer", "minimum": 0},
+                "consecutive_failures": {"type": "integer", "minimum": 0},
+                "proposed_actions": {"type": "integer", "minimum": 0},
+                "queued_actions": {"type": "integer", "minimum": 0},
+                "pending_approvals": {"type": "integer", "minimum": 0},
+                "unverified_results": {"type": "integer", "minimum": 0},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "proofclaw_get_assessment",
         "description": "Get one assessment status and report references.",
         "inputSchema": {
@@ -140,7 +193,9 @@ class ProofClawApiClient:
             raise RuntimeError(f"ProofClaw API returned {response.status_code}: {body}")
         return body
 
-    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+    def call_tool(  # noqa: PLR0911 - MCP-to-REST dispatch is intentionally explicit
+        self, name: str, arguments: dict[str, Any]
+    ) -> Any:
         if name == "proofclaw_health":
             return self.request("GET", "/api/v1/health/ready")
         engagement_id = str(arguments.get("engagement_id", ""))
@@ -163,6 +218,17 @@ class ProofClawApiClient:
                 f"/api/v1/engagements/{engagement_id}/automation-plans",
                 payload=payload,
             )
+        if name == "proofclaw_list_tools":
+            return self.request("GET", "/api/v1/automation/tools")
+        if name == "proofclaw_create_tool_plan":
+            payload = {key: value for key, value in arguments.items() if key != "engagement_id"}
+            return self.request(
+                "POST",
+                f"/api/v1/engagements/{engagement_id}/tool-plans",
+                payload=payload,
+            )
+        if name == "proofclaw_next_autonomous_step":
+            return self.request("POST", "/api/v1/automation/next-step", payload=arguments)
         if name == "proofclaw_get_assessment":
             return self.request(
                 "GET",

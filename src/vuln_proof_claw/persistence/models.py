@@ -48,6 +48,7 @@ class EngagementRecord(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     maximum_risk: Mapped[str] = mapped_column(String(2))
+    auto_execute_l1: Mapped[bool] = mapped_column(Boolean, default=False)
     destructive_actions_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

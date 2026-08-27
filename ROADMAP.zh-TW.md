@@ -89,6 +89,18 @@ v0.6.0 交付一條完整的離線可驗證報告流程：
   獨立 Verifier 強制管控。
 - 待完成：受信任簽章身分、Attestation 與 Bug-bounty 平台範本。
 
+## v0.7 — 工具執行與有界自主性
+
+0.7.0 建立可擴充執行契約，不把硬編碼命令直接塞進 API：
+
+- 已完成：23 項 Registry 與誠實的整合／執行檔可用狀態。
+- 已完成：Shell／Python／Nmap／密碼／PoC 嚴格 Invocation Contract 與 argv Builder。
+- 已完成：經 Policy 檢查的 Tool-plan REST／MCP，以及 Engagement 可設定的 L1 自動執行。
+- 已完成：具停止 Budget 的 Planner／Operator／Verifier deterministic next-step 決策。
+- 下一步：完成 Shell／Python／Nmap Worker Protocol Capture／Persistence，再逐一實作
+  Nuclei、httpx、ffuf、testssl、ZAP、sqlmap 與 Dalfox Adapter。
+- 下一步：持久化 Autonomous Run、續跑、Web 即時進度與 Evidence-driven Verifier Promotion。
+
 ## v1.0 — 穩定開源版本
 
 - 穩定 REST 與 Plugin API、Upgrade 文件、Security review、簽章 Image 與 SBOM。

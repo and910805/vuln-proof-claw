@@ -9,16 +9,16 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.6.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
 </div>
 
 > [!IMPORTANT]
-> **Alpha status:** Version 0.6.0 adds one-click, metadata-only disclosure bundles and
-> offline SHA-256 verification. Raw Evidence and secrets remain excluded. Version 0.5.0
-> introduced the bounded Planner/Operator/Verifier and local MCP foundations.
+> **Alpha status:** Version 0.7.0 adds a machine-readable tool registry, digest-bound
+> Shell/Python/Nmap/password/PoC plans, engagement-configurable L1 autonomy, and MCP
+> controls for tool planning and the Planner/Operator/Verifier loop.
 >
 > Version 0.3.0 added authorized safe active testing to bounded Web
 > discovery. It inventories captured OpenAPI documents and verifies only parameterless
@@ -44,6 +44,74 @@ vuln-proof-claw is being built around those requirements:
 - **Fail closed** — unknown actions default to a conservative risk level, invalid
   scope is denied, and unfinished execution paths remain disabled.
 
+## Console tour
+
+The bilingual web console below is a local run against a disposable target
+container. One control switches the whole interface between English and 繁體中文.
+
+**Overview** — projects, live counters, capability status, and the default
+L0–L4 execution guardrails at a glance.
+
+![Overview dashboard](docs/img/overview.png)
+
+**Assess a URL** — one authorized target, a safe automated or discovery-only
+mode, and Safe/Fast/Deep budgets. Authorization is acknowledged before anything
+runs.
+
+![Assess a URL](docs/img/assess.png)
+
+**Result** — action state, finding count, evidence-record count, and evidence
+integrity, followed by CWE-classified findings with their locations and
+remediation. Every finding points back to the evidence that supports it.
+
+![Assessment result](docs/img/result.png)
+
+## How evidence is stored
+
+Every target-facing action records exactly one immutable **evidence record**: the
+raw bytes that were captured plus canonical metadata describing how they were
+captured. Records are linked into a per-engagement **SHA-256 hash chain**, so any
+later change to a byte, a metadata field, or the ordering of records is
+detectable.
+
+```mermaid
+flowchart LR
+    RAW["Raw response bytes"] --> DIG
+    META["Canonical metadata<br/>NFC · sorted keys · UTC"] --> DIG
+    PREV["previous_digest"] --> DIG
+    DIG["SHA-256 digest<br/>domain-separated · length-framed"] --> REC["Evidence record N"]
+    REC -. "digest becomes the next previous_digest" .-> NEXT["Evidence record N+1"]
+```
+
+1. **Canonical metadata.** Before hashing, metadata is serialized
+   deterministically — Unicode NFC normalization, sorted object keys,
+   timezone-aware microsecond UTC timestamps, signed 64-bit integer bounds, and
+   no floating point — so the same logical metadata always yields the same bytes.
+   Committed fields include the evidence, engagement, action, and approval
+   identifiers, tool name and version, normalized parameters, capture time and
+   duration, worker image, environment, scope decision, and media type.
+2. **Domain-separated digest.** The digest hashes a length-prefixed framing of
+   `previous_digest`, the canonical metadata, and the raw bytes, behind a
+   versioned domain separator (`vuln-proof-claw:evidence:v1`). The length
+   prefixes and separator keep the metadata and content regions unambiguous, so
+   no crafted content can imitate a different record.
+3. **Chain linking.** Each record stores the previous record's digest for the
+   same engagement; the first record links to 32 zero bytes. Appends take a row
+   lock on the engagement, so the chain grows serially with a gap-free index.
+4. **Persistence.** PostgreSQL keeps two rows per record: a metadata row
+   (identifiers, tool, digest, previous digest, capture time) and a payload row
+   (engagement, chain index, canonical-metadata bytes, raw bytes, size). Raw
+   payloads are size-capped and are never returned by any public API — reports
+   and disclosure bundles expose metadata and digests only.
+5. **Verification.** Verification recomputes every digest from the stored
+   canonical metadata and raw bytes and re-checks the ordering and links,
+   reporting the first record that fails and why. The offline `verify-bundle`
+   command runs the same check against a downloaded bundle without contacting the
+   API or the target.
+
+The implementation lives in [`src/vuln_proof_claw/evidence/`](src/vuln_proof_claw/evidence)
+(`canonical.py`, `hash_chain.py`, `models.py`, `persistence.py`).
+
 ## Current capabilities
 
 | Area | Current release |
@@ -58,9 +126,9 @@ vuln-proof-claw is being built around those requirements:
 | Evidence | Canonical serialization, SHA-256 digests, and tamper-evident hash-chain primitives |
 | Persistence | PostgreSQL repositories and Alembic migrations without ORM leakage into domain code |
 | Observability | Structured human/JSON logs with recursive secret redaction |
-| Execution | DNS-pinned GET/HEAD verification plus disposable Playwright Chromium contexts, in-memory login credentials, outbound host filtering, durable Workers, and restricted-container policy; arbitrary tools remain disabled |
-| Automation | Reviewed query/header/path mutation plans, CORS/authentication/authorization/input-validation comparisons, approval presets, and Planner/Operator/Verifier task generation |
-| AI interface | Local stdio MCP server for Codex, Claude Code, and compatible clients; credentials stay in the client environment |
+| Execution | DNS-pinned HTTP, disposable Chromium, and strict Worker-ready Shell/Python/Nmap argv contracts; password and PoC execution adapters remain staged |
+| Automation | Reviewed mutations and security comparisons, reusable approvals, tool-plan Actions, configurable automatic L1 execution, and a budgeted Planner/Operator/Verifier next-step controller |
+| AI interface | Nine-tool local stdio MCP server for Codex, Claude Code, and compatible clients, including tool catalog/planning and autonomous next-step controls |
 | Delivery | Hardened Docker Compose baseline, bilingual-doc checks, dependency audit, container scan, and SBOM CI |
 
 Browser execution and automation are API/MCP-first in v0.5.0; Web-console controls, richer
@@ -82,6 +150,7 @@ adds a user-completable capability while keeping the execution boundary explicit
 | **v0.4.0** | Operator Finding review with optimistic version checks and immutable audit events; SARIF 2.1.0 direct reports and idempotent immutable exports; Web console SARIF download. | No Planner/Operator/Verifier orchestration, browser authentication, write-method testing, exploit payloads, or arbitrary tools. |
 | **v0.5.0** | Disposable authenticated Chromium contexts, reviewed benign parameter mutations, CORS/authentication/authorization/input-validation comparison, reusable Approval Presets, Planner/Operator/Verifier plans, and Codex/Claude Code stdio MCP tools. | Advanced paths remain API/MCP-first; no destructive payloads, arbitrary scanner execution, automatic privilege escalation, or unrestricted target access. |
 | **v0.6.0** | Metadata-only disclosure ZIP with JSON/Markdown/HTML/SARIF, workflow and Evidence-chain metadata, Web downloads, and an offline verifier hardened against unsafe ZIP structures and tampering. | No raw Evidence disclosure, signer identity, arbitrary scanner execution, exploit payloads, or unrestricted target access. |
+| **v0.7.0** | 23-entry extensible tool registry; strict Shell/Python/Nmap/password/PoC contracts; tool-plan API and MCP controls; engagement-level L1 autonomy; budgeted Planner/Operator/Verifier decisions. | Cataloged scanners still need individual Worker adapters; password and PoC plans do not ship built-in payloads or credential lists. |
 
 For implementation details and the next milestones, see [ROADMAP.md](ROADMAP.md) and the
 versioned entries in [CHANGELOG.md](CHANGELOG.md).

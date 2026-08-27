@@ -9,7 +9,7 @@
 [![Quality](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/ci.yml)
 [![Container security](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml/badge.svg?branch=mainer)](https://github.com/and910805/vuln-proof-claw/actions/workflows/container.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
-[![Version](https://img.shields.io/badge/version-0.6.0-blue)](CHANGELOG.zh-TW.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-blue)](CHANGELOG.zh-TW.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
@@ -18,6 +18,10 @@
 > **v0.6.0 重大更新：** 新增一鍵 Metadata-only Disclosure Bundle 與離線 SHA-256
 > 驗證；Raw Evidence 與 Secret 仍明確排除。v0.5.0 建立的有界
 > Planner／Operator／Verifier 與本機 MCP 基礎維持不變。
+
+> **v0.7.0 重大更新：** 新增 23 項可擴充工具目錄、Shell／Python／Nmap／密碼測試／
+> Exploit-PoC 的 digest-bound 計畫、Engagement 可設定的 L1 自動執行，以及供
+> Codex／Claude Code 使用的工具規劃與 Agent next-step MCP 控制。
 
 > [!IMPORTANT]
 > **Alpha 狀態：** 0.6.0 已提供可驗證成果交付；Browser、Preset 與
@@ -43,6 +47,65 @@ vuln-proof-claw 以這些要求作為核心設計：
   網路受限的 Worker 執行。
 - **預設安全失敗**——未知動作採保守風險等級、無效範圍直接拒絕，未完成的執行
   路徑維持停用。
+
+## 介面導覽
+
+以下是雙語 Web 控制台在本機對一次性目標容器執行的畫面；只要一個切換鍵，整個
+介面就會在 English 與繁體中文之間切換。
+
+**總覽**——一眼看見 Project、即時計數、能力狀態，以及預設的 L0–L4 執行安全邊界。
+
+![總覽控制台](docs/img/overview.zh-TW.png)
+
+**網址評估**——單一已授權目標、安全自動或僅 Discovery 模式，以及 Safe／Fast／Deep
+預算；在任何動作開始前，都必須先完成授權聲明。
+
+![網址評估](docs/img/assess.zh-TW.png)
+
+**評估結果**——動作狀態、Finding 數量、Evidence 數量與 Evidence 完整性，接著是
+以 CWE 分類、附上位置與修補建議的 Finding；每一項 Finding 都能回溯到支持它的
+Evidence。
+
+![評估結果](docs/img/result.zh-TW.png)
+
+## Evidence 如何儲存
+
+每個面向目標的動作只會記錄一筆不可變的 **Evidence 紀錄**：擷取到的原始位元組，
+加上描述「如何擷取」的 canonical metadata。這些紀錄會依 Engagement 串成一條
+**SHA-256 hash chain**，因此之後只要有任何一個位元組、metadata 欄位或紀錄順序被
+更動，都可以被偵測出來。
+
+```mermaid
+flowchart LR
+    RAW["原始回應位元組"] --> DIG
+    META["Canonical metadata<br/>NFC · 排序鍵 · UTC"] --> DIG
+    PREV["previous_digest"] --> DIG
+    DIG["SHA-256 digest<br/>domain-separated · 長度框定"] --> REC["Evidence 紀錄 N"]
+    REC -. "digest 成為下一筆的 previous_digest" .-> NEXT["Evidence 紀錄 N+1"]
+```
+
+1. **Canonical metadata。** 雜湊前，metadata 會以決定性方式序列化——Unicode NFC
+   正規化、物件鍵排序、帶時區的微秒級 UTC 時間戳、signed 64-bit 整數範圍、且不允許
+   浮點數——因此相同語意的 metadata 一定產生相同位元組。納入雜湊的欄位包含
+   Evidence／Engagement／Action／Approval 識別碼、工具名稱與版本、正規化參數、
+   擷取時間與耗時、Worker 映像、環境、Scope 判定與 Media type。
+2. **Domain-separated digest。** digest 會在一個帶版本的 domain separator
+   （`vuln-proof-claw:evidence:v1`）之下，對 `previous_digest`、canonical metadata
+   與原始位元組進行「長度前綴框定」後再雜湊。長度前綴與 separator 讓 metadata 與
+   內容區段沒有歧義，任何精心構造的內容都無法冒充成另一筆紀錄。
+3. **鏈結。** 每筆紀錄都會存放同一 Engagement 上一筆紀錄的 digest；第一筆則鏈結到
+   32 個位元組的 0。Append 時會對該 Engagement 取得資料列鎖，因此鏈會依序、無間隙
+   地成長。
+4. **持久化。** PostgreSQL 每筆紀錄存兩列：一列 metadata（識別碼、工具、digest、
+   previous digest、擷取時間），一列 payload（Engagement、chain index、
+   canonical-metadata 位元組、原始位元組、大小）。原始 payload 有大小上限，且任何
+   公開 API 都不會回傳——報告與 Disclosure Bundle 只公開 metadata 與 digest。
+5. **驗證。** 驗證會從儲存的 canonical metadata 與原始位元組重新計算每一個 digest，
+   並重新檢查順序與鏈結，回報第一筆失敗的紀錄與原因。離線的 `verify-bundle` 指令
+   會對下載的 Bundle 執行相同檢查，完全不需連線 API 或目標。
+
+實作位於 [`src/vuln_proof_claw/evidence/`](src/vuln_proof_claw/evidence)
+（`canonical.py`、`hash_chain.py`、`models.py`、`persistence.py`）。
 
 ## 目前具備的能力
 
@@ -81,6 +144,7 @@ v0.5.0 的 Browser 與 Automation 目前以 API／MCP 為主；Web Console 操�
 | **v0.4.0** | Operator Finding 審查、樂觀版本檢查與不可變 Audit Event；SARIF 2.1.0 直接報告與具 Idempotency 的不可變匯出；Web console SARIF 下載。 | 尚未提供 Planner／Operator／Verifier 編排、Browser Authentication、寫入 Method 測試、Exploit Payload 或任意工具。 |
 | **v0.5.0** | 一次性 Authenticated Chromium Context、經審查的無害參數變異、四類安全比較、可重用 Approval Preset、Planner／Operator／Verifier 計畫與 Codex／Claude Code stdio MCP 工具。 | 進階路徑仍以 API／MCP 為主；不提供破壞性 Payload、任意 Scanner、自動權限提升或無限制目標存取。 |
 | **v0.6.0** | Metadata-only Disclosure ZIP，包含 JSON／Markdown／HTML／SARIF、Workflow 與 Evidence Chain Metadata、Web 下載及具 ZIP 結構與篡改防護的離線驗證器。 | 不公開 Raw Evidence、不宣稱簽署者身分、不執行任意 Scanner、Exploit Payload 或無限制目標存取。 |
+| **v0.7.0** | 23 項可擴充 Tool Registry、嚴格 Shell／Python／Nmap／密碼／PoC 契約、Tool-plan API／MCP、可設定 L1 自動執行與具 Budget 的 Planner／Operator／Verifier 決策。 | `cataloged` Scanner 仍須逐一完成 Worker Adapter；不內建密碼清單或 Exploit Payload。 |
 
 實作細節與下一階段請參閱 [ROADMAP.zh-TW.md](ROADMAP.zh-TW.md) 及
 [CHANGELOG.zh-TW.md](CHANGELOG.zh-TW.md) 的版本記錄。

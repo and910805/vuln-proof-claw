@@ -63,6 +63,8 @@ jobs:
           vuln-type: os,library
           # Keep the gate actionable; unfixed findings remain visible in the SBOM below.
           ignore-unfixed: true
+          # Justified suppressions for unreachable vendored advisories.
+          trivyignores: .trivyignore
 
       - name: Generate CycloneDX SBOM
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

@@ -8,8 +8,8 @@ Constraint names are bare tokens on purpose: the metadata naming convention
 adds the ``ck_<table>_`` prefix, so passing a prefixed name here would produce
 a doubly prefixed constraint that drifts from the models.
 
-Revision ID: 0009_plan_progress_and_usage
-Revises: 0008_approval_presets
+Revision ID: 0010_plan_progress_and_usage
+Revises: 0009_engagement_l1_autonomy
 Create Date: 2026-08-26
 """
 
@@ -18,8 +18,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0009_plan_progress_and_usage"
-down_revision: str | None = "0008_approval_presets"
+revision: str = "0010_plan_progress_and_usage"
+down_revision: str | None = "0009_engagement_l1_autonomy"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

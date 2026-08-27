@@ -21,7 +21,8 @@ python -m mypy src
 python -m pytest
 ```
 
-不得繞過 EDR、AppLocker、Sandbox 或組織安全控制。
+經授權的測試可能正常觸發 EDR 或其他防禦告警，應事先與系統擁有者協調告警預期；
+不得繞過、停用、竄改 EDR、AppLocker、Sandbox 或組織安全控制，也不得以規避這些控制為設計目標。
 
 ## Pull Request
 

@@ -136,6 +136,7 @@ class EngagementRepository:
                 starts_at=engagement.starts_at,
                 ends_at=engagement.ends_at,
                 maximum_risk=engagement.maximum_risk.value,
+                auto_execute_l1=engagement.auto_execute_l1,
                 destructive_actions_enabled=engagement.destructive_actions_enabled,
                 created_at=engagement.created_at,
             )
@@ -154,6 +155,7 @@ class EngagementRepository:
                 starts_at=_utc(row.starts_at),
                 ends_at=_utc(row.ends_at),
                 maximum_risk=RiskLevel(row.maximum_risk),
+                auto_execute_l1=row.auto_execute_l1,
                 destructive_actions_enabled=row.destructive_actions_enabled,
                 created_at=_utc(row.created_at),
             ),
@@ -185,6 +187,7 @@ class EngagementRepository:
             starts_at=_utc(row.starts_at),
             ends_at=_utc(row.ends_at),
             maximum_risk=RiskLevel(row.maximum_risk),
+            auto_execute_l1=row.auto_execute_l1,
             destructive_actions_enabled=row.destructive_actions_enabled,
             created_at=_utc(row.created_at),
         )
