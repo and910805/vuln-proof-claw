@@ -29,11 +29,33 @@ def argv(**parameters: object) -> tuple[str, ...]:
     return build_worker_argv(validate_tool_invocation("nuclei", TARGET, dict(parameters)))
 
 
-def test_every_default_that_leaks_has_its_switch_in_the_argv() -> None:
-    # NUCLEI_DEFAULT_LEAKS is the threat model, and this is what keeps it
-    # honest: each key names something nuclei does with no flag at all, and the
-    # switch that stops it has to actually reach the command line. Deleting an
-    # entry from the table is then a visible change, not a quiet widening.
+def test_the_required_switches_are_pinned_independently_of_the_table() -> None:
+    # This list is written out on purpose. Asserting the argv against
+    # NUCLEI_DEFAULT_LEAKS alone made the table its own oracle: deleting an
+    # entry removed the switch from the argv AND from the assertion loop, so
+    # dropping -system-resolvers -- which sends every target hostname to
+    # Cloudflare and Google -- left the suite green. An earlier version of this
+    # test claimed in a comment that removing an entry would be "a visible
+    # change, not a quiet widening", which was the one mutation it could not
+    # see.
+    built = argv()
+
+    assert {
+        "-disable-update-check",
+        "-no-stdin",
+        "-no-httpx",
+        "-system-resolvers",
+        "-disable-redirects",
+        "-silent",
+        "-no-color",
+        "-jsonl",
+    } <= set(built)
+
+
+def test_the_threat_model_table_stays_consistent_with_the_argv() -> None:
+    # Complements the pinned list above: this half catches an entry ADDED to the
+    # table without its switch reaching the command line, which the literal list
+    # cannot see.
     built = argv()
 
     for switch, reason in NUCLEI_DEFAULT_LEAKS.items():
@@ -141,19 +163,33 @@ def test_a_caller_s_exclusions_are_added_to_the_mandatory_ones_not_substituted()
 
 
 def test_the_selection_is_canonical_so_a_replay_digests_the_same() -> None:
+    # template_ids is in here deliberately. It was the one canonicaliser in the
+    # contract with no coverage: severities and tags were both exercised, so
+    # only template_ids could lose its sort and dedupe without a test noticing
+    # -- and the consequence is that an approved action replayed with its ids
+    # listed in another order is refused as a digest mismatch.
     one = validate_tool_invocation(
         "nuclei",
         TARGET,
-        {"severities": ["high", "critical", "high"], "tags": ["sqli", "rce"]},
+        {
+            "severities": ["high", "critical", "high"],
+            "tags": ["sqli", "rce"],
+            "template_ids": ["b-tpl", "a-tpl", "b-tpl"],
+        },
     )
     other = validate_tool_invocation(
         "nuclei",
         TARGET,
-        {"severities": ["critical", "high"], "tags": ["rce", "sqli"]},
+        {
+            "severities": ["critical", "high"],
+            "tags": ["rce", "sqli"],
+            "template_ids": ["a-tpl", "b-tpl"],
+        },
     )
 
     assert isinstance(one.parameters, NucleiParameters)
     assert one.parameters.severities == ("critical", "high")
+    assert one.parameters.template_ids == ("a-tpl", "b-tpl")
     # Without this an approved action replayed with its tags listed in another
     # order is refused as a parameter-digest mismatch.
     assert one.parameter_digest == other.parameter_digest

@@ -110,22 +110,28 @@ def test_a_dns_record_assertion_is_admitted_on_the_same_grounds() -> None:
     assert titles(dns) == ("DMARC record missing",)
 
 
-def test_an_out_of_band_interaction_is_admitted_but_not_at_high_confidence() -> None:
-    # The target reached out to infrastructure the scanner controls, which
-    # nothing in normal operation forges. Confidence is capped at MEDIUM because
-    # a DNS-only interaction -- reproducible by resolver prefetch or a security
-    # middlebox -- is not distinguishable from an HTTP one in this output.
+def test_an_out_of_band_interaction_is_admitted_on_the_interaction_itself() -> None:
+    # The target reached out to infrastructure the scanner controls, and the
+    # record carries the callback: its protocol and the unique token correlating
+    # it to this request. The `oast` tag alone does NOT admit this -- see
+    # test_nuclei_parser_adversarial.py, where one tag string used to mint a
+    # VERIFIED CVE row from a record containing no interaction at all.
     oob = record(
         template="http/vulnerabilities/generic/oob-ssrf.yaml",
         **{"template-id": "oob-ssrf", "matched-at": TARGET},
         type="http",
         info={"name": "Blind SSRF", "tags": ["ssrf", "oast"], "severity": "high"},
+        interaction={
+            "protocol": "http",
+            "unique-id": "c9s1k2q0k1s0oabcdefg",
+            "raw-request": "GET / HTTP/1.1\r\n\r\n",
+        },
     )
 
     result = parse(oob)
 
     assert [f.title for f in result.findings] == ["Blind SSRF"]
-    assert result.findings[0].confidence is FindingConfidence.MEDIUM
+    assert result.findings[0].confidence is FindingConfidence.HIGH
     assert result.findings[0].severity is FindingSeverity.HIGH
 
 
@@ -162,15 +168,16 @@ def test_a_matcher_miss_is_never_a_finding() -> None:
     assert reasons(record(**{"matcher-status": False})) == (Suppression.MATCHER_MISS,)
 
 
-def test_a_record_without_a_captured_response_claims_nothing() -> None:
-    # OBSERVED means "one captured response read against a fixed expectation".
-    # With no response there is nothing to be observed against. A whole run
-    # reported this way is the signal that the collector ran with -omit-raw --
-    # loud here, rather than silently yielding zero findings.
-    assert reasons(record(response="")) == (Suppression.NO_CAPTURED_RESPONSE,)
+def test_a_record_without_any_captured_evidence_claims_nothing() -> None:
+    # OBSERVED means "one captured artifact read against a fixed expectation".
+    # A response is one such artifact and a correlated out-of-band interaction
+    # is the other; with neither there is nothing to be observed against. A
+    # whole run reported this way is the signal that the collector ran with
+    # -omit-raw -- loud here, rather than silently yielding zero findings.
+    assert reasons(record(response="")) == (Suppression.NO_CAPTURED_EVIDENCE,)
     stripped = json.loads(record())
     stripped.pop("response")
-    assert reasons(json.dumps(stripped)) == (Suppression.NO_CAPTURED_RESPONSE,)
+    assert reasons(json.dumps(stripped)) == (Suppression.NO_CAPTURED_EVIDENCE,)
 
 
 @pytest.mark.parametrize(

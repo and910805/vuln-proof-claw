@@ -51,11 +51,16 @@ from vuln_proof_claw.domain.enums import (
     FindingStatus,
     VerificationMethod,
 )
+from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId
 from vuln_proof_claw.domain.models import Finding
 from vuln_proof_claw.policy.scope import NormalizedTarget, normalize_target
 
 _MAX_CWE_DIGITS: Final = 5
+
+# Sentinel for a line that is not JSON at all. Distinct from None, because None
+# is a legitimate JSON document that also is not a record.
+_UNPARSEABLE: Final = object()
 
 # nuclei's lowercase severity strings. An unset severity marshals as "" rather
 # than "undefined", so the empty string has to be a key here.
@@ -85,11 +90,19 @@ _FINGERPRINT_TAGS: Final = frozenset({"detect", "detection", "favicon", "panel",
 # Tags that say the engine itself treats the result as a lead.
 _LEAD_TAGS: Final = frozenset({"dast", "fuzz"})
 
-# The tag for out-of-band confirmation. A record carrying it exists only when an
-# interactsh server was named in the contract, and it means the target itself
-# reached out to infrastructure the scanner controls -- which nothing in normal
-# operation forges.
-_OUT_OF_BAND_TAG: Final = "oast"
+# How much an out-of-band callback is worth, by the protocol the target used to
+# make it. A DNS-only interaction is reproducible by resolver prefetch, a
+# security middlebox or an AV sandbox, none of which is the target executing the
+# payload. HTTP, SMTP and LDAP callbacks are not reproducible that way. An
+# unrecognised protocol falls to LOW rather than being trusted.
+_INTERACTION_CONFIDENCE: Final = {
+    "http": FindingConfidence.HIGH,
+    "https": FindingConfidence.HIGH,
+    "smtp": FindingConfidence.HIGH,
+    "smtps": FindingConfidence.HIGH,
+    "ldap": FindingConfidence.HIGH,
+    "dns": FindingConfidence.MEDIUM,
+}
 
 # Template families whose matcher is the sensitive artifact's own bytes rather
 # than a status code, so the response is the claim.
@@ -112,15 +125,18 @@ class Suppression(StrEnum):
     the one a reviewer can act on.
     """
 
+    UNPARSEABLE_LINE = "unparseable_line"
     NOT_A_RECORD = "not_a_record"
     MATCHER_MISS = "matcher_miss"
     OUT_OF_SCOPE = "out_of_scope"
-    NO_CAPTURED_RESPONSE = "no_captured_response"
+    NO_CAPTURED_EVIDENCE = "no_captured_evidence"
     NO_TARGET_DERIVED_OUTPUT = "no_target_derived_output"
     LEAD_ONLY = "lead_only"
     FINGERPRINT_ONLY = "fingerprint_only"
     VERSION_INFERENCE = "version_inference"
     EVIDENCE_NOT_IN_RECORD = "evidence_not_in_record"
+    DUPLICATE_OF_ADMITTED = "duplicate_of_admitted"
+    REFUSED_BY_THE_DOMAIN = "refused_by_the_domain"
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,18 +162,34 @@ class NucleiParseResult:
     suppressed: tuple[SuppressedRecord, ...]
 
 
-def _records(stdout: str) -> Iterator[tuple[str, Any]]:
-    """Yield each JSON document in the output, with the line it came from."""
-    for line in stdout.splitlines():
+def _lines(stdout: str) -> Iterator[str]:
+    """Split the output on newlines only, and on nothing else.
+
+    ``str.splitlines()`` also splits on U+0085, U+000B, U+001C-U+001E, U+2028
+    and U+2029. Go's ``encoding/json`` escapes everything below 0x20 and the two
+    U+202x separators, but writes U+0085 through unescaped -- so a target that
+    puts that one byte in a response body splits one JSONL record into two
+    fragments, neither of which parses. The record then disappears from the
+    findings *and* from the audit, which is a target deleting its own evidence.
+    """
+    for line in stdout.split("\n"):
         stripped = line.strip()
-        if not stripped:
-            continue
+        if stripped:
+            yield stripped
+
+
+def _records(stdout: str) -> Iterator[tuple[str, Any]]:
+    """Yield each line's parsed JSON, or the sentinel for a line that is not JSON.
+
+    A line that fails to parse is yielded rather than dropped: raising would
+    discard the records that did parse, and swallowing it silently would break
+    the promise that every record's fate is reported.
+    """
+    for line in _lines(stdout):
         try:
-            yield stripped, json.loads(stripped)
+            yield line, json.loads(line)
         except json.JSONDecodeError:
-            # A diagnostic line, or a partial final line from a killed run.
-            # Raising would discard the records that did parse.
-            continue
+            yield line, _UNPARSEABLE
 
 
 def _text(record: dict[str, Any], key: str) -> str:
@@ -206,6 +238,34 @@ def _cwe_id(record: dict[str, Any]) -> str | None:
             and 1 <= len(number) <= _MAX_CWE_DIGITS
         ):
             return f"CWE-{number}"
+    return None
+
+
+def _interaction(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the out-of-band interaction the record carries, or None.
+
+    nuclei's ``ResultEvent`` holds the full interactsh interaction in its own
+    field -- ``interaction``, an ``omitempty`` pointer -- with the protocol, the
+    per-request unique token and the raw exchange nested inside. That object is
+    the out-of-band evidence, and because it is omitted when absent, its absence
+    is unambiguous and free to check.
+
+    The ``oast`` tag is not a substitute for it. A tag is the template author's
+    declaration that the rule *uses* out-of-band detection, and a template whose
+    ``matchers-condition`` is ``or`` can match on its in-band branch and emit no
+    interaction at all. Worse, the default contract passes ``-no-interactsh``,
+    so in the default configuration the only shape an oast-tagged record can
+    take is one with no interaction -- which is exactly the shape that must not
+    be admitted as "the target called us back".
+    """
+    interaction = record.get("interaction")
+    if not isinstance(interaction, dict) or not interaction:
+        return None
+    # A correlated callback names the token it was correlated against. Without
+    # one there is nothing tying the interaction to this request.
+    for key in ("unique-id", "unique_id", "full-id", "full_id"):
+        if _text(interaction, key):
+            return interaction
     return None
 
 
@@ -285,19 +345,25 @@ def _classify(  # noqa: PLR0911 - one return per admission and refusal, on purpo
     if tags & _LEAD_TAGS:
         return Suppression.LEAD_ONLY
 
-    if _OUT_OF_BAND_TAG in tags:
-        # The target contacted infrastructure the scanner controls. This is the
+    interaction = _interaction(record)
+    if interaction is not None:
+        # The target contacted infrastructure the scanner controls, and the
+        # record carries the interaction itself: its protocol, the unique token
+        # that correlates it to this request, and the raw exchange. This is the
         # one class where a single record demonstrates the issue rather than
-        # merely observing a condition consistent with it.
+        # observing a condition consistent with it, so it outranks the metadata
+        # refusals below -- a real callback is a fact about the target, and a
+        # tag or a CVE id is not.
         #
-        # MEDIUM rather than HIGH, and the reason is a limit of the output: an
-        # HTTP or SMTP interaction is materially stronger evidence than a
-        # DNS-only one, which resolver prefetch, a security middlebox or a
-        # sandbox can also produce -- and the JSONL does not expose the
-        # interaction protocol as its own field. Claiming HIGH without being
-        # able to tell them apart would be over-claiming on the weaker case, so
-        # this errs downward and a reviewer promotes it from the evidence.
-        return (Admission.OUT_OF_BAND_INTERACTION, FindingConfidence.MEDIUM)
+        # Confidence follows the interaction's own protocol. A DNS-only callback
+        # is reproducible by resolver prefetch, a security middlebox or a
+        # sandbox; an HTTP or SMTP one is not.
+        return (
+            Admission.OUT_OF_BAND_INTERACTION,
+            _INTERACTION_CONFIDENCE.get(
+                _text(interaction, "protocol").lower(), FindingConfidence.LOW
+            ),
+        )
 
     if tags & _FINGERPRINT_TAGS:
         return Suppression.FINGERPRINT_ONLY
@@ -330,7 +396,7 @@ def parse_nuclei_output(
     normalized = normalize_target(target)
     findings: list[Finding] = []
     suppressed: list[SuppressedRecord] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
 
     def refuse(record: dict[str, Any], reason: Suppression, detail: str) -> None:
         suppressed.append(
@@ -343,13 +409,21 @@ def parse_nuclei_output(
         )
 
     for line, document in _records(stdout):
-        if not isinstance(document, dict):
+        if document is _UNPARSEABLE or not isinstance(document, dict):
+            # A diagnostic line, a partial final line from a killed run, or
+            # valid JSON that is not a record. Logged rather than dropped: a
+            # line vanishing from both the findings and the audit is how a
+            # target deletes its own evidence.
             suppressed.append(
                 SuppressedRecord(
                     template_id="<unknown>",
-                    reason=Suppression.NOT_A_RECORD,
+                    reason=(
+                        Suppression.UNPARSEABLE_LINE
+                        if document is _UNPARSEABLE
+                        else Suppression.NOT_A_RECORD
+                    ),
                     located_at="",
-                    detail=f"valid JSON but not an object: {line[:80]}",
+                    detail=f"{line[:80]}",
                 )
             )
             continue
@@ -370,13 +444,20 @@ def parse_nuclei_output(
             )
             continue
 
-        if not _text(document, "response"):
-            # OBSERVED means "one captured response read against a fixed
-            # expectation". With no captured response there is nothing to be
-            # observed against, so no finding is constructible at any status --
-            # and a whole run reported this way is the signal that the collector
-            # ran with -omit-raw, which is loud here rather than silent.
-            refuse(document, Suppression.NO_CAPTURED_RESPONSE, "record carries no response")
+        if not _text(document, "response") and _interaction(document) is None:
+            # OBSERVED means "one captured artifact read against a fixed
+            # expectation". A response is one such artifact; a correlated
+            # out-of-band interaction is the other, and for a blind callback the
+            # interaction is the *only* evidence -- requiring a response there
+            # would demand in-band data to admit an out-of-band claim. With
+            # neither, nothing is constructible at any status, and a whole run
+            # reported this way is the signal that the collector ran with
+            # -omit-raw, which is loud here rather than silent.
+            refuse(
+                document,
+                Suppression.NO_CAPTURED_EVIDENCE,
+                "record carries neither a response nor an interaction",
+            )
             continue
 
         outcome = _classify(document)
@@ -387,38 +468,57 @@ def parse_nuclei_output(
         admission, confidence = outcome
         template_id = _text(document, "template-id") or "<unknown>"
         cwe = _cwe_id(document)
-        title = _text(_info(document), "name") or template_id
-        key = (title, cwe or template_id)
+        title = _text(_info(document), "name").strip() or template_id
+        # The location is part of the key. Two exposures of different secrets at
+        # two different paths are two findings, and collapsing them on title
+        # alone destroyed the second one -- with affected_target overwritten by
+        # the approved target, neither location survived in the row that lived.
+        key = (title, cwe or template_id, located_at)
         if key in seen:
+            refuse(
+                document,
+                Suppression.DUPLICATE_OF_ADMITTED,
+                f"same claim already admitted for {located_at}",
+            )
             continue
         seen.add(key)
-        findings.append(
-            Finding(
-                engagement_id=engagement_id,
-                title=title,
-                vulnerability_class=cwe or template_id,
-                cwe_id=cwe,
-                affected_target=str(normalized),
-                evidence_ids=(evidence_id,),
-                status=FindingStatus.VERIFIED,
-                # Never DIFFERENTIAL: see the module docstring. The JSONL cannot
-                # be shown to contain a control, and a claimed control that
-                # cannot be produced is what the domain refuses.
-                verification_method=VerificationMethod.OBSERVED,
-                # Severity is read here and nowhere else, and it never reaches
-                # confidence. nuclei's severity is the vulnerability class's
-                # CVSS-aligned impact, assigned at authoring time; confidence is
-                # a property of this record's evidence. Wiring one to the other
-                # is the over-claiming bug this parser exists to avoid.
-                severity=_SEVERITIES.get(
-                    _text(_info(document), "severity").lower(), FindingSeverity.INFORMATIONAL
-                ),
-                confidence=confidence,
-                remediation=(
-                    _text(_info(document), "remediation")
-                    or f"Review the captured response for {template_id} ({admission.value})."
-                ),
+        try:
+            findings.append(
+                Finding(
+                    engagement_id=engagement_id,
+                    title=title,
+                    vulnerability_class=cwe or template_id,
+                    cwe_id=cwe,
+                    affected_target=str(normalized),
+                    evidence_ids=(evidence_id,),
+                    status=FindingStatus.VERIFIED,
+                    # Never DIFFERENTIAL: see the module docstring. The JSONL
+                    # cannot be shown to contain a control, and a claimed control
+                    # that cannot be produced is what the domain refuses.
+                    verification_method=VerificationMethod.OBSERVED,
+                    # Severity is read here and nowhere else, and it never
+                    # reaches confidence. nuclei's severity is the vulnerability
+                    # class's CVSS-aligned impact, assigned at authoring time;
+                    # confidence is a property of this record's evidence. Wiring
+                    # one to the other is the over-claiming bug this parser
+                    # exists to avoid.
+                    severity=_SEVERITIES.get(
+                        _text(_info(document), "severity").lower(),
+                        FindingSeverity.INFORMATIONAL,
+                    ),
+                    confidence=confidence,
+                    remediation=(
+                        _text(_info(document), "remediation").strip()
+                        or f"Review the captured evidence for {template_id} ({admission.value})."
+                    ),
+                )
             )
-        )
+        except DomainValidationError as error:
+            # Template metadata reaches Finding's own validators, and one
+            # malformed field used to abort the whole call: no result at all, so
+            # every other finding in the run and the entire suppression log were
+            # destroyed by one bad template. The blank-after-strip cases are
+            # handled above; this refuses the single record for anything else.
+            refuse(document, Suppression.REFUSED_BY_THE_DOMAIN, str(error))
 
     return NucleiParseResult(findings=tuple(findings), suppressed=tuple(suppressed))
