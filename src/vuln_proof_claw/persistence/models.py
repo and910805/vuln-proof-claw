@@ -327,9 +327,9 @@ class FindingRecord(Base):
     vulnerability_class: Mapped[str] = mapped_column(String(255))
     affected_target: Mapped[str] = mapped_column(Text)
     cwe_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    verification_method: Mapped[str] = mapped_column(
-        String(32), nullable=False, server_default="observed"
-    )
+    # Nullable and with no server default on purpose: "no method stated" is a
+    # distinct, meaningful value, and a silent default would forge one.
+    verification_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(32), index=True)
     severity: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="informational"

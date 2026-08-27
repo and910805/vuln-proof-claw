@@ -65,6 +65,23 @@ def test_a_differential_claim_needs_a_control() -> None:
         review_finding(candidate, FindingStatus.VERIFIED)
 
 
+def test_a_differential_candidate_may_exist_before_its_control_is_captured() -> None:
+    # Create-then-verify: the control capture does not exist yet, and refusing
+    # the candidate here would make the differential workflow unreachable.
+    candidate = finding(verification_method=VerificationMethod.DIFFERENTIAL)
+    assert candidate.status is FindingStatus.PENDING_VERIFICATION
+    assert candidate.control_evidence_ids == ()
+
+
+def test_no_writer_can_mint_a_verified_differential_finding_without_a_control() -> None:
+    # The rule lives in __post_init__, so direct construction is bound too.
+    with pytest.raises(DomainValidationError, match="control evidence"):
+        finding(
+            status=FindingStatus.VERIFIED,
+            verification_method=VerificationMethod.DIFFERENTIAL,
+        )
+
+
 def test_a_differential_claim_with_a_control_verifies() -> None:
     candidate = finding(
         severity=FindingSeverity.MEDIUM,
@@ -75,11 +92,22 @@ def test_a_differential_claim_with_a_control_verifies() -> None:
 
 
 @pytest.mark.parametrize("severity", [FindingSeverity.HIGH, FindingSeverity.CRITICAL])
-def test_high_severity_cannot_rest_on_a_bare_observation(severity: FindingSeverity) -> None:
-    candidate = finding(severity=severity)
-    assert requires_control_evidence(candidate)
-    with pytest.raises(DomainValidationError, match="differentially"):
-        review_finding(candidate, FindingStatus.VERIFIED)
+def test_high_severity_must_state_a_verification_method(severity: FindingSeverity) -> None:
+    # Rewritten: this used to assert that HIGH forced DIFFERENTIAL. The rule was
+    # narrowed -- HIGH no longer owes a comparison, it owes a stated basis.
+    with pytest.raises(DomainValidationError, match="must state a verification method"):
+        finding(severity=severity)
+
+
+@pytest.mark.parametrize("severity", [FindingSeverity.HIGH, FindingSeverity.CRITICAL])
+def test_a_high_observation_verifies_without_a_control(severity: FindingSeverity) -> None:
+    # A cookie either carries HttpOnly or it does not; there is no baseline to
+    # hold that against, so demanding a control here would be incoherent.
+    candidate = finding(severity=severity, verification_method=VerificationMethod.OBSERVED)
+    assert not requires_control_evidence(candidate)
+    reviewed = review_finding(candidate, FindingStatus.VERIFIED)
+    assert reviewed.status is FindingStatus.VERIFIED
+    assert reviewed.control_evidence_ids == ()
 
 
 def test_critical_with_differential_control_verifies() -> None:
@@ -161,7 +189,10 @@ def test_a_verified_finding_can_be_reopened_for_manual_review() -> None:
 
 def test_rejecting_needs_no_control_even_at_high_severity() -> None:
     # The control requirement guards a claim, not a dismissal.
-    candidate = finding(severity=FindingSeverity.CRITICAL)
+    candidate = finding(
+        severity=FindingSeverity.CRITICAL,
+        verification_method=VerificationMethod.DIFFERENTIAL,
+    )
     assert review_finding(candidate, FindingStatus.REJECTED).status is FindingStatus.REJECTED
 
 

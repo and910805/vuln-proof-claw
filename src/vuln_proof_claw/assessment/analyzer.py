@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import re
 
-from vuln_proof_claw.domain.enums import FindingConfidence, FindingSeverity, FindingStatus
+from vuln_proof_claw.domain.enums import (
+    FindingConfidence,
+    FindingSeverity,
+    FindingStatus,
+    VerificationMethod,
+)
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId
 from vuln_proof_claw.domain.models import Finding
 from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
@@ -48,6 +53,9 @@ def analyze_passive_response(
                 affected_target=str(normalized),
                 evidence_ids=(evidence_id,),
                 status=FindingStatus.VERIFIED,
+                # Every check here reads one captured response against a fixed
+                # expectation. There is no baseline to compare against.
+                verification_method=VerificationMethod.OBSERVED,
                 severity=severity,
                 confidence=FindingConfidence.HIGH,
                 remediation=remediation,

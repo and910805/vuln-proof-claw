@@ -220,3 +220,28 @@ def test_control_evidence_round_trips_separately_from_the_payload(engine: Engine
         assert len(restored.control_evidence_ids) == 1
         assert restored.verification_method is VerificationMethod.DIFFERENTIAL
         assert restored.cwe_id == "CWE-22"
+
+
+def test_an_unstated_verification_method_round_trips_as_none(engine: Engine) -> None:
+    # The column used to default to "observed", which forged a claim the writer
+    # never made. "Not stated" has to survive the round trip as itself.
+    factory = create_session_factory(engine)
+    with factory.begin() as session:
+        engagement, _flow = seed(session)
+        finding = Finding(
+            engagement_id=engagement.id,
+            title="Referrer-Policy header is missing",
+            vulnerability_class="CWE-200",
+            affected_target="https://example.test/",
+            severity=FindingSeverity.LOW,
+            status=FindingStatus.CANDIDATE,
+            created_at=NOW,
+        )
+        assert finding.verification_method is None
+        FindingRepository(session).add(finding)
+        finding_id = finding.id
+
+    with factory.begin() as session:
+        stored = FindingRepository(session).get(finding_id)
+        assert stored is not None
+        assert stored.entity.verification_method is None

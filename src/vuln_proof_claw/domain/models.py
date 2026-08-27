@@ -52,6 +52,10 @@ from vuln_proof_claw.domain.identifiers import (
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _MAX_CWE_DIGITS = 5
 
+# At these severities the basis of the claim has to be stated. A silent default
+# is how a HIGH finding gets minted without ever saying what it rests on.
+_SEVERITY_REQUIRES_STATED_METHOD = frozenset({FindingSeverity.HIGH, FindingSeverity.CRITICAL})
+
 
 def utc_now() -> datetime:
     """Return a timezone-aware UTC timestamp."""
@@ -345,7 +349,7 @@ class Finding:
     affected_target: str
     evidence_ids: tuple[EvidenceId, ...] = ()
     control_evidence_ids: tuple[EvidenceId, ...] = ()
-    verification_method: VerificationMethod = VerificationMethod.OBSERVED
+    verification_method: VerificationMethod | None = None
     cwe_id: str | None = None
     status: FindingStatus = FindingStatus.CANDIDATE
     severity: FindingSeverity = FindingSeverity.INFORMATIONAL
@@ -366,6 +370,21 @@ class Finding:
             raise DomainValidationError("one evidence record cannot be both payload and control")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")
+        if self.severity in _SEVERITY_REQUIRES_STATED_METHOD and self.verification_method is None:
+            raise DomainValidationError(
+                "high and critical findings must state a verification method"
+            )
+        # A payload response only means something next to a response that did not
+        # carry the payload. Only a differential *claim* owes that comparison; a
+        # candidate may intend one before its control capture exists.
+        if (
+            self.status is FindingStatus.VERIFIED
+            and self.verification_method is VerificationMethod.DIFFERENTIAL
+            and not self.control_evidence_ids
+        ):
+            raise DomainValidationError(
+                "differential verification requires at least one control evidence record"
+            )
 
     @property
     def dedupe_key(self) -> str:

@@ -805,7 +805,11 @@ class FindingRepository:
                 vulnerability_class=finding.vulnerability_class,
                 affected_target=finding.affected_target,
                 cwe_id=finding.cwe_id,
-                verification_method=finding.verification_method.value,
+                verification_method=(
+                    None
+                    if finding.verification_method is None
+                    else finding.verification_method.value
+                ),
                 status=finding.status.value,
                 severity=finding.severity.value,
                 confidence=finding.confidence.value,
@@ -856,7 +860,11 @@ class FindingRepository:
                 vulnerability_class=row.vulnerability_class,
                 affected_target=row.affected_target,
                 cwe_id=row.cwe_id,
-                verification_method=VerificationMethod(row.verification_method),
+                verification_method=(
+                    None
+                    if row.verification_method is None
+                    else VerificationMethod(row.verification_method)
+                ),
                 evidence_ids=self._linked(finding_id, _PAYLOAD_ROLE),
                 control_evidence_ids=self._linked(finding_id, _CONTROL_ROLE),
                 status=FindingStatus(row.status),
