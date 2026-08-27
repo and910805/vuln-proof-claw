@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
@@ -91,6 +91,55 @@ class NmapParameters(ToolParameters):
         return tuple(dict.fromkeys(values))
 
 
+# The probe names this contract offers. Each maps to exactly one httpx flag in
+# the executor; naming them here keeps the parameter surface independent of the
+# tool's flag spelling.
+HttpxProbe = Literal[
+    "status_code",
+    "content_length",
+    "title",
+    "web_server",
+    "tech_detect",
+    "tls_grab",
+    "response_time",
+]
+
+_DEFAULT_HTTPX_PROBES: Final[tuple[HttpxProbe, ...]] = (
+    "content_length",
+    "status_code",
+    "tech_detect",
+    "tls_grab",
+    "title",
+    "web_server",
+)
+
+
+class HttpxParameters(ToolParameters):
+    """Probe exactly one already-approved target.
+
+    What this contract does *not* offer is the point of it. There is no target
+    file, no port list, no extra paths and no proxy, because every one of those
+    would let a single approved action reach something the approval never named.
+    Redirects are not followed either: a redirect points at a different target,
+    and a different target needs its own scope check and its own approval.
+    """
+
+    kind: Literal["httpx"] = "httpx"
+    probes: tuple[HttpxProbe, ...] = Field(default=_DEFAULT_HTTPX_PROBES, min_length=1)
+    method: Literal["GET", "HEAD"] = "GET"
+    timeout_seconds: int = Field(default=10, ge=1, le=60)
+    retries: int = Field(default=1, ge=0, le=3)
+    rate_limit_per_second: int = Field(default=10, ge=1, le=150)
+
+    @field_validator("probes")
+    @classmethod
+    def normalize_probes(cls, values: tuple[HttpxProbe, ...]) -> tuple[HttpxProbe, ...]:
+        # Sorted and deduplicated so the same request written in a different
+        # order digests the same. Without this, replaying an approved action
+        # with its probes listed differently is refused as a digest mismatch.
+        return tuple(sorted(set(values)))
+
+
 class PasswordTestParameters(ToolParameters):
     """Rate-limited credential validation using secret references, never raw passwords."""
 
@@ -153,6 +202,7 @@ ToolParameterUnion = Annotated[
     ShellCommandParameters
     | PythonExecuteParameters
     | NmapParameters
+    | HttpxParameters
     | PasswordTestParameters
     | ExploitPocParameters,
     Field(discriminator="kind"),

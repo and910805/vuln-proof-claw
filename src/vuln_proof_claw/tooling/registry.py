@@ -108,8 +108,8 @@ _TOOLS = (
         "recon",
         "active_api_probe",
         RiskLevel.L1,
-        IntegrationState.CATALOGED,
-        "HTTP service probing and technology discovery.",
+        IntegrationState.WORKER_READY,
+        "Single-target HTTP probing with a bounded probe set; no target files or port lists.",
         executable="httpx",
     ),
     _manifest(
