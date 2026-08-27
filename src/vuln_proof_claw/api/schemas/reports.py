@@ -29,11 +29,22 @@ class EvidenceReportItem(BaseModel):
 
 
 class FindingReportItem(BaseModel):
+    """One finding as a third party receives it.
+
+    ``cwe_id`` and ``verification_method`` are what make the item auditable
+    rather than merely readable: the first is the identifier an external
+    consumer keys on, the second is the claim's stated basis. The domain
+    refuses a HIGH or CRITICAL finding that never states a basis, so a report
+    that omits it hides the very thing that rule exists to guarantee.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     title: str
     vulnerability_class: str
+    cwe_id: str | None = None
+    verification_method: str | None = None
     affected_target: str
     status: str
     severity: str

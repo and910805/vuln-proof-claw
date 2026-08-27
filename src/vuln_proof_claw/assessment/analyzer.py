@@ -37,11 +37,15 @@ def analyze_passive_response(
 
     def add(
         title: str,
-        vulnerability_class: str,
+        cwe: str,
         severity: FindingSeverity,
         remediation: str,
     ) -> None:
-        key = (title, vulnerability_class, str(normalized))
+        # One argument fills both fields, so they cannot drift apart at a call
+        # site. They are not redundant downstream: vulnerability_class is what
+        # the API has always returned, and cwe_id is the validated identifier an
+        # external consumer keys on.
+        key = (title, cwe, str(normalized))
         if key in seen:
             return
         seen.add(key)
@@ -49,7 +53,8 @@ def analyze_passive_response(
             Finding(
                 engagement_id=engagement_id,
                 title=title,
-                vulnerability_class=vulnerability_class,
+                vulnerability_class=cwe,
+                cwe_id=cwe,
                 affected_target=str(normalized),
                 evidence_ids=(evidence_id,),
                 status=FindingStatus.VERIFIED,

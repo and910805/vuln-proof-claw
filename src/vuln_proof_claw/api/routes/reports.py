@@ -261,6 +261,8 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
                 id=row.id,
                 title=row.title,
                 vulnerability_class=row.vulnerability_class,
+                cwe_id=row.cwe_id,
+                verification_method=row.verification_method,
                 affected_target=row.affected_target,
                 status=row.status,
                 severity=row.severity,

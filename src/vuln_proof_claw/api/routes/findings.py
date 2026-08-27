@@ -83,6 +83,14 @@ def review_finding_endpoint(
         engagement_id=saved.entity.engagement_id,
         title=saved.entity.title,
         vulnerability_class=saved.entity.vulnerability_class,
+        cwe_id=saved.entity.cwe_id,
+        # None stays None: "no method stated" is a value of its own, and
+        # rendering it as "observed" would forge the claim the domain refuses.
+        verification_method=(
+            saved.entity.verification_method.value
+            if saved.entity.verification_method is not None
+            else None
+        ),
         affected_target=saved.entity.affected_target,
         status=saved.entity.status.value,
         severity=saved.entity.severity.value,

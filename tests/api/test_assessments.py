@@ -124,6 +124,36 @@ async def assessment_client(
         yield client
 
 
+async def test_the_report_discloses_each_finding_s_cwe_and_stated_basis(
+    tmp_path: Path,
+) -> None:
+    """The two fields that make a shipped finding auditable rather than readable.
+
+    ``cwe_id`` is what an external consumer keys on, and ``verification_method``
+    is the claim's stated basis -- the domain refuses a HIGH or CRITICAL finding
+    that never states one, so a report omitting it hides the guarantee. Both
+    were stored and round-tripped for several versions without ever leaving the
+    system, which no test noticed because every test read the database.
+    """
+    transport = FakeAssessmentTransport()
+    async with assessment_client(tmp_path / "disclosure.db", transport) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={"target": "https://api.example.test/v1"},
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "disclosure"},
+        )
+        report = await client.get(f"/api/v1/engagements/{engagement_id}/report")
+
+    findings = report.json()["findings"]
+    assert findings
+    for item in findings:
+        assert item["cwe_id"] == item["vulnerability_class"], item["title"]
+        assert item["cwe_id"].startswith("CWE-"), item["title"]
+        assert item["verification_method"] == "observed", item["title"]
+
+
 async def test_assessment_creates_evidence_findings_report_and_audit_idempotently(  # noqa: PLR0915
     tmp_path: Path,
 ) -> None:
