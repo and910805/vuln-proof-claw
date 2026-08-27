@@ -15,6 +15,7 @@ from vuln_proof_claw import __version__
 from vuln_proof_claw.api.schemas.reports import EngagementReport
 
 MANIFEST_NAME = "manifest.json"
+REPORT_NAME = "report.json"
 MAX_ARCHIVE_BYTES = 12 * 1024 * 1024
 MAX_MEMBER_BYTES = 10 * 1024 * 1024
 MAX_TOTAL_BYTES = 24 * 1024 * 1024
@@ -196,23 +197,68 @@ def _manifest_file_map(manifest: dict[str, Any], errors: list[str]) -> dict[str,
     return result
 
 
-def _verify_chain(manifest: dict[str, Any], errors: list[str]) -> None:
+def _disclosed_evidence_ids(archive: zipfile.ZipFile) -> tuple[str, ...] | None:
+    """Return the evidence ids ``report.json`` discloses, or ``None`` if unreadable.
+
+    ``report.json``'s bytes are digest-pinned by the manifest's ``files`` entry, so its
+    evidence list is a second statement of what the bundle discloses. Link checking alone
+    cannot see an entry dropped from the tail of the chain or slipped onto it: every
+    surviving link still points at its neighbour. Comparing the chain against this list
+    is what makes the chain cover *exactly* the disclosed evidence.
+    """
+    if REPORT_NAME not in archive.namelist():
+        return None
+    try:
+        report = json.loads(archive.read(REPORT_NAME))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    evidence = report.get("evidence") if isinstance(report, dict) else None
+    if not isinstance(evidence, list):
+        return None
+    ids: list[str] = []
+    for item in evidence:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            return None
+        ids.append(item["id"])
+    return tuple(ids)
+
+
+def _declared_evidence_count(manifest: dict[str, Any]) -> int | None:
+    summary = manifest.get("workflow_summary")
+    if not isinstance(summary, dict):
+        return None
+    count = summary.get("evidence_records")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return None
+    return count
+
+
+def _verify_chain(manifest: dict[str, Any], archive: zipfile.ZipFile, errors: list[str]) -> None:
     chain = manifest.get("evidence_chain")
     if not isinstance(chain, list):
         errors.append("evidence_chain_invalid")
         return
     previous: str | None = None
+    chained_ids: list[str | None] = []
     for index, item in enumerate(chain):
         if not isinstance(item, dict):
             errors.append("evidence_chain_item_invalid")
             return
         digest = item.get("digest")
         linked = item.get("previous_digest")
+        identifier = item.get("id")
+        chained_ids.append(identifier if isinstance(identifier, str) else None)
         if not _valid_sha256(digest):
             errors.append("evidence_digest_invalid")
         if linked != previous:
             errors.append(f"evidence_chain_broken:{index}")
         previous = digest if isinstance(digest, str) else None
+    declared = _declared_evidence_count(manifest)
+    if declared is not None and declared != len(chain):
+        errors.append("evidence_chain_count_mismatch")
+    disclosed = _disclosed_evidence_ids(archive)
+    if disclosed is not None and disclosed != tuple(chained_ids):
+        errors.append("evidence_chain_report_mismatch")
 
 
 def _validate_archive_members(members: list[zipfile.ZipInfo]) -> list[str]:
@@ -292,7 +338,7 @@ def _verify_open_archive(
         if entry.get("sha256") != _sha256(content):
             errors.append(f"digest_mismatch:{name}")
         files_checked += 1
-    _verify_chain(manifest, errors)
+    _verify_chain(manifest, archive, errors)
     engagement = manifest.get("engagement")
     engagement_id = engagement.get("id") if isinstance(engagement, dict) else None
     return BundleVerification(
