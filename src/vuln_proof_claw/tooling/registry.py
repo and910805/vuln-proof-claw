@@ -112,13 +112,21 @@ _TOOLS = (
         "Single-target HTTP probing with a bounded probe set; no target files or port lists.",
         executable="httpx",
     ),
+    # "vulnerability_scan", not "exploit_attempt". Both are L2 so the approval
+    # requirement is unchanged, but the action type is also the ATT&CK key, and
+    # mitre/techniques.py already classifies an observed `nuclei` command line
+    # as vulnerability_scan / T1595.002. Declaring exploit_attempt here meant
+    # the same run was labelled T1190 when it arrived as a tool plan and
+    # T1595.002 when it arrived as a shell transcript -- which corrupts exactly
+    # the layer comparison the ATT&CK export exists for.
     _manifest(
         "nuclei",
         "scanner",
-        "exploit_attempt",
+        "vulnerability_scan",
         RiskLevel.L2,
-        IntegrationState.CATALOGED,
-        "Template-driven vulnerability and misconfiguration checks.",
+        IntegrationState.WORKER_READY,
+        "Single-target template scan with pinned load, no OAST by default, and a "
+        "parser that admits only records whose evidence is in the record.",
         executable="nuclei",
     ),
     _manifest(

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from tests.api.test_console import console_client
 from tests.api.test_workflow import _create_engagement
+from vuln_proof_claw.tooling.registry import IntegrationState, get_tool
 
 
 async def test_automation_plan_creates_role_separated_audited_actions(tmp_path: Path) -> None:
@@ -91,13 +92,20 @@ async def test_tool_catalog_and_policy_bound_tool_plans(tmp_path: Path) -> None:
                 "idempotency_key": "poc-review-v1",
             },
         )
+        # sqlmap stands in for a tool that is catalogued but has no adapter.
+        # nuclei used to play this part and no longer can: wiring it made the
+        # case pass for the wrong reason. Any still-CATALOGED name works, and
+        # the assertion below pins the state so this cannot rot silently again.
+        stand_in = get_tool("sqlmap")
+        assert stand_in is not None
+        assert stand_in.integration_state is IntegrationState.CATALOGED
         unavailable = await client.post(
             f"/api/v1/engagements/{engagement_id}/tool-plans",
             json={
-                "tool": "nuclei",
+                "tool": "sqlmap",
                 "target": "https://api.example.test/v1",
                 "parameters": {},
-                "idempotency_key": "nuclei-v1",
+                "idempotency_key": "sqlmap-v1",
             },
         )
         autonomous = await client.post(

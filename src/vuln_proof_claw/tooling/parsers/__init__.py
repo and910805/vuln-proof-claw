@@ -20,6 +20,18 @@ Every parser here holds to the same three rules:
 
 from __future__ import annotations
 
-__all__ = ["parse_httpx_findings"]
+__all__ = [
+    "NucleiParseResult",
+    "SuppressedRecord",
+    "Suppression",
+    "parse_httpx_findings",
+    "parse_nuclei_output",
+]
 
 from vuln_proof_claw.tooling.parsers.httpx import parse_httpx_findings
+from vuln_proof_claw.tooling.parsers.nuclei import (
+    NucleiParseResult,
+    SuppressedRecord,
+    Suppression,
+    parse_nuclei_output,
+)

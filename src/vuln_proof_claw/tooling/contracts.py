@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from typing import Annotated, Any, Final, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
@@ -140,6 +141,109 @@ class HttpxParameters(ToolParameters):
         return tuple(sorted(set(values)))
 
 
+NucleiSeverity = Literal["info", "low", "medium", "high", "critical"]
+
+_DEFAULT_NUCLEI_SEVERITIES: Final[tuple[NucleiSeverity, ...]] = (
+    "critical",
+    "high",
+    "medium",
+)
+
+# Tags whose templates the argv cannot bound. `fuzz` and `dast` inject into
+# parameters discovered at runtime, which is a different target surface from the
+# one approved; `code` and `js` templates execute a program rather than probing
+# the target. Excluding them by tag is belt to the argv's braces, which never
+# passes -fuzz, -dast, -code or -headless.
+_ALWAYS_EXCLUDED_TAGS: Final[tuple[str, ...]] = ("code", "dast", "fuzz", "headless", "js")
+
+_TEMPLATE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+_TAG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+
+class NucleiParameters(ToolParameters):
+    """Select templates by identity, never by path, and pin the load.
+
+    Two decisions in here are worth stating, because both are places where the
+    convenient default is unsafe.
+
+    **Templates are selected, never located.** There is no template path or
+    directory: a path is a second corpus, chosen after the approval, whose
+    contents the approval never saw. Selection is by template id, tag and
+    severity against whatever pinned corpus the Worker image carries.
+
+    **Out-of-band detection is off unless a server is named.** An interactsh
+    interaction is the strongest evidence nuclei can produce -- the target
+    itself reaches out to infrastructure the scanner controls, and nothing in
+    normal operation forges that. But nuclei's default OAST servers are the
+    vendor's, so leaving it on means the target's request reaches a third party
+    and the third party learns which target was scanned. ``interactsh_server``
+    therefore has no default: unset means the argv disables OAST outright, and
+    the only way to switch it on is to name the server, which cannot be done by
+    accident.
+    """
+
+    kind: Literal["nuclei"] = "nuclei"
+    severities: tuple[NucleiSeverity, ...] = Field(
+        default=_DEFAULT_NUCLEI_SEVERITIES, min_length=1
+    )
+    template_ids: tuple[str, ...] = Field(default=(), max_length=128)
+    tags: tuple[str, ...] = Field(default=(), max_length=32)
+    exclude_tags: tuple[str, ...] = Field(default=(), max_length=32)
+    interactsh_server: str | None = None
+    rate_limit_per_second: int = Field(default=20, ge=1, le=150)
+    concurrency: int = Field(default=10, ge=1, le=50)
+    bulk_size: int = Field(default=10, ge=1, le=50)
+    timeout_seconds: int = Field(default=10, ge=1, le=60)
+    retries: int = Field(default=1, ge=0, le=3)
+    max_host_error: int = Field(default=10, ge=1, le=30)
+
+    @field_validator("severities")
+    @classmethod
+    def normalize_severities(
+        cls, values: tuple[NucleiSeverity, ...]
+    ) -> tuple[NucleiSeverity, ...]:
+        return tuple(sorted(set(values)))
+
+    @field_validator("template_ids")
+    @classmethod
+    def validate_template_ids(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not _TEMPLATE_ID_PATTERN.fullmatch(value) for value in values):
+            raise ValueError("template ids must be lowercase identifiers, not paths")
+        return tuple(sorted(set(values)))
+
+    @field_validator("tags", "exclude_tags")
+    @classmethod
+    def validate_tags(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not _TAG_PATTERN.fullmatch(value) for value in values):
+            raise ValueError("tags must be lowercase identifiers")
+        return tuple(sorted(set(values)))
+
+    @field_validator("interactsh_server")
+    @classmethod
+    def validate_interactsh_server(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("interactsh_server must be an absolute HTTP(S) URL")
+        return value
+
+    @model_validator(mode="after")
+    def refuse_a_selection_that_cannot_be_bounded(self) -> NucleiParameters:
+        requested = set(self.tags) & set(_ALWAYS_EXCLUDED_TAGS)
+        if requested:
+            raise ValueError(
+                "these tags select templates the argv cannot bound: "
+                + ", ".join(sorted(requested))
+            )
+        return self
+
+    @property
+    def effective_exclude_tags(self) -> tuple[str, ...]:
+        """Return the caller's exclusions plus the ones that are never optional."""
+        return tuple(sorted(set(self.exclude_tags) | set(_ALWAYS_EXCLUDED_TAGS)))
+
+
 class PasswordTestParameters(ToolParameters):
     """Rate-limited credential validation using secret references, never raw passwords."""
 
@@ -203,6 +307,7 @@ ToolParameterUnion = Annotated[
     | PythonExecuteParameters
     | NmapParameters
     | HttpxParameters
+    | NucleiParameters
     | PasswordTestParameters
     | ExploitPocParameters,
     Field(discriminator="kind"),

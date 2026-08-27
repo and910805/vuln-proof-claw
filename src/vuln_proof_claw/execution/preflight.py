@@ -93,7 +93,17 @@ class PreflightReport:
 DEFAULT_PROBES: Final = (
     ToolProbe("curl", ("curl", "--version"), "curl"),
     ToolProbe("nmap", ("nmap", "--version"), "Nmap version"),
-    ToolProbe("nuclei", ("nuclei", "-version"), "nuclei"),
+    # The marker is the vendor, not the tool's own name: "nuclei" appears in
+    # anything that mentions it, so it proves nothing about which binary
+    # answered. Same lesson as the httpx entry below.
+    ToolProbe("nuclei", ("nuclei", "-version"), "projectdiscovery"),
+    # A nuclei with no local corpus downloads the community templates from
+    # GitHub on first run and then executes them, so "nuclei answers" is not
+    # enough to call it ready: the corpus would arrive after the approval and
+    # could differ between two otherwise identical runs. -tl lists the loaded
+    # templates, so a non-empty listing is what proves a corpus is already
+    # present.
+    ToolProbe("nuclei_templates", ("nuclei", "-templates-list", "-silent"), "/"),
     ToolProbe("ffuf", ("ffuf", "-V"), "ffuf"),
     # The Debian python3-httpx package installs a program of the same name that
     # accepts none of these flags, so the marker has to come from the scanner.

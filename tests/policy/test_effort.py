@@ -33,8 +33,13 @@ def test_confirming_an_exploit_uses_a_high_setting() -> None:
     assert budget_for_action("exploit_attempt").effort is EffortLevel.HIGH
 
 
-def test_a_scan_sits_in_the_middle() -> None:
-    assert budget_for_action("vulnerability_scan").effort is EffortLevel.MEDIUM
+def test_a_scan_gets_the_same_budget_as_the_other_approval_gated_actions() -> None:
+    # Follows vulnerability_scan moving from L1 to L2. The effort is not tuned
+    # per action here -- it comes from the risk level -- so the assertion is
+    # that a scan is budgeted like the rest of L2, not that it is "in the
+    # middle" of the scale.
+    assert budget_for_action("vulnerability_scan") == budget_for_risk(RiskLevel.L2)
+    assert budget_for_action("vulnerability_scan").effort is EffortLevel.HIGH
 
 
 def test_unknown_actions_inherit_the_conservative_default() -> None:

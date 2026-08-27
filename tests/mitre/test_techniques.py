@@ -27,8 +27,16 @@ def test_every_referenced_technique_has_a_name() -> None:
     assert referenced <= set(TECHNIQUE_NAMES)
 
 
-def test_vulnerability_scan_is_a_registered_low_risk_action() -> None:
-    assert classify_risk("vulnerability_scan") is RiskLevel.L1
+def test_a_vulnerability_scan_needs_an_approval_before_it_runs() -> None:
+    # Was L1 here, which was wrong in a way that mattered: L1 actions execute
+    # automatically on an engagement created with auto_execute_l1. The L1 group
+    # is probing -- enumerate paths, connect to ports, read an API. A
+    # vulnerability scan sends exploit-shaped payloads chosen by a template
+    # corpus, so it belongs with the actions an operator accepts in advance.
+    assert classify_risk("vulnerability_scan") is RiskLevel.L2
+    assert RiskLevel.L2.requires_approval
+    # The ATT&CK classification is unchanged: scanning is reconnaissance
+    # regardless of the approval it needs.
     assert techniques_for_action("vulnerability_scan") == ("T1595.002",)
 
 

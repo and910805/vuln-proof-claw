@@ -21,7 +21,14 @@ ACTION_RISK_LEVELS: Final = MappingProxyType(
         "directory_enumeration": RiskLevel.L1,
         "port_scan": RiskLevel.L1,
         "active_api_probe": RiskLevel.L1,
-        "vulnerability_scan": RiskLevel.L1,
+        # L2, not L1, and the difference is not cosmetic: L1 actions execute
+        # without an approval on an engagement created with auto_execute_l1.
+        # The L1 group above is probing -- enumerate paths, connect to ports,
+        # read an API. A vulnerability scan sends exploit-shaped payloads and
+        # its template corpus decides what it sends, so it belongs with the
+        # other actions whose blast radius the operator has to accept in
+        # advance.
+        "vulnerability_scan": RiskLevel.L2,
         "restricted_shell": RiskLevel.L2,
         "isolated_python": RiskLevel.L2,
         "exploit_attempt": RiskLevel.L2,
