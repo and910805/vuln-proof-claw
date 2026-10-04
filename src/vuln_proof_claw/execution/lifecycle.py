@@ -499,4 +499,6 @@ def _worker_scope(scope: EngagementScope) -> WorkerScope:
         denied_hostnames=tuple(scope.denied_hostnames),
         denied_cidrs=tuple(str(value) for value in scope.denied_networks),
         denied_paths=scope.denied_paths,
+        allowed_wildcards=tuple(scope.allowed_wildcards),
+        denied_wildcards=tuple(scope.denied_wildcards),
     )

@@ -1,0 +1,80 @@
+# Example engagement definition.
+#
+# This file is the written record of what a bug bounty program authorized. It is the
+# only place scope, program rules, and rate limits come from: nothing in the system
+# infers an authorization boundary, and the agent can never widen one.
+#
+# Validate it before use:
+#   vuln-proof-claw mission validate examples/engagement.yaml
+#
+# Register it:
+#   vuln-proof-claw mission create examples/engagement.yaml
+
+name: example-program
+project: Example Inc
+
+# The authorization window. The scope engine refuses every target outside it.
+starts_at: 2026-10-01T00:00:00Z
+ends_at: 2026-12-31T00:00:00Z
+
+scope:
+  # "*.example.com" matches strict subdomains only. The apex must be listed
+  # separately, so a wildcard can never silently widen scope to the registrable
+  # domain itself.
+  include:
+    - "*.example.com"
+    - "api.example.com"
+  include_cidrs: []
+
+  # Deny rules are evaluated before allow rules and always win.
+  exclude:
+    - "status.example.com"
+    - "*.thirdparty.example"
+  exclude_cidrs: []
+  exclude_paths:
+    - "/admin/billing"
+
+  allowed_ports: [443]
+  allowed_schemes: ["https"]
+  allowed_paths: ["/"]
+
+program:
+  program_name: Example Bug Bounty
+  allowed_testing:
+    - "passive reconnaissance"
+    - "authenticated API enumeration with supplied test identities"
+  prohibited_testing:
+    - "denial of service"
+    - "social engineering"
+    - "automated scanning above the published rate limit"
+  reporting_rules: "Submit through the program portal. One issue per report."
+  authentication_required: true
+
+# Respect the program's published limits. Exceeding any ceiling pauses the affected
+# work and is recorded; it never silently drops a lead.
+rate_limits:
+  requests_per_minute_per_domain: 5
+  requests_per_hour: 300
+  requests_per_day: 2000
+  total_requests: 50000
+  maximum_concurrent_actions: 2
+  maximum_lead_attempts: 5
+
+# Scheduling intervals, in seconds. Nothing here is hardcoded in the controller.
+cadence:
+  cycle_interval_seconds: 300
+  http_inventory_seconds: 2700
+  subdomain_refresh_seconds: 21600
+  deep_recon_seconds: 86400
+  lead_retry_cooldown_seconds: 3600
+  stale_lead_after_seconds: 604800
+
+risk_policy:
+  # The engagement ceiling. L4 is refused here and denied by the policy engine.
+  maximum_risk: L1
+  # Allow L1 to run without a per-action approval record.
+  auto_execute_l1: true
+  # Unattended execution is capped at L1 by the domain model and cannot be raised.
+  maximum_autonomous_risk: L1
+  llm_tokens_per_day: 1000000
+  llm_tokens_per_lead: 50000

@@ -101,3 +101,131 @@ class ReportFormat(StrEnum):
     JSON = "json"
     MARKDOWN = "markdown"
     SARIF = "sarif"
+
+
+class MissionState(StrEnum):
+    """Lifecycle of a long-running autonomous research campaign."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
+    STOPPED = "stopped"
+
+    @property
+    def terminal(self) -> bool:
+        """Return whether no further cycles may run for this mission."""
+        return self in {MissionState.COMPLETED, MissionState.EXPIRED, MissionState.STOPPED}
+
+    @property
+    def schedulable(self) -> bool:
+        """Return whether the controller may begin a new cycle."""
+        return self is MissionState.RUNNING
+
+
+class MissionRunState(StrEnum):
+    """Durable state for one continuous mission execution span."""
+
+    RUNNING = "running"
+    INTERRUPTED = "interrupted"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+    @property
+    def terminal(self) -> bool:
+        return self in {
+            MissionRunState.INTERRUPTED,
+            MissionRunState.COMPLETED,
+            MissionRunState.FAILED,
+        }
+
+
+class CycleState(StrEnum):
+    """State of a single observe/plan/act/verify iteration."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    FAILED = "failed"
+
+    @property
+    def terminal(self) -> bool:
+        return self is not CycleState.RUNNING
+
+
+class LeadStatus(StrEnum):
+    """Investigation lifecycle for a research hypothesis."""
+
+    NEW = "new"
+    QUEUED = "queued"
+    INVESTIGATING = "investigating"
+    WAITING = "waiting"
+    NEEDS_APPROVAL = "needs_approval"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+    STALE = "stale"
+    CLOSED = "closed"
+
+    @property
+    def terminal(self) -> bool:
+        """Return whether the lead requires no further autonomous work."""
+        return self in {LeadStatus.VERIFIED, LeadStatus.REJECTED, LeadStatus.CLOSED}
+
+    @property
+    def eligible_for_scheduling(self) -> bool:
+        """Return whether the status permits the controller to select the lead."""
+        return self in {LeadStatus.NEW, LeadStatus.QUEUED, LeadStatus.WAITING}
+
+    @property
+    def reawakenable(self) -> bool:
+        """Return whether new evidence may return the lead to active investigation."""
+        return self in {LeadStatus.STALE, LeadStatus.REJECTED, LeadStatus.WAITING}
+
+
+class AssetKind(StrEnum):
+    """Category of a discovered asset in the knowledge base."""
+
+    HOSTNAME = "hostname"
+    IP_ADDRESS = "ip_address"
+    SERVICE = "service"
+    WEB_APPLICATION = "web_application"
+    API = "api"
+
+
+class ObservationKind(StrEnum):
+    """Category of a raw recorded phenomenon."""
+
+    HTTP_RESPONSE = "http_response"
+    DNS_RECORD = "dns_record"
+    TLS_CERTIFICATE = "tls_certificate"
+    HTTP_HEADER = "http_header"
+    API_SCHEMA = "api_schema"
+    JAVASCRIPT = "javascript"
+    TECHNOLOGY = "technology"
+    ERROR_MESSAGE = "error_message"
+
+
+class CandidateSource(StrEnum):
+    """Origin of a candidate issue awaiting Planner triage."""
+
+    SCANNER = "scanner"
+    HEURISTIC = "heuristic"
+    DIFFERENTIAL = "differential"
+    SCHEMA_ANALYSIS = "schema_analysis"
+    MANUAL = "manual"
+
+
+class ChangeKind(StrEnum):
+    """Typed attack-surface difference between two snapshots."""
+
+    ASSET_ADDED = "asset_added"
+    ASSET_REMOVED = "asset_removed"
+    ENDPOINT_ADDED = "endpoint_added"
+    ENDPOINT_REMOVED = "endpoint_removed"
+    PARAMETER_ADDED = "parameter_added"
+    TECHNOLOGY_CHANGED = "technology_changed"
+    API_SCHEMA_CHANGED = "api_schema_changed"
+    JAVASCRIPT_CHANGED = "javascript_changed"
+    RESPONSE_CHANGED = "response_changed"
+    AUTHENTICATION_CHANGED = "authentication_changed"

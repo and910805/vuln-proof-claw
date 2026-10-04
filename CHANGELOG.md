@@ -6,6 +6,42 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ## Unreleased
 
+### Added
+
+- Added a persistent autonomous research agent (Phase 1 of `docs/AUTONOMOUS_AGENT_ARCHITECTURE.md`):
+  `Mission`, `MissionRun`, `AgentCycle`, and `Lead` domain models with a crash-recoverable
+  `MissionController` loop that observes, detects surface change, ranks leads, plans, and
+  submits every proposed action to the existing policy engine.
+- Added a research knowledge base (`Asset`, `Endpoint`, `Observation`, `Candidate`,
+  `SurfaceSnapshot`, `ChangeEvent`) and a `ResearchMemory` recall layer that answers what
+  was already tried, what failed, and whether new evidence justifies a retry.
+- Added deterministic per-domain rate limits plus hourly, daily, total request, and LLM
+  token budgets backed by a `budget_ledger` table.
+- Added cadence-driven scheduling with capped exponential lead cooldowns; no interval is
+  hardcoded in the controller.
+- Added wildcard engagement scope (`*.example.com`) for allow and deny rules, matching
+  strict subdomains only and refusing public-suffix bases.
+- Added operator-authored `engagement.yaml` definitions, an example at
+  `examples/engagement.yaml`, and `vuln-proof-claw mission` commands (`validate`, `create`,
+  `status`, `pause`, `resume`, `stop`).
+- Added `HttpCaptureExecutor`, wiring the autonomous loop to the existing evidence-capture
+  path so a cycle produces hash-chained evidence and a recorded observation.
+- Added Alembic revision `0010_autonomous_missions`.
+
+### Security
+
+- Unattended execution is capped at L1 by the `Mission` domain model; the ceiling cannot be
+  raised by configuration, and an engagement definition declaring L2 or above is refused.
+- A plan is re-derived before it reaches the policy engine: a mismatched risk level, a
+  permanently denied action type, or a non-normalized target is rejected rather than
+  corrected, so a dishonest planner fails loudly.
+- A lead that has already failed is not retried until new evidence arrives, where "new
+  evidence" means stored observations or change events, never the agent's own assertion.
+- A lead's attempt is counted when investigation begins rather than when it completes, so a
+  crash loop cannot drive unbounded retries against a target.
+- Only a `VerificationOutcome` carrying evidence may promote a lead to a finding; a result
+  that would need destructive testing to prove becomes `requires_manual_review` instead.
+
 ## [0.7.1] - 2026-08-17
 
 ### Added

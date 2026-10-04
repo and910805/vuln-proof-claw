@@ -68,6 +68,8 @@ def _scope_definition(scope: EngagementScope) -> ScopeDefinition:
         denied_hostnames=tuple(sorted(scope.denied_hostnames)),
         denied_cidrs=tuple(str(network) for network in scope.denied_networks),
         denied_paths=scope.denied_paths,
+        allowed_wildcards=tuple(sorted(scope.allowed_wildcards)),
+        denied_wildcards=tuple(sorted(scope.denied_wildcards)),
         valid_from=scope.valid_from,
         valid_until=scope.valid_until,
     )

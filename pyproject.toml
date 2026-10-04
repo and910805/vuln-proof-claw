@@ -42,6 +42,8 @@ dependencies = [
   "httpx>=0.28,<1",
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.10,<3",
+  # Engagement definitions are authored as YAML and parsed with safe_load only.
+  "pyyaml>=6.0,<7",
   "sqlalchemy>=2.0,<3",
   "structlog>=25.4,<27",
   "typer>=0.16,<1",

@@ -205,6 +205,8 @@ class ScopeRepository:
                 denied_hostnames=sorted(scope.denied_hostnames),
                 denied_cidrs=[str(network) for network in scope.denied_networks],
                 denied_paths=list(scope.denied_paths),
+                allowed_wildcards=sorted(scope.allowed_wildcards),
+                denied_wildcards=sorted(scope.denied_wildcards),
                 valid_from=scope.valid_from,
                 valid_until=scope.valid_until,
             )
@@ -224,6 +226,8 @@ class ScopeRepository:
             denied_hostnames=tuple(row.denied_hostnames),
             denied_cidrs=tuple(row.denied_cidrs),
             denied_paths=tuple(row.denied_paths),
+            allowed_wildcards=tuple(row.allowed_wildcards or ()),
+            denied_wildcards=tuple(row.denied_wildcards or ()),
             valid_from=_utc(row.valid_from) if row.valid_from else None,
             valid_until=_utc(row.valid_until) if row.valid_until else None,
         )
