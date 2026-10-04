@@ -464,6 +464,52 @@ def test_surface_change_reawakens_a_stale_lead(engine: Engine) -> None:
     assert stored.entity.status is not LeadStatus.STALE
 
 
+def test_consecutive_cycles_reuse_the_run_handle_the_report_returns(engine: Engine) -> None:
+    """A cycle advances the run's version, so the report must hand back a fresh handle."""
+    factory = session_factory(engine)
+    executor = RecordingExecutor()
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        seed_lead(session, engagement_id, MissionId(mission.id))
+        session.commit()
+
+        controller = build_controller(session, MissionId(mission.id), executor=executor)
+        first = controller.run_cycle(controller.start_run())
+        second = controller.run_cycle(first.run)
+        beating = controller.heartbeat(second.run)
+
+    assert first.run.entity.cycle_index == 1
+    assert second.run.entity.cycle_index == 2
+    assert beating.entity.id == first.run.entity.id
+
+
+def test_a_successful_attempt_still_earns_a_cooldown(engine: Engine) -> None:
+    """Without one, the lead is re-selected immediately and burns the request budget."""
+    factory = session_factory(engine)
+    executor = RecordingExecutor()
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session,
+            engagement_id,
+            cadence=MissionCadence(http_inventory_seconds=3_600),
+            budget=MissionBudget(requests_per_minute_per_domain=100),
+        )
+        lead = seed_lead(session, engagement_id, MissionId(mission.id))
+        session.commit()
+
+        controller = build_controller(session, MissionId(mission.id), executor=executor)
+        first = controller.run_cycle(controller.start_run())
+        second = controller.run_cycle(first.run)
+        stored = LeadRepository(session).get(LeadId(lead.id))
+
+    assert len(executor.executed) == 1
+    assert second.outcomes == ()
+    assert stored is not None
+    assert stored.entity.next_attempt_at == NOW + timedelta(seconds=3_600)
+
+
 def test_each_attempt_uses_a_distinct_idempotency_key(engine: Engine) -> None:
     factory = session_factory(engine)
     executor = RecordingExecutor()

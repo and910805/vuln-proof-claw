@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy.orm import Session
@@ -112,9 +112,15 @@ class LeadOutcome:
 
 @dataclass(frozen=True, slots=True)
 class CycleReport:
-    """A summary of one completed cycle."""
+    """A summary of one completed cycle.
+
+    ``run`` carries the mission run as it stands after the cycle. Callers must use it
+    for the next cycle or heartbeat: the cycle advances the run's version, so a handle
+    held from before the cycle is already stale.
+    """
 
     cycle: AgentCycle
+    run: Stored[MissionRun]
     outcomes: tuple[LeadOutcome, ...]
     changes_detected: int
     next_cycle_at: datetime
@@ -293,7 +299,7 @@ class MissionController:
         if stored_cycle is None:  # pragma: no cover - the row was just written
             raise MissionControllerError("agent_cycle_not_persisted")
         self._cycles.save(completed, expected_version=stored_cycle.version)
-        self._runs.save(
+        advanced = self._runs.save(
             replace(run, cycle_index=run.cycle_index + 1, heartbeat_at=self._now()),
             expected_version=stored_run.version,
         )
@@ -301,6 +307,7 @@ class MissionController:
 
         return CycleReport(
             cycle=completed,
+            run=advanced,
             outcomes=outcomes,
             changes_detected=len(capture.changes),
             next_cycle_at=next_cycle_at(mission.cadence, now=self._now()),
@@ -439,12 +446,18 @@ class MissionController:
             self._session.commit()
             return LeadOutcome(lead.id, "failed", result.reason)
 
+        completed_at = self._now()
         self._save_lead(
             replace(
                 final.entity,
                 status=LeadStatus.WAITING,
                 last_reasoning_summary=result.reason,
-                updated_at=self._now(),
+                # A successful attempt still earns a cooldown. Without one the lead is
+                # immediately re-selected on the next cycle and spends the whole
+                # request budget re-reading the same target.
+                next_attempt_at=completed_at
+                + timedelta(seconds=mission.cadence.http_inventory_seconds),
+                updated_at=completed_at,
             ),
             final.version,
         )
