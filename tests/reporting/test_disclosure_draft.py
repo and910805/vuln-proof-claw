@@ -259,3 +259,18 @@ def test_a_long_body_is_truncated_with_a_pointer_to_the_chain() -> None:
 
     assert "截斷" in rendered
     assert len(rendered) < 5_000
+
+
+def test_the_draft_renders_the_full_request_line_with_its_query() -> None:
+    """A reviewer must be able to replay exactly what was sent."""
+    exchange = HttpExchange(
+        method="GET",
+        target="https://api.example.com:443/api/getCompanyDisplay",
+        status_code=500,
+        query="adminUuid=1111",
+        response_body='{"ErrorMessage":"adminUuid is not existing"}',
+    )
+
+    rendered = render_exchange(DraftExchange(exchange=exchange, evidence_digest=DIGEST))
+
+    assert "GET https://api.example.com:443/api/getCompanyDisplay?adminUuid=1111" in rendered

@@ -231,3 +231,45 @@ def test_attaching_evidence_does_not_duplicate(engine: Engine) -> None:
 
     assert once.evidence_ids == (recorded.evidence_id,)
     assert twice.evidence_ids == once.evidence_ids
+
+
+def test_a_transcript_query_survives_parsing() -> None:
+    """A discarded query makes the report self-contradictory and unreproducible."""
+    exchange = parse_exchange(
+        f"""
+### REQUEST
+GET /api/getCompanyDisplay?adminUuid=1111 HTTP/1.1
+Host: {TARGET_HOST}
+
+### RESPONSE
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+
+{{"ErrorMessage":"adminUuid is not existing"}}
+"""
+    )
+
+    assert exchange.query == "adminUuid=1111"
+    assert exchange.target == f"https://{TARGET_HOST}:443/api/getCompanyDisplay"
+    recorded = exchange.as_canonical_mapping()["request"]
+    assert isinstance(recorded, dict)
+    assert recorded["query"] == "adminUuid=1111"
+
+
+def test_a_query_changes_the_recorded_evidence(engine: Engine) -> None:
+    """Two requests differing only by query must not produce the same evidence."""
+    factory = session_factory(engine)
+    with factory.begin() as session:
+        engagement_id = seed_engagement(session)
+        recorder = build_recorder(session, engagement_id)
+
+        first = recorder.record_exchange(
+            parse_exchange(TRANSCRIPT.replace("/orders/1", "/orders?id=1")), at=NOW
+        )
+        second = recorder.record_exchange(
+            parse_exchange(TRANSCRIPT.replace("/orders/1", "/orders?id=2")), at=NOW
+        )
+
+    assert first.exchange.query == "id=1"
+    assert second.exchange.query == "id=2"
+    assert first.digest != second.digest

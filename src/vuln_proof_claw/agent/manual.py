@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Final
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -41,7 +42,12 @@ from vuln_proof_claw.persistence.repositories import (
     TaskRepository,
 )
 from vuln_proof_claw.policy.risk import classify_risk
-from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope, normalize_target
+from vuln_proof_claw.policy.scope import (
+    EngagementScope,
+    evaluate_scope,
+    normalize_query,
+    normalize_target,
+)
 
 MANUAL_TOOL_NAME: Final = "manual-record"
 MANUAL_TOOL_VERSION: Final = "v1"
@@ -71,14 +77,24 @@ class HttpExchange:
     request_body: str = ""
     response_headers: tuple[tuple[str, str], ...] = ()
     response_body: str = ""
+    query: str = ""
 
     def __post_init__(self) -> None:
+        """Split the query from the target but keep it.
+
+        An exchange whose query is discarded cannot be reproduced from the report: the
+        recorded response would refer to a parameter the recorded request never sent.
+        """
         if not self.method.strip():
             raise DomainValidationError("method must not be empty")
         if not _MIN_HTTP_STATUS <= self.status_code <= _MAX_HTTP_STATUS:
             raise DomainValidationError("status_code must be a valid HTTP status")
+        inline = urlsplit(self.target).query
+        if inline and self.query:
+            raise DomainValidationError("query supplied both inline and explicitly")
         object.__setattr__(self, "method", self.method.upper())
         object.__setattr__(self, "target", str(normalize_target(self.target)))
+        object.__setattr__(self, "query", normalize_query(inline or self.query))
 
     def as_canonical_mapping(self) -> dict[str, object]:
         """Return the stable document that is hashed into the evidence chain."""
@@ -88,6 +104,7 @@ class HttpExchange:
             "request": {
                 "method": self.method,
                 "target": self.target,
+                "query": self.query,
                 "headers": [list(item) for item in self.request_headers],
                 "body": self.request_body,
             },
@@ -249,6 +266,7 @@ class ManualEvidenceRecorder:
             normalized_parameters={
                 "method": exchange.method,
                 "target": exchange.target,
+                "query": exchange.query,
                 "status_code": exchange.status_code,
             },
             captured_at=moment,
@@ -321,9 +339,14 @@ class ManualEvidenceRecorder:
                 method=exchange.method,
                 target=exchange.target,
                 headers=(),
+                query=exchange.query,
             ),
+            query=exchange.query,
             risk_level=classify_risk(self.action_type),
-            idempotency_key=f"manual:{at.isoformat()}:{exchange.method}:{exchange.target}",
+            idempotency_key=(
+                f"manual:{at.isoformat()}:{exchange.method}:"
+                f"{exchange.target}:{exchange.query}"
+            ),
             state=ActionState.SUCCEEDED,
             created_at=at,
             started_at=at,

@@ -81,7 +81,14 @@ def _truncate(body: str) -> str:
 def render_exchange(entry: DraftExchange) -> str:
     """Render one request/response pair with credentials redacted."""
     exchange = entry.exchange
-    lines = ["```http", f"{exchange.method} {exchange.target}"]
+    # The query belongs on the request line: a reviewer must be able to replay exactly
+    # what was sent, and a recorded response often refers to a query parameter.
+    request_line = (
+        f"{exchange.method} {exchange.target}?{exchange.query}"
+        if exchange.query
+        else f"{exchange.method} {exchange.target}"
+    )
+    lines = ["```http", request_line]
     lines.extend(f"{name}: {value}" for name, value in redact_headers(exchange.request_headers))
     if exchange.request_body:
         lines.extend(["", _truncate(redact_text(exchange.request_body))])
