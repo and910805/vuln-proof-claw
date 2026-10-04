@@ -19,6 +19,7 @@ from vuln_proof_claw.agent.differential import (
     body_digest,
     check_denial_inconsistency,
     check_horizontal_privilege,
+    check_missing_authentication,
     check_unauthenticated_access,
     check_vertical_privilege,
     evaluate_all,
@@ -304,3 +305,97 @@ def test_the_same_probes_always_produce_the_same_verdict() -> None:
 
     assert first.triggered == second.triggered
     assert first.reason == second.reason
+
+
+# --- missing authentication -------------------------------------------------------
+#
+# The cases below are the responses actually observed on a live target, kept verbatim
+# so a regression would be caught against reality rather than against an invention.
+
+
+def anon(status: int, size: int = BIG, digest: str = OWNER_BODY) -> ProbeResult:
+    return probe(ANONYMOUS, status, size=size, digest=digest)
+
+
+def test_an_unauthenticated_success_is_reported() -> None:
+    """Observed: POST /api/getUserMenuList -> 200 {"Status":"Success"}"""
+    verdict = check_missing_authentication(anon(200, size=94))
+
+    assert verdict
+    assert verdict.rule is OracleRule.MISSING_AUTHENTICATION
+    assert "instead of 401/403" in verdict.reason
+
+
+def test_a_business_layer_validation_error_is_reported() -> None:
+    """Observed: POST /api/setDeviceMessage -> 400 "Request data is not complete."
+
+    This is the case that proves the gap reaches write endpoints: the server answered
+    in business terms rather than refusing an unauthenticated caller.
+    """
+    verdict = check_missing_authentication(anon(400, size=110))
+
+    assert verdict
+
+
+def test_a_business_layer_lookup_error_is_reported() -> None:
+    """Observed: GET /api/getCompanyDisplay?adminUuid=... -> 500 "not existing"."""
+    verdict = check_missing_authentication(anon(500, size=106))
+
+    assert verdict
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_proper_refusal_is_not_reported(status: int) -> None:
+    verdict = check_missing_authentication(anon(status, size=40))
+
+    assert not verdict
+    assert "correctly refused" in verdict.reason
+
+
+def test_a_login_redirect_is_not_reported() -> None:
+    """A redirect is commonly the auth check doing its job."""
+    verdict = check_missing_authentication(anon(302, size=0))
+
+    assert not verdict
+    assert verdict.suppressed_by == "redirect_may_be_an_auth_check"
+
+
+@pytest.mark.parametrize("status", [404, 405])
+def test_a_response_with_no_handler_proves_nothing(status: int) -> None:
+    verdict = check_missing_authentication(anon(status, size=50))
+
+    assert not verdict
+    assert verdict.suppressed_by == "no_handler_reached"
+
+
+def test_an_empty_server_error_is_not_a_business_answer() -> None:
+    """A bare 500 is a crash, not evidence the business layer ran."""
+    verdict = check_missing_authentication(anon(500, size=0))
+
+    assert not verdict
+    assert verdict.suppressed_by == "unhandled_error"
+
+
+def test_the_rule_only_applies_to_anonymous_probes() -> None:
+    verdict = check_missing_authentication(probe("account24", 200))
+
+    assert not verdict
+    assert "not anonymously" in verdict.reason
+
+
+def test_evaluate_all_includes_the_rule_when_an_anonymous_probe_exists() -> None:
+    verdicts = evaluate_all(
+        [anon(200, size=94), probe("account24", 200)], owner="account24"
+    )
+
+    assert any(v.rule is OracleRule.MISSING_AUTHENTICATION and v.triggered for v in verdicts)
+
+
+def test_evaluate_all_omits_the_rule_without_an_anonymous_probe() -> None:
+    verdicts = evaluate_all(
+        [probe("account24", 200), probe("account25", 200)],
+        owner="account24",
+        other="account25",
+    )
+
+    assert all(v.rule is not OracleRule.MISSING_AUTHENTICATION for v in verdicts)

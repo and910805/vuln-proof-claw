@@ -36,6 +36,8 @@ _REDIRECT_MIN: Final = 300
 _REDIRECT_MAX: Final = 399
 _DENIED_STATUSES: Final = frozenset({401, 403})
 _NOT_FOUND: Final = 404
+_METHOD_NOT_ALLOWED: Final = 405
+_SERVER_ERROR_MIN: Final = 500
 _MINIMUM_BODY_BYTES: Final = 32
 _SIMILARITY_THRESHOLD: Final = 0.98
 
@@ -121,6 +123,7 @@ class OracleRule(StrEnum):
     HORIZONTAL_PRIVILEGE = "horizontal_privilege"
     VERTICAL_PRIVILEGE = "vertical_privilege"
     DENIAL_INCONSISTENCY = "denial_inconsistency"
+    MISSING_AUTHENTICATION = "missing_authentication"
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +399,75 @@ def check_denial_inconsistency(probes: Sequence[ProbeResult]) -> OracleVerdict:
     )
 
 
+def check_missing_authentication(probe: ProbeResult) -> OracleVerdict:
+    """Decide whether an endpoint runs its business logic without authenticating.
+
+    This needs only one probe, because the signal is not a difference between
+    identities — it is the *kind* of answer an unauthenticated caller receives.
+
+    An API that authenticates rejects before dispatching: 401 or 403. An API that does
+    not reaches its own validation layer and answers in business terms — ``Success``,
+    or a complaint that a parameter is missing or a record does not exist. That second
+    shape is the finding, and it is what distinguishes a real authentication gap from
+    an endpoint that simply refused.
+
+    Suppressed when the server gives an answer that proves nothing:
+
+    * ``404`` — the endpoint may not exist at all;
+    * ``405`` — the method was wrong, so no handler ran;
+    * ``5xx`` with an empty body — an unhandled crash, not a business answer;
+    * any redirect — commonly a login redirect, which *is* an auth check.
+    """
+    if probe.identity != ANONYMOUS:
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"probe was made as {probe.identity}, not anonymously",
+        )
+    if probe.denied:
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"endpoint correctly refused with {probe.status_code}",
+        )
+    if probe.redirected:
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"redirected with {probe.status_code}, likely to a login page",
+            suppressed_by="redirect_may_be_an_auth_check",
+        )
+    if probe.status_code in {_NOT_FOUND, _METHOD_NOT_ALLOWED}:
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"{probe.status_code} proves nothing about authentication",
+            suppressed_by="no_handler_reached",
+        )
+    if probe.status_code >= _SERVER_ERROR_MIN and probe.body_size == 0:
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason="server error with no body; not a business-layer answer",
+            suppressed_by="unhandled_error",
+        )
+    return OracleVerdict(
+        OracleRule.MISSING_AUTHENTICATION,
+        triggered=True,
+        target=probe.target,
+        reason=(
+            f"an unauthenticated request received {probe.status_code} with a "
+            f"{probe.body_size}-byte business-layer response instead of 401/403"
+        ),
+        probes=(probe,),
+    )
+
+
 def evaluate_all(
     probes: Sequence[ProbeResult],
     *,
@@ -408,6 +480,9 @@ def evaluate_all(
         check_unauthenticated_access(probes, authenticated=owner),
         check_denial_inconsistency(probes),
     ]
+    anonymous = _find(probes, ANONYMOUS)
+    if anonymous is not None:
+        verdicts.append(check_missing_authentication(anonymous))
     if other is not None:
         verdicts.append(check_horizontal_privilege(probes, owner=owner, other=other))
     if privileged is not None:
