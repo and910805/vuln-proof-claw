@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import json
+import signal
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
+from threading import Event
 from typing import Annotated
 
 import typer
+from sqlalchemy.orm import Session
 
+from vuln_proof_claw.agent.controller import (
+    DEFAULT_WATCHDOG_SECONDS,
+    MissionController,
+    MissionControllerError,
+)
+from vuln_proof_claw.agent.executor import HttpCaptureExecutor
+from vuln_proof_claw.agent.planner import DeterministicPlanner
+from vuln_proof_claw.agent.runner import MissionRunner, RunnerConfig
 from vuln_proof_claw.cli.doctor import diagnose
 from vuln_proof_claw.cli.mission import (
     create_from_definition,
@@ -22,7 +35,11 @@ from vuln_proof_claw.config.engagement import (
 )
 from vuln_proof_claw.config.settings import load_settings
 from vuln_proof_claw.domain.enums import MissionState
-from vuln_proof_claw.domain.identifiers import MissionId
+from vuln_proof_claw.domain.identifiers import EngagementId, MissionId
+from vuln_proof_claw.execution.pinned_http import PinnedHttpTransport
+from vuln_proof_claw.observability.logging import configure_logging
+from vuln_proof_claw.persistence.autonomous_repositories import MissionRepository
+from vuln_proof_claw.persistence.repositories import ScopeRepository
 from vuln_proof_claw.persistence.session import (
     create_engine_from_settings,
     create_session_factory,
@@ -234,6 +251,87 @@ def _apply_state(
     if updated is None:
         typer.echo("[failed] mission_not_found")
         raise typer.Exit(code=1)
+
+
+@mission_app.command("run")
+def mission_run_command(
+    mission_id: Annotated[str, typer.Argument(help="Mission identifier.")],
+    watchdog_seconds: Annotated[
+        int,
+        typer.Option("--watchdog", help="Seconds before a silent run is reaped."),
+    ] = DEFAULT_WATCHDOG_SECONDS,
+    max_failures: Annotated[
+        int,
+        typer.Option("--max-failures", help="Consecutive failures before giving up."),
+    ] = 10,
+) -> None:
+    """Run a mission continuously until interrupted.
+
+    Ctrl+C (or SIGTERM) asks for a clean stop: the current cycle finishes rather than
+    being torn open. A failing cycle backs off and retries instead of ending the run, so
+    the process is expected to survive transient database and network faults unattended.
+    """
+    settings = load_settings()
+    configure_logging(log_format=settings.logging.format, level=settings.logging.level)
+    stop = Event()
+
+    def request_stop(signum: int, _frame: object) -> None:
+        typer.echo(f"\nsignal {signum} received; stopping after this cycle")
+        stop.set()
+
+    signal.signal(signal.SIGINT, request_stop)
+    with suppress(AttributeError, ValueError):
+        signal.signal(signal.SIGTERM, request_stop)
+
+    engine = create_engine_from_settings(load_settings())
+    session_factory = create_session_factory(engine)
+
+    @contextmanager
+    def controller_factory() -> Iterator[MissionController]:
+        with session_factory() as session:
+            scope = ScopeRepository(session).get(_engagement_of(session, mission_id))
+            if scope is None:
+                raise MissionControllerError("engagement_scope_unavailable")
+            yield MissionController(
+                session,
+                MissionId(mission_id),
+                planner=DeterministicPlanner(),
+                executor=HttpCaptureExecutor(
+                    session,
+                    PinnedHttpTransport(scope),
+                    engagement_id=_engagement_of(session, mission_id),
+                ),
+                actor=f"agent:runner:{mission_id[:8]}",
+            )
+
+    runner = MissionRunner(
+        controller_factory=controller_factory,
+        config=RunnerConfig(
+            watchdog_seconds=watchdog_seconds,
+            maximum_consecutive_failures=max_failures,
+        ),
+    )
+    typer.echo(f"mission {mission_id} running continuously (Ctrl+C to stop)")
+    try:
+        report = runner.run_forever(stop)
+    finally:
+        engine.dispose()
+
+    typer.echo(
+        f"stopped: {report.stopped_because}  "
+        f"cycles completed {report.cycles_completed}, failed {report.cycles_failed}"
+    )
+    if report.last_error:
+        typer.echo(f"last message: {report.last_error}")
+    if report.stopped_because in {"fatal", "failure_limit"}:
+        raise typer.Exit(code=1)
+
+
+def _engagement_of(session: Session, mission_id: str) -> EngagementId:
+    stored = MissionRepository(session).get(MissionId(mission_id))
+    if stored is None:
+        raise MissionControllerError("mission_not_found")
+    return stored.entity.engagement_id
 
 
 def main() -> None:
