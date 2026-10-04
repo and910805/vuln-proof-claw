@@ -138,3 +138,6 @@ ignore = [
 # correct for that output, so the ambiguous-character rules do not apply.
 "src/vuln_proof_claw/reporting/disclosure_draft.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/reporting/test_disclosure_draft.py" = ["PLR2004", "RUF001", "RUF002", "RUF003"]
+# Candidate titles and hypotheses are written in Traditional Chinese for the operator,
+# so full-width punctuation is correct there too.
+"src/vuln_proof_claw/agent/candidates.py" = ["RUF001", "RUF002", "RUF003"]

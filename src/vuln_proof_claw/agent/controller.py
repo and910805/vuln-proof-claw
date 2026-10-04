@@ -8,14 +8,21 @@ in memory: a crashed or rebooted process resumes from PostgreSQL alone.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.agent.budget import BudgetGate
+from vuln_proof_claw.agent.candidates import (
+    promote_candidate,
+    record_endpoints,
+    record_verdicts,
+)
+from vuln_proof_claw.agent.differential import OracleVerdict
 from vuln_proof_claw.agent.leads import (
     begin_attempt,
     evaluate_eligibility,
@@ -28,7 +35,13 @@ from vuln_proof_claw.agent.leads import (
 )
 from vuln_proof_claw.agent.memory import ResearchMemory
 from vuln_proof_claw.agent.planner import Planner, ResearchPlan, validate_plan
-from vuln_proof_claw.agent.scheduler import is_stale, next_cycle_at
+from vuln_proof_claw.agent.recon import ReconResult
+from vuln_proof_claw.agent.scheduler import (
+    RecurringTask,
+    evaluate_task,
+    is_stale,
+    next_cycle_at,
+)
 from vuln_proof_claw.agent.surface import SurfaceTracker
 from vuln_proof_claw.audit import record_audit_event
 from vuln_proof_claw.domain.autonomous import (
@@ -45,11 +58,12 @@ from vuln_proof_claw.domain.enums import (
     MissionRunState,
     MissionState,
 )
-from vuln_proof_claw.domain.identifiers import LeadId, MissionId
+from vuln_proof_claw.domain.identifiers import EngagementId, LeadId, MissionId
 from vuln_proof_claw.domain.models import Action, Flow, Task
 from vuln_proof_claw.execution.http_contract import http_parameter_digest
 from vuln_proof_claw.persistence.autonomous_repositories import (
     AgentCycleRepository,
+    EndpointRepository,
     LeadRepository,
     MissionRepository,
     MissionRunRepository,
@@ -70,6 +84,8 @@ from vuln_proof_claw.policy.decision import (
 )
 from vuln_proof_claw.policy.scope import normalize_target
 
+_LOGGER = logging.getLogger(__name__)
+
 DEFAULT_WATCHDOG_SECONDS = 900
 _LEAD_SELECTION_LIMIT = 50
 _SCHEDULABLE_STATUSES = (LeadStatus.NEW, LeadStatus.QUEUED, LeadStatus.WAITING)
@@ -86,6 +102,19 @@ class ExecutionResult:
     succeeded: bool
     reason: str
     evidence_ids: tuple[str, ...] = ()
+
+
+@runtime_checkable
+class Reconnaissance(Protocol):
+    """Recover a target's API inventory.
+
+    Implementations fetch through the scope-enforcing transport, so the controller does
+    not need to know how a target exposes its surface.
+    """
+
+    def discover(self, *, at: datetime) -> ReconResult:
+        """Return what one reconnaissance pass recovered."""
+        ...
 
 
 @runtime_checkable
@@ -111,6 +140,17 @@ class LeadOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class ReconSummary:
+    """What reconnaissance contributed to a cycle."""
+
+    endpoints_recorded: int = 0
+    endpoints_held_back: int = 0
+    candidates_created: int = 0
+    leads_created: int = 0
+    skipped: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CycleReport:
     """A summary of one completed cycle.
 
@@ -124,6 +164,7 @@ class CycleReport:
     outcomes: tuple[LeadOutcome, ...]
     changes_detected: int
     next_cycle_at: datetime
+    recon: ReconSummary = field(default_factory=ReconSummary)
 
 
 def _utc_now() -> datetime:
@@ -142,11 +183,13 @@ class MissionController:
         executor: ActionExecutor,
         actor: str = "agent:controller",
         clock: Callable[[], datetime] = _utc_now,
+        reconnaissance: Reconnaissance | None = None,
     ) -> None:
         self._session = session
         self._mission_id = mission_id
         self._planner = planner
         self._executor = executor
+        self._reconnaissance = reconnaissance
         self._actor = actor
         self._clock = clock
         self._missions = MissionRepository(session)
@@ -281,6 +324,7 @@ class MissionController:
         self._cycles.add(cycle)
         self._session.commit()
 
+        recon = self._reconnoitre(mission, at=now)
         capture = SurfaceTracker(self._session, mission.engagement_id).capture(at=now)
         self._reawaken_changed_leads(capture.changes, at=now)
         self._expire_stale_leads(mission, at=now)
@@ -311,9 +355,106 @@ class MissionController:
             outcomes=outcomes,
             changes_detected=len(capture.changes),
             next_cycle_at=next_cycle_at(mission.cadence, now=self._now()),
+            recon=recon,
         )
 
     # -- internals -------------------------------------------------------------
+
+    def _reconnoitre(self, mission: Mission, *, at: datetime) -> ReconSummary:
+        """Recover the target's API surface and turn new observations into leads.
+
+        Runs on the mission's inventory cadence rather than every cycle: a redeployed
+        bundle is the signal worth acting on, and refetching it every few minutes is
+        the kind of repetition the activity rules forbid.
+
+        A reconnaissance failure never fails the cycle. Losing one pass costs a delay;
+        aborting the cycle would also abandon the leads already waiting to be worked.
+        """
+        if self._reconnaissance is None:
+            return ReconSummary(skipped="no_reconnaissance_configured")
+
+        decision = evaluate_task(
+            RecurringTask.HTTP_INVENTORY,
+            mission.cadence,
+            last_run_at=self._last_recon_at(mission.engagement_id),
+            now=at,
+        )
+        if not decision.due:
+            return ReconSummary(skipped=decision.reason)
+
+        try:
+            result = self._reconnaissance.discover(at=at)
+        except Exception as error:  # noqa: BLE001 - recon must not fail the cycle
+            _LOGGER.warning("reconnaissance failed: %s", error)
+            self._audit("agent.recon_failed", {"error": str(error)[:200]}, at=at)
+            self._session.commit()
+            return ReconSummary(skipped="reconnaissance_failed")
+
+        if not result.classifications:
+            return ReconSummary(skipped="no_endpoints_recovered")
+
+        stored, held = record_endpoints(
+            self._session,
+            mission.engagement_id,
+            result.base_url,
+            result.classifications,
+            at=at,
+        )
+        self._audit(
+            "agent.recon_completed",
+            {
+                "endpoints": stored,
+                "held_back": held,
+                "surface_digest": result.surface_digest,
+            },
+            at=at,
+        )
+        self._session.commit()
+        return ReconSummary(endpoints_recorded=stored, endpoints_held_back=held)
+
+    def record_observations(
+        self,
+        verdicts: Sequence[OracleVerdict],
+        *,
+        at: datetime | None = None,
+    ) -> ReconSummary:
+        """Turn oracle verdicts into candidates and schedulable leads.
+
+        Separate from the cycle so a sweep can be driven independently and still land
+        its conclusions in the same knowledge base.
+        """
+        mission = self._require_mission().entity
+        moment = at or self._now()
+        recorded = record_verdicts(
+            self._session, mission.engagement_id, verdicts, at=moment
+        )
+        by_target = {
+            (verdict.rule.value, verdict.target): verdict
+            for verdict in verdicts
+            if verdict.triggered
+        }
+        leads = 0
+        for candidate in recorded.created:
+            verdict = by_target.get((candidate.severity_hint or "", candidate.target))
+            if verdict is None:  # pragma: no cover - keys are built from the same list
+                continue
+            if promote_candidate(
+                self._session,
+                candidate,
+                mission_id=mission.id,
+                verdict=verdict,
+                at=moment,
+            ):
+                leads += 1
+        self._session.commit()
+        return ReconSummary(candidates_created=recorded.total, leads_created=leads)
+
+    def _last_recon_at(self, engagement_id: EngagementId) -> datetime | None:
+        """Return when reconnaissance last stored an endpoint, if ever."""
+        endpoints = EndpointRepository(self._session).list_for_engagement(
+            engagement_id, limit=1
+        )
+        return endpoints[0].entity.last_seen_at if endpoints else None
 
     def _work_leads(self, mission: Mission, *, at: datetime) -> tuple[LeadOutcome, ...]:
         memory = ResearchMemory(self._session, mission.engagement_id)

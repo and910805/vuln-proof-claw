@@ -20,6 +20,7 @@ from vuln_proof_claw.agent.controller import (
 )
 from vuln_proof_claw.agent.executor import HttpCaptureExecutor
 from vuln_proof_claw.agent.planner import DeterministicPlanner
+from vuln_proof_claw.agent.recon import SpaReconnaissance
 from vuln_proof_claw.agent.runner import MissionRunner, RunnerConfig
 from vuln_proof_claw.cli.doctor import diagnose
 from vuln_proof_claw.cli.mission import (
@@ -36,6 +37,7 @@ from vuln_proof_claw.config.engagement import (
 from vuln_proof_claw.config.settings import load_settings
 from vuln_proof_claw.domain.enums import MissionState
 from vuln_proof_claw.domain.identifiers import EngagementId, MissionId
+from vuln_proof_claw.execution.pinned_auth_http import PinnedAuthTransport
 from vuln_proof_claw.execution.pinned_http import PinnedHttpTransport
 from vuln_proof_claw.observability.logging import configure_logging
 from vuln_proof_claw.persistence.autonomous_repositories import MissionRepository
@@ -264,6 +266,13 @@ def mission_run_command(
         int,
         typer.Option("--max-failures", help="Consecutive failures before giving up."),
     ] = 10,
+    recon_base_url: Annotated[
+        str | None,
+        typer.Option(
+            "--recon",
+            help="Entry URL whose scripts are read to recover the API inventory.",
+        ),
+    ] = None,
 ) -> None:
     """Run a mission continuously until interrupted.
 
@@ -289,7 +298,8 @@ def mission_run_command(
     @contextmanager
     def controller_factory() -> Iterator[MissionController]:
         with session_factory() as session:
-            scope = ScopeRepository(session).get(_engagement_of(session, mission_id))
+            engagement_id = _engagement_of(session, mission_id)
+            scope = ScopeRepository(session).get(engagement_id)
             if scope is None:
                 raise MissionControllerError("engagement_scope_unavailable")
             yield MissionController(
@@ -299,9 +309,18 @@ def mission_run_command(
                 executor=HttpCaptureExecutor(
                     session,
                     PinnedHttpTransport(scope),
-                    engagement_id=_engagement_of(session, mission_id),
+                    engagement_id=engagement_id,
                 ),
                 actor=f"agent:runner:{mission_id[:8]}",
+                reconnaissance=(
+                    SpaReconnaissance(
+                        transport=PinnedAuthTransport(scope),
+                        scope=scope,
+                        base_url=recon_base_url,
+                    )
+                    if recon_base_url
+                    else None
+                ),
             )
 
     runner = MissionRunner(
