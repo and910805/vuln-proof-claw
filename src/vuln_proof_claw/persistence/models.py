@@ -163,6 +163,7 @@ class ActionRecord(Base):
     parameter_digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH))
     risk_level: Mapped[str] = mapped_column(String(2))
     idempotency_key: Mapped[str] = mapped_column(String(255))
+    query: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     state: Mapped[str] = mapped_column(String(32), index=True)
     approval_id: Mapped[str | None] = mapped_column(
         ForeignKey("approvals.id", ondelete="RESTRICT"),

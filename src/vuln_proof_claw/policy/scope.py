@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
 from vuln_proof_claw.domain.errors import DomainValidationError
 
@@ -21,6 +21,7 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 _MAX_HOSTNAME_LENGTH = 253
 _MAX_LABEL_LENGTH = 63
 _MAX_PORT = 65_535
+_MAX_QUERY_LENGTH = 4_096
 _WILDCARD_PREFIX = "*."
 _MINIMUM_WILDCARD_LABELS = 2
 
@@ -225,6 +226,32 @@ def normalize_target(value: str) -> NormalizedTarget:
         port=normalize_port(port),
         path=normalize_path(parsed.path),
     )
+
+
+def normalize_query(value: str) -> str:
+    """Normalize a URL query string for safe, comparable transmission.
+
+    The query is kept separate from the normalized target on purpose. Scope decides
+    authorization from scheme, host, port, and path; a query must not be able to widen
+    that boundary. But a query *does* change what a request asks for, so it is carried
+    explicitly and folded into the parameter digest, which means an approval binds to
+    the exact query that was approved.
+
+    Pairs are re-encoded rather than passed through, so a crafted value cannot smuggle
+    a control character or a second request line into the wire format.
+    """
+    if not value:
+        return ""
+    if _CONTROL_CHARACTER.search(value):
+        raise DomainValidationError("query contains a control character")
+    if len(value) > _MAX_QUERY_LENGTH:
+        raise DomainValidationError("query exceeds the maximum length")
+    if _INVALID_PERCENT.search(value):
+        raise DomainValidationError("query contains invalid percent encoding")
+    pairs = parse_qsl(value, keep_blank_values=True)
+    if not pairs:
+        raise DomainValidationError("query must contain at least one parameter")
+    return urlencode(pairs)
 
 
 def _path_matches(path: str, prefix: str) -> bool:

@@ -13,23 +13,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+from urllib.parse import urlsplit
 
 from vuln_proof_claw.domain.autonomous import Lead, Mission
 from vuln_proof_claw.domain.enums import RiskLevel
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.policy.risk import classify_risk, is_permanently_denied
-from vuln_proof_claw.policy.scope import normalize_target
+from vuln_proof_claw.policy.scope import normalize_query, normalize_target
 
 _MAXIMUM_SUMMARY_LENGTH = 2000
 
 
 @dataclass(frozen=True, slots=True)
 class ProposedAction:
-    """The concrete operation a plan asks to perform."""
+    """The concrete operation a plan asks to perform.
+
+    ``target`` is query-free; a query travels in its own field so that scope and
+    approval bind to the path while the digest still covers the exact parameters.
+    """
 
     action_type: str
     target: str
     parameters: tuple[tuple[str, str], ...] = ()
+    query: str = ""
 
     def __post_init__(self) -> None:
         if not self.action_type.strip():
@@ -144,6 +150,7 @@ class DeterministicPlanner:
             return None
         try:
             normalized = str(normalize_target(target))
+            query = normalize_query(urlsplit(target).query)
         except DomainValidationError:
             return None
         if _risk_rank(self._risk_level) > _risk_rank(mission.maximum_autonomous_risk):
@@ -156,6 +163,7 @@ class DeterministicPlanner:
             proposed_action=ProposedAction(
                 action_type=self._action_type,
                 target=normalized,
+                query=query,
             ),
             expected_observation=(
                 "A bounded HTTP response whose status, headers, and body size can be "

@@ -146,6 +146,7 @@ class Action:
     parameter_digest: str
     risk_level: RiskLevel
     idempotency_key: str
+    query: str = ""
     id: ActionId = field(default_factory=new_action_id)
     state: ActionState = ActionState.PROPOSED
     approval_id: ApprovalId | None = None
@@ -159,6 +160,10 @@ class Action:
         _require_text(self.idempotency_key, "idempotency_key")
         _require_sha256(self.parameter_digest, "parameter_digest")
         _require_aware(self.created_at, "created_at")
+        if any(character in self.query for character in "?#\r\n"):
+            raise DomainValidationError(
+                "query must not contain a delimiter or line break"
+            )
         if self.started_at is not None:
             _require_aware(self.started_at, "started_at")
         if self.completed_at is not None:

@@ -84,6 +84,7 @@ class HttpCaptureExecutor:
             action_id=action.id,
             method="GET",
             target=action.normalized_target,
+            query=action.query,
         )
         at = self._clock()
         try:

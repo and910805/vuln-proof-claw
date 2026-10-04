@@ -152,7 +152,7 @@ class PinnedHttpTransport:
             with closing(connection):
                 connection.request(
                     request.method,
-                    target.path,
+                    f"{target.path}?{request.query}" if request.query else target.path,
                     headers=dict(request.headers),
                 )
                 response = connection.getresponse()
