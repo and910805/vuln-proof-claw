@@ -231,12 +231,18 @@ def test_denial_inconsistency_flags_404_versus_403() -> None:
     assert "existence is distinguishable" in verdict.reason
 
 
-def test_denial_inconsistency_flags_success_versus_denial() -> None:
+def test_correct_authorization_is_never_flagged_as_inconsistent() -> None:
+    """Owner allowed, stranger denied: that is the control working, not a defect.
+
+    Firing here would emit one false line per properly protected endpoint and bury
+    any real finding.
+    """
     verdict = check_denial_inconsistency(
         [probe("account24", 200), probe("account25", 403, digest=OTHER_BODY)]
     )
 
-    assert verdict
+    assert not verdict
+    assert verdict.suppressed_by == "authorization_working_as_intended"
 
 
 def test_denial_inconsistency_stays_quiet_when_everyone_agrees() -> None:

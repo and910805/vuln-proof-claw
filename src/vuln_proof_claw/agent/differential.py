@@ -347,11 +347,14 @@ def check_vertical_privilege(
 
 
 def check_denial_inconsistency(probes: Sequence[ProbeResult]) -> OracleVerdict:
-    """Flag an endpoint that denies some identities but not others inconsistently.
+    """Flag an endpoint whose refusal reveals whether a resource exists.
 
-    This is a weaker signal kept separate from the privilege rules: it says the
-    authorization surface is uneven and deserves a human look, not that a boundary was
-    crossed. It never fires when every identity agrees.
+    Narrow on purpose. One identity succeeding while another is denied is *correct*
+    authorization, not a defect, so that combination never fires — reporting it would
+    bury a real finding under one line per properly protected endpoint.
+
+    What does matter is a server that answers 401/403 to one caller and 404 to another:
+    the difference leaks whether the resource exists, which is usable for enumeration.
     """
     if len(probes) < 2:  # noqa: PLR2004 - a comparison needs at least two probes
         return OracleVerdict(
@@ -380,10 +383,10 @@ def check_denial_inconsistency(probes: Sequence[ProbeResult]) -> OracleVerdict:
     if succeeded and denied:
         return OracleVerdict(
             OracleRule.DENIAL_INCONSISTENCY,
-            triggered=True,
+            triggered=False,
             target=target,
             reason=f"{sorted(succeeded)} succeeded while {sorted(denied)} were denied",
-            probes=tuple(probes),
+            suppressed_by="authorization_working_as_intended",
         )
     return OracleVerdict(
         OracleRule.DENIAL_INCONSISTENCY,

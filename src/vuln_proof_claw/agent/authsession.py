@@ -1,0 +1,298 @@
+"""Authenticated sessions for differential testing.
+
+This is the only place in the system that sends a credential, and the only place that
+holds a session cookie. The design keeps that blast radius small:
+
+* A probe request carries an **identity name**, never a credential and never a cookie.
+  Requests are therefore safe to serialise into the evidence chain.
+* Cookies live in this module's memory for the lifetime of a session and are injected
+  at send time.
+* Everything recorded about a request has its ``cookie`` and ``authorization`` headers
+  redacted before it leaves this module.
+
+It deliberately does *not* reuse the worker capture path. That path allows only GET and
+HEAD with a two-header allowlist, and those limits protect the disposable container
+boundary. Rather than widen them, this module provides a separate, equally narrow
+channel: one configured login endpoint may receive a POST, and everything else is a
+read.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from http.cookies import SimpleCookie
+
+from vuln_proof_claw.agent.differential import ProbeResult, body_digest
+from vuln_proof_claw.config.identities import (
+    IdentityBundle,
+    LoginFlow,
+    ResolvedCredential,
+)
+from vuln_proof_claw.config.redaction import REDACTED, is_sensitive_key
+from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope, normalize_target
+
+_LOGGER = logging.getLogger(__name__)
+
+#: Headers this module may add to an outgoing request. Narrow on purpose: everything
+#: here is either required to speak to the target or supplied by the login flow.
+_PERMITTED_OUTBOUND = frozenset({"accept", "user-agent", "content-type", "cookie"})
+
+_DEFAULT_USER_AGENT = "vuln-proof-claw/authenticated-probe"
+_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_REDIRECT_MIN = 300
+_REDIRECT_MAX = 399
+
+
+class AuthenticationError(Exception):
+    """Raised when an identity cannot be authenticated."""
+
+
+class ProbeError(Exception):
+    """Raised when a probe cannot be performed safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeLimits:
+    """Bounds applied to every authenticated request."""
+
+    timeout_seconds: int = 15
+    max_response_bytes: int = _MAX_RESPONSE_BYTES
+
+
+@dataclass(frozen=True, slots=True)
+class RawResponse:
+    """What a transport returned, before any interpretation."""
+
+    status_code: int
+    headers: tuple[tuple[str, str], ...]
+    body: bytes
+    elapsed_ms: int = 0
+
+
+class AuthenticatedTransport:
+    """Network boundary for authenticated requests.
+
+    Implementations must enforce scope, pin DNS, refuse to follow redirects, and bound
+    the response. The in-process implementation reuses
+    :class:`~vuln_proof_claw.execution.pinned_http.PinnedHttpTransport` primitives.
+    """
+
+    def send(
+        self,
+        method: str,
+        target: str,
+        *,
+        headers: tuple[tuple[str, str], ...],
+        body: str | None,
+        limits: ProbeLimits,
+    ) -> RawResponse:
+        """Send one request and return a bounded response."""
+        raise NotImplementedError
+
+
+def redact_outbound(headers: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+    """Mask credential-bearing headers for logging and evidence."""
+    return tuple(
+        (name, REDACTED if is_sensitive_key(name) else value) for name, value in headers
+    )
+
+
+@dataclass
+class SessionState:
+    """Cookies held for one identity. Never serialised."""
+
+    cookies: dict[str, str] = field(default_factory=dict, repr=False)
+    established_at: datetime | None = None
+
+    @property
+    def authenticated(self) -> bool:
+        return bool(self.cookies)
+
+    def header(self) -> tuple[tuple[str, str], ...]:
+        if not self.cookies:
+            return ()
+        value = "; ".join(f"{name}={token}" for name, token in sorted(self.cookies.items()))
+        return (("cookie", value),)
+
+    def absorb(self, headers: tuple[tuple[str, str], ...], *, keep: tuple[str, ...]) -> None:
+        """Record Set-Cookie values, keeping only the configured session cookies."""
+        for name, value in headers:
+            if name.lower() != "set-cookie":
+                continue
+            jar = SimpleCookie()
+            jar.load(value)
+            for key, morsel in jar.items():
+                if not keep or key in keep:
+                    self.cookies[key] = morsel.value
+
+
+@dataclass
+class IdentitySessions:
+    """Authenticate identities and perform reads as them.
+
+    ``scope`` and ``base_url`` come from the stored engagement, not from the identity
+    file, so a misconfigured identity cannot widen the authorized boundary.
+    """
+
+    transport: AuthenticatedTransport = field(repr=False)
+    bundle: IdentityBundle = field(repr=False)
+    credentials: dict[str, ResolvedCredential] = field(repr=False)
+    scope: EngagementScope = field(repr=False)
+    timeout_seconds: int = 15
+    user_agent: str = _DEFAULT_USER_AGENT
+    _sessions: dict[str, SessionState] = field(default_factory=dict, init=False, repr=False)
+
+    def authenticate(self, identity: str, *, at: datetime | None = None) -> SessionState:
+        """Exchange this identity's credentials for a session.
+
+        The rendered body exists only for the duration of the call. Nothing derived from
+        it is returned, logged, or stored.
+        """
+        definition = self.bundle.named(identity)
+        if definition is None:
+            raise AuthenticationError(f"unknown identity: {identity}")
+        if definition.credentials is None:
+            state = SessionState()
+            self._sessions[identity] = state
+            return state
+
+        login = self.bundle.login
+        if login is None:  # pragma: no cover - guarded by bundle validation
+            raise AuthenticationError("bundle has credentials but no login flow")
+        credential = self.credentials.get(identity)
+        if credential is None:
+            raise AuthenticationError(f"no resolved credential for identity: {identity}")
+
+        target = self._absolute(login.path)
+        self._require_in_scope(target, at=at)
+
+        response = self.transport.send(
+            login.method,
+            target,
+            headers=(
+                ("content-type", login.content_type),
+                ("user-agent", self.user_agent),
+                ("accept", "*/*"),
+            ),
+            body=login.render(
+                credential.username.get_secret_value(),
+                credential.password.get_secret_value(),
+            ),
+            limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
+        )
+        state = self._accept_login(identity, login, response, at=at)
+        self._sessions[identity] = state
+        return state
+
+    def probe(
+        self,
+        identity: str,
+        method: str,
+        target: str,
+        *,
+        at: datetime | None = None,
+    ) -> ProbeResult:
+        """Perform one read as an identity and record only comparable facts.
+
+        The body is reduced to a digest and a length here, before anything else sees it,
+        so no downstream component can base a judgement on content it interpreted.
+        """
+        normalized_method = method.upper()
+        if normalized_method not in {"GET", "HEAD"}:
+            raise ProbeError("differential probes are reads only")
+        self._require_in_scope(target, at=at)
+
+        state = self._sessions.get(identity)
+        if state is None:
+            raise ProbeError(f"identity {identity} has no session; authenticate first")
+
+        headers = (
+            ("accept", "*/*"),
+            ("user-agent", self.user_agent),
+            *state.header(),
+        )
+        self._require_permitted(headers)
+        started = at or datetime.now(UTC)
+        response = self.transport.send(
+            normalized_method,
+            target,
+            headers=headers,
+            body=None,
+            limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
+        )
+        header_map = {name.lower(): value for name, value in response.headers}
+        return ProbeResult(
+            identity=identity,
+            method=normalized_method,
+            target=str(normalize_target(target)),
+            status_code=response.status_code,
+            body_digest=body_digest(response.body),
+            body_size=len(response.body),
+            content_type=header_map.get("content-type", ""),
+            location=header_map.get("location", ""),
+            elapsed_ms=response.elapsed_ms,
+            observed_at=started,
+        )
+
+    def authenticated_identities(self) -> tuple[str, ...]:
+        """Return the identities that currently hold a session."""
+        return tuple(sorted(name for name, state in self._sessions.items() if state.authenticated))
+
+    def _accept_login(
+        self,
+        identity: str,
+        login: LoginFlow,
+        response: RawResponse,
+        *,
+        at: datetime | None,
+    ) -> SessionState:
+        if response.status_code not in login.success_statuses:
+            raise AuthenticationError(
+                f"login for {identity} returned {response.status_code}"
+            )
+        if login.failure_marker and login.failure_marker.encode() in response.body:
+            raise AuthenticationError(f"login for {identity} matched the failure marker")
+
+        state = SessionState(established_at=at or datetime.now(UTC))
+        state.absorb(response.headers, keep=login.session_cookies)
+        if not state.authenticated:
+            raise AuthenticationError(
+                f"login for {identity} returned no session cookie"
+                + (f" matching {list(login.session_cookies)}" if login.session_cookies else "")
+            )
+        _LOGGER.info("identity %s authenticated (%d cookie(s))", identity, len(state.cookies))
+        return state
+
+    def _absolute(self, path: str) -> str:
+        return f"{self.bundle.base_url.rstrip('/')}{path}"
+
+    def _require_in_scope(self, target: str, *, at: datetime | None) -> None:
+        decision = evaluate_scope(target, self.scope, at=at or datetime.now(UTC))
+        if not decision.allowed:
+            raise ProbeError(f"target is outside the authorized scope: {decision.reason}")
+
+    @staticmethod
+    def _require_permitted(headers: tuple[tuple[str, str], ...]) -> None:
+        for name, _ in headers:
+            if name.lower() not in _PERMITTED_OUTBOUND:
+                raise ProbeError(f"header not permitted on an authenticated probe: {name}")
+
+
+def is_redirect(status: int) -> bool:
+    """Return whether a status is a redirect, which probes never follow."""
+    return _REDIRECT_MIN <= status <= _REDIRECT_MAX
+
+
+__all__ = [
+    "AuthenticatedTransport",
+    "AuthenticationError",
+    "IdentitySessions",
+    "ProbeError",
+    "ProbeLimits",
+    "RawResponse",
+    "SessionState",
+    "is_redirect",
+    "redact_outbound",
+]
