@@ -134,3 +134,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["PLR2004"]
+# This module renders a Traditional Chinese disclosure draft. Full-width punctuation is
+# correct for that output, so the ambiguous-character rules do not apply.
+"src/vuln_proof_claw/reporting/disclosure_draft.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/reporting/test_disclosure_draft.py" = ["PLR2004", "RUF001", "RUF002", "RUF003"]
