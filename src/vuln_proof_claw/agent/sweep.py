@@ -29,6 +29,11 @@ from vuln_proof_claw.agent.differential import (
     ProbeResult,
     evaluate_all,
 )
+from vuln_proof_claw.agent.endpoints import (
+    EndpointClassification,
+    EndpointRisk,
+    ProbeStrategy,
+)
 from vuln_proof_claw.domain.errors import DomainValidationError
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,17 +43,28 @@ _SECONDS_PER_MINUTE = 60.0
 
 @dataclass(frozen=True, slots=True)
 class EndpointSpec:
-    """One endpoint to compare across identities."""
+    """One endpoint to compare across identities.
+
+    The strategy and the method are validated together. A sweep that could send any
+    method under any strategy would carry no constraint, so the two legal pairings are
+    fixed here: a direct read, or a POST carrying nothing.
+    """
 
     method: str
     path: str
+    strategy: ProbeStrategy = ProbeStrategy.DIRECT
 
     def __post_init__(self) -> None:
-        if self.method.upper() not in {"GET", "HEAD"}:
+        normalized = self.method.upper()
+        if self.strategy is ProbeStrategy.REFUSE:
+            raise DomainValidationError("a refused endpoint is never swept")
+        if self.strategy is ProbeStrategy.DIRECT and normalized not in {"GET", "HEAD"}:
             raise DomainValidationError("sweeps only read; method must be GET or HEAD")
+        if self.strategy is ProbeStrategy.EMPTY_BODY and normalized != "POST":
+            raise DomainValidationError("an empty-body probe is sent as POST only")
         if not self.path.startswith("/"):
             raise DomainValidationError("path must be absolute")
-        object.__setattr__(self, "method", self.method.upper())
+        object.__setattr__(self, "method", normalized)
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +151,13 @@ class DifferentialSweep:
                     self._pace()
                 try:
                     probes.append(
-                        self.sessions.probe(identity, endpoint.method, target, at=self.clock())
+                        self.sessions.probe(
+                            identity,
+                            endpoint.method,
+                            target,
+                            strategy=endpoint.strategy,
+                            at=self.clock(),
+                        )
                     )
                     consecutive_errors = 0
                 except ProbeError as failure:
@@ -208,12 +230,132 @@ def probe_plan_size(endpoints: Sequence[EndpointSpec], identities: int) -> int:
     return len(endpoints) * max(identities, 0)
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeOutcome:
+    """What one sweep observed, reduced to what a scheduler needs.
+
+    ``requests_sent`` is reported rather than inferred from the plan: a sweep that
+    stopped early sent fewer requests than it intended, and the budget must be charged
+    for what actually left the machine.
+    """
+
+    verdicts: tuple[OracleVerdict, ...] = ()
+    requests_sent: int = 0
+    stopped_early: str | None = None
+
+
+@dataclass
+class SweepProber:
+    """Adapt a differential sweep to the controller's probing contract.
+
+    The identities are authenticated once and reused across cycles. An identity whose
+    session has expired fails its probes, which the sweep contains and reports; the next
+    cycle re-authenticates rather than retrying inside one.
+    """
+
+    sweep: DifferentialSweep
+    owner: str
+    other: str | None = None
+    privileged: str | None = None
+    include_anonymous: bool = True
+    _ready: bool = field(default=False, init=False, repr=False)
+
+    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
+        """Authenticate if needed, sweep the planned endpoints, and judge the results."""
+        self._ensure_sessions(at=at)
+        report = self.sweep.run(
+            endpoints,
+            owner=self.owner,
+            other=self.other,
+            privileged=self.privileged,
+            include_anonymous=self.include_anonymous,
+        )
+        verdicts = tuple(
+            verdict for outcome in report.outcomes for verdict in outcome.verdicts
+        )
+        return ProbeOutcome(
+            verdicts=verdicts,
+            requests_sent=report.requests_sent,
+            stopped_early=report.stopped_early,
+        )
+
+    def _ensure_sessions(self, *, at: datetime) -> None:
+        if self._ready:
+            return
+        for identity in (self.owner, self.other, self.privileged, ANONYMOUS):
+            if identity is None:
+                continue
+            self.sweep.sessions.authenticate(identity, at=at)
+        self._ready = True
+
+
+@dataclass(frozen=True, slots=True)
+class SweepPlan:
+    """What an unattended sweep will probe, and what it will not."""
+
+    endpoints: tuple[EndpointSpec, ...] = ()
+    withheld: tuple[tuple[str, str], ...] = ()
+    """Each withheld endpoint's path and the reason it was left out."""
+
+    def __len__(self) -> int:
+        return len(self.endpoints)
+
+
+def plan_sweep(
+    classifications: Sequence[EndpointClassification],
+    *,
+    limit: int,
+    include_mutating: bool = False,
+) -> SweepPlan:
+    """Choose which recovered endpoints an unattended agent may probe.
+
+    Three things are withheld, and the reason travels with each so an operator can see
+    what the agent declined rather than having to infer it:
+
+    * **Destructive endpoints.** Never called, under any setting.
+    * **Mutating endpoints.** Withheld by default. An empty-body POST to ``setX`` is
+      still a write attempt, and autonomous execution is capped at L1; a human decides
+      whether to make it. ``include_mutating`` is for an operator who has.
+    * **Parameterised paths.** ``/api/companies/{param}/members`` has no meaning until
+      something supplies an identifier. Probing the literal placeholder would produce a
+      404 and a confident-looking verdict about nothing.
+
+    ``limit`` bounds the plan to what the mission's remaining request budget allows.
+    """
+    if limit < 0:
+        raise DomainValidationError("limit must not be negative")
+
+    chosen: list[EndpointSpec] = []
+    withheld: list[tuple[str, str]] = []
+    for item in classifications:
+        if item.risk is EndpointRisk.DESTRUCTIVE:
+            withheld.append((item.path, "destructive"))
+            continue
+        if item.risk is EndpointRisk.MUTATING and not include_mutating:
+            withheld.append((item.path, "mutating_requires_approval"))
+            continue
+        if "{" in item.path:
+            withheld.append((item.path, "parameterised_path_needs_an_identifier"))
+            continue
+        if len(chosen) >= limit:
+            withheld.append((item.path, "request_budget"))
+            continue
+        chosen.append(
+            EndpointSpec(method=item.method, path=item.path, strategy=item.strategy)
+        )
+    return SweepPlan(endpoints=tuple(chosen), withheld=tuple(withheld))
+
+
 __all__ = [
     "DifferentialSweep",
     "EndpointOutcome",
     "EndpointSpec",
+    "ProbeOutcome",
+    "SweepPlan",
     "SweepPolicy",
+    "SweepProber",
     "SweepReport",
+    "plan_sweep",
     "probe_plan_size",
     "summarise",
 ]

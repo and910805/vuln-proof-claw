@@ -23,6 +23,7 @@ from vuln_proof_claw.agent.candidates import (
     record_verdicts,
 )
 from vuln_proof_claw.agent.differential import OracleVerdict
+from vuln_proof_claw.agent.endpoints import classify_endpoint
 from vuln_proof_claw.agent.leads import (
     begin_attempt,
     evaluate_eligibility,
@@ -43,6 +44,7 @@ from vuln_proof_claw.agent.scheduler import (
     next_cycle_at,
 )
 from vuln_proof_claw.agent.surface import SurfaceTracker
+from vuln_proof_claw.agent.sweep import EndpointSpec, ProbeOutcome, SweepPlan, plan_sweep
 from vuln_proof_claw.audit import record_audit_event
 from vuln_proof_claw.domain.autonomous import (
     AgentCycle,
@@ -63,6 +65,7 @@ from vuln_proof_claw.domain.models import Action, Flow, Task
 from vuln_proof_claw.execution.http_contract import http_parameter_digest
 from vuln_proof_claw.persistence.autonomous_repositories import (
     AgentCycleRepository,
+    AssetRepository,
     EndpointRepository,
     LeadRepository,
     MissionRepository,
@@ -70,6 +73,7 @@ from vuln_proof_claw.persistence.autonomous_repositories import (
 )
 from vuln_proof_claw.persistence.repositories import (
     ActionRepository,
+    AuditEventRepository,
     EngagementRepository,
     FlowRepository,
     ScopeRepository,
@@ -89,6 +93,8 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_WATCHDOG_SECONDS = 900
 _LEAD_SELECTION_LIMIT = 50
 _SCHEDULABLE_STATUSES = (LeadStatus.NEW, LeadStatus.QUEUED, LeadStatus.WAITING)
+_ENDPOINT_SELECTION_LIMIT = 500
+_SWEEP_COMPLETED_EVENT = "agent.sweep_completed"
 
 
 class MissionControllerError(Exception):
@@ -114,6 +120,21 @@ class Reconnaissance(Protocol):
 
     def discover(self, *, at: datetime) -> ReconResult:
         """Return what one reconnaissance pass recovered."""
+        ...
+
+
+@runtime_checkable
+class Prober(Protocol):
+    """Probe a planned set of endpoints and judge what came back.
+
+    Implementations receive only endpoints the controller has already cleared against
+    the endpoint classifier and the mission's request budget. They must not widen the
+    plan, and they must return verdicts rather than conclusions: a triggered rule is an
+    observation, and promotion to a finding happens elsewhere.
+    """
+
+    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
+        """Send the planned probes and return what the oracles concluded."""
         ...
 
 
@@ -151,6 +172,19 @@ class ReconSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepSummary:
+    """What probing contributed to a cycle."""
+
+    endpoints_probed: int = 0
+    endpoints_withheld: int = 0
+    requests_sent: int = 0
+    verdicts_triggered: int = 0
+    candidates_created: int = 0
+    leads_created: int = 0
+    skipped: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CycleReport:
     """A summary of one completed cycle.
 
@@ -165,6 +199,7 @@ class CycleReport:
     changes_detected: int
     next_cycle_at: datetime
     recon: ReconSummary = field(default_factory=ReconSummary)
+    sweep: SweepSummary = field(default_factory=SweepSummary)
 
 
 def _utc_now() -> datetime:
@@ -184,12 +219,16 @@ class MissionController:
         actor: str = "agent:controller",
         clock: Callable[[], datetime] = _utc_now,
         reconnaissance: Reconnaissance | None = None,
+        prober: Prober | None = None,
+        probe_mutating: bool = False,
     ) -> None:
         self._session = session
         self._mission_id = mission_id
         self._planner = planner
         self._executor = executor
         self._reconnaissance = reconnaissance
+        self._prober = prober
+        self._probe_mutating = probe_mutating
         self._actor = actor
         self._clock = clock
         self._missions = MissionRepository(session)
@@ -325,6 +364,7 @@ class MissionController:
         self._session.commit()
 
         recon = self._reconnoitre(mission, at=now)
+        sweep = self._probe_surface(mission, at=now)
         capture = SurfaceTracker(self._session, mission.engagement_id).capture(at=now)
         self._reawaken_changed_leads(capture.changes, at=now)
         self._expire_stale_leads(mission, at=now)
@@ -356,6 +396,7 @@ class MissionController:
             changes_detected=len(capture.changes),
             next_cycle_at=next_cycle_at(mission.cadence, now=self._now()),
             recon=recon,
+            sweep=sweep,
         )
 
     # -- internals -------------------------------------------------------------
@@ -411,6 +452,124 @@ class MissionController:
         )
         self._session.commit()
         return ReconSummary(endpoints_recorded=stored, endpoints_held_back=held)
+
+    def _probe_surface(self, mission: Mission, *, at: datetime) -> SweepSummary:
+        """Probe the recovered surface and turn what the oracles say into leads.
+
+        This is the step that makes the loop autonomous rather than merely scheduled:
+        without it the agent knows an endpoint exists but has never asked it anything.
+
+        Three limits apply before a single request is sent. The classifier decides what
+        may be called at all, the budget decides how many, and the cadence decides how
+        often. A sweep is bounded work on an interval, not a scan.
+
+        Like reconnaissance, a failure here is contained. The sweep talks to a live
+        target over a network that may be gone; losing a pass must not cost the cycle.
+        """
+        prepared = self._prepare_sweep(mission, at=at)
+        if isinstance(prepared, str):
+            return SweepSummary(skipped=prepared)
+        plan, host, gate = prepared
+        if not plan.endpoints:
+            return SweepSummary(
+                endpoints_withheld=len(plan.withheld), skipped="nothing_safe_to_probe"
+            )
+        if self._prober is None:  # pragma: no cover - _prepare_sweep already refused
+            return SweepSummary(skipped="no_prober_configured")
+
+        try:
+            outcome = self._prober.probe(plan.endpoints, at=at)
+        except Exception as error:  # noqa: BLE001 - a sweep must not fail the cycle
+            _LOGGER.warning("sweep failed: %s", error)
+            self._audit("agent.sweep_failed", {"error": str(error)[:200]}, at=at)
+            self._session.commit()
+            return SweepSummary(skipped="sweep_failed")
+
+        for _ in range(outcome.requests_sent):
+            gate.record_request(host=host, at=at)
+        self._audit(
+            _SWEEP_COMPLETED_EVENT,
+            {
+                "probed": len(plan.endpoints),
+                "withheld": len(plan.withheld),
+                "requests_sent": outcome.requests_sent,
+                "stopped_early": outcome.stopped_early or "",
+            },
+            at=at,
+        )
+        self._session.commit()
+
+        recorded = self.record_observations(outcome.verdicts, at=at)
+        return SweepSummary(
+            endpoints_probed=len(plan.endpoints),
+            endpoints_withheld=len(plan.withheld),
+            requests_sent=outcome.requests_sent,
+            verdicts_triggered=sum(1 for item in outcome.verdicts if item.triggered),
+            candidates_created=recorded.candidates_created,
+            leads_created=recorded.leads_created,
+            skipped=outcome.stopped_early,
+        )
+
+    def _prepare_sweep(
+        self, mission: Mission, *, at: datetime
+    ) -> tuple[SweepPlan, str, BudgetGate] | str:
+        """Decide whether to sweep and what the sweep may touch.
+
+        Returns the reason for not sweeping, or the plan together with the host the
+        requests will be charged against and the gate that will charge them.
+        """
+        if self._prober is None:
+            return "no_prober_configured"
+
+        decision = evaluate_task(
+            RecurringTask.DEEP_RECON,
+            mission.cadence,
+            last_run_at=AuditEventRepository(self._session).last_occurrence(
+                mission.engagement_id, _SWEEP_COMPLETED_EVENT
+            ),
+            now=at,
+        )
+        if not decision.due:
+            return decision.reason
+
+        endpoints = EndpointRepository(self._session).list_for_engagement(
+            mission.engagement_id, limit=_ENDPOINT_SELECTION_LIMIT
+        )
+        if not endpoints:
+            return "no_endpoints_known"
+
+        host = normalize_target(self._base_of(mission)).host
+        gate = BudgetGate(self._session, mission)
+        headroom = gate.remaining_requests(host=host, at=at)
+        if headroom <= 0:
+            return "request_budget_exhausted"
+
+        plan = plan_sweep(
+            [
+                classify_endpoint(stored.entity.method, stored.entity.path)
+                for stored in endpoints
+            ],
+            limit=headroom,
+            include_mutating=self._probe_mutating,
+        )
+        return (plan, host, gate)
+
+    def _base_of(self, mission: Mission) -> str:
+        """Return a target the budget can be accounted against.
+
+        Endpoints are stored as paths; the host comes from the asset they belong to.
+        """
+        endpoints = EndpointRepository(self._session).list_for_engagement(
+            mission.engagement_id, limit=1
+        )
+        asset = (
+            AssetRepository(self._session).get(endpoints[0].entity.asset_id)
+            if endpoints
+            else None
+        )
+        if asset is None:  # pragma: no cover - guarded by the caller's empty check
+            raise MissionControllerError("endpoint_asset_unavailable")
+        return f"https://{asset.entity.identifier}/"
 
     def record_observations(
         self,
@@ -748,4 +907,9 @@ __all__ = [
     "LeadOutcome",
     "MissionController",
     "MissionControllerError",
+    "ProbeOutcome",
+    "Prober",
+    "ReconSummary",
+    "Reconnaissance",
+    "SweepSummary",
 ]

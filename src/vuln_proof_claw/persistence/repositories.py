@@ -864,6 +864,26 @@ class AuditEventRepository:
         )
         self._session.flush()
 
+    def last_occurrence(
+        self, engagement_id: EngagementId, event_type: str
+    ) -> datetime | None:
+        """Return when an event of this type was last recorded, if ever.
+
+        The audit log is the only record of a periodic task that produced nothing, so it
+        is also the cadence marker: a sweep that found no issue still happened, and a
+        restarted controller must not treat it as never having run.
+        """
+        row = self._session.scalars(
+            select(AuditEventRecord)
+            .where(
+                AuditEventRecord.engagement_id == engagement_id,
+                AuditEventRecord.event_type == event_type,
+            )
+            .order_by(AuditEventRecord.created_at.desc(), AuditEventRecord.id.desc())
+            .limit(1)
+        ).first()
+        return _utc(row.created_at) if row is not None else None
+
     def list_for_engagement(
         self,
         engagement_id: EngagementId,

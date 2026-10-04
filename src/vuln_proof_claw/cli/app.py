@@ -13,15 +13,18 @@ from typing import Annotated
 import typer
 from sqlalchemy.orm import Session
 
+from vuln_proof_claw.agent.authsession import IdentitySessions
 from vuln_proof_claw.agent.controller import (
     DEFAULT_WATCHDOG_SECONDS,
     MissionController,
     MissionControllerError,
 )
+from vuln_proof_claw.agent.differential import IdentityRole
 from vuln_proof_claw.agent.executor import HttpCaptureExecutor
 from vuln_proof_claw.agent.planner import DeterministicPlanner
 from vuln_proof_claw.agent.recon import SpaReconnaissance
 from vuln_proof_claw.agent.runner import MissionRunner, RunnerConfig
+from vuln_proof_claw.agent.sweep import DifferentialSweep, SweepPolicy, SweepProber
 from vuln_proof_claw.cli.doctor import diagnose
 from vuln_proof_claw.cli.mission import (
     create_from_definition,
@@ -33,6 +36,12 @@ from vuln_proof_claw.cli.version import print_version
 from vuln_proof_claw.config.engagement import (
     EngagementDefinitionError,
     load_engagement_definition,
+)
+from vuln_proof_claw.config.identities import (
+    IdentityBundle,
+    IdentityDefinitionError,
+    load_identity_bundle,
+    resolve_credentials,
 )
 from vuln_proof_claw.config.settings import load_settings
 from vuln_proof_claw.domain.enums import MissionState
@@ -255,8 +264,57 @@ def _apply_state(
         raise typer.Exit(code=1)
 
 
+def _probing_roles(bundle: IdentityBundle) -> tuple[str, str | None, str | None]:
+    """Pick the identities a sweep compares, from the roles the bundle declares.
+
+    Taking them from the file rather than from flags means the comparison cannot be
+    pointed at an identity the authorization package never covered.
+    """
+    users = [
+        identity.name
+        for identity in bundle.identities
+        if identity.identity_role is IdentityRole.USER
+    ]
+    privileged = next(
+        (
+            identity.name
+            for identity in bundle.identities
+            if identity.identity_role is IdentityRole.PRIVILEGED
+        ),
+        None,
+    )
+    if not users:
+        raise IdentityDefinitionError("a sweep needs at least one identity with role 'user'")
+    return (users[0], users[1] if len(users) > 1 else None, privileged)
+
+
+def _build_prober(
+    path: Path, *, scope: object, rate: int
+) -> tuple[SweepProber, tuple[str, ...]]:
+    bundle = load_identity_bundle(path)
+    credentials, literals = resolve_credentials(bundle)
+    owner, other, privileged = _probing_roles(bundle)
+    sessions = IdentitySessions(
+        transport=PinnedAuthTransport(scope),  # type: ignore[arg-type]
+        bundle=bundle,
+        credentials=credentials,
+        scope=scope,  # type: ignore[arg-type]
+    )
+    prober = SweepProber(
+        sweep=DifferentialSweep(
+            sessions=sessions,
+            base_url=bundle.base_url,
+            policy=SweepPolicy(requests_per_minute=rate),
+        ),
+        owner=owner,
+        other=other,
+        privileged=privileged,
+    )
+    return (prober, literals)
+
+
 @mission_app.command("run")
-def mission_run_command(
+def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named flags
     mission_id: Annotated[str, typer.Argument(help="Mission identifier.")],
     watchdog_seconds: Annotated[
         int,
@@ -273,6 +331,28 @@ def mission_run_command(
             help="Entry URL whose scripts are read to recover the API inventory.",
         ),
     ] = None,
+    identities: Annotated[
+        Path | None,
+        typer.Option(
+            "--identities",
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+            help="Identity bundle enabling differential probing of the recovered surface.",
+        ),
+    ] = None,
+    rate: Annotated[
+        int,
+        typer.Option("--rate", help="Probe requests per minute."),
+    ] = 30,
+    probe_mutating: Annotated[
+        bool,
+        typer.Option(
+            "--probe-mutating",
+            help="Also probe state-changing endpoints with an empty body. Off by default.",
+        ),
+    ] = False,
 ) -> None:
     """Run a mission continuously until interrupted.
 
@@ -302,6 +382,14 @@ def mission_run_command(
             scope = ScopeRepository(session).get(engagement_id)
             if scope is None:
                 raise MissionControllerError("engagement_scope_unavailable")
+            prober = None
+            if identities is not None:
+                prober, literals = _build_prober(identities, scope=scope, rate=rate)
+                if literals:
+                    typer.echo(
+                        "[warning] passwords are literal in the identity file for: "
+                        + ", ".join(literals)
+                    )
             yield MissionController(
                 session,
                 MissionId(mission_id),
@@ -321,6 +409,8 @@ def mission_run_command(
                     if recon_base_url
                     else None
                 ),
+                prober=prober,
+                probe_mutating=probe_mutating,
             )
 
     runner = MissionRunner(

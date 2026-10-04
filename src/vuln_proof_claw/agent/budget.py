@@ -84,6 +84,25 @@ class BudgetGate:
                 return BudgetDecision(allowed=False, reason=reason)
         return BudgetDecision(allowed=True, reason="within_budget")
 
+    def remaining_requests(self, *, host: str, at: datetime) -> int:
+        """Return how many more requests fit inside every ceiling at once.
+
+        A sweep commits to a plan before it sends anything, so it needs the headroom as
+        a number rather than a yes or no. The tightest window wins: being allowed 400
+        more today means nothing if this minute's allowance is two.
+        """
+        budget = self._mission.budget
+        headroom = []
+        for kind, scope_key, ceiling in (
+            (BudgetWindowKind.MINUTE, host, budget.requests_per_minute_per_domain),
+            (BudgetWindowKind.HOUR, "", budget.requests_per_hour),
+            (BudgetWindowKind.DAY, "", budget.requests_per_day),
+            (BudgetWindowKind.TOTAL, "", budget.total_requests),
+        ):
+            window = BudgetWindow(kind.value, window_start(kind, at), scope_key)
+            headroom.append(ceiling - self._ledger.usage(self._mission.id, window).requests)
+        return max(0, min(headroom))
+
     def record_request(self, *, host: str, at: datetime) -> None:
         """Record one consumed request against every applicable window."""
         usage = BudgetUsage(requests=1)

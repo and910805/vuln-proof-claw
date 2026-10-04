@@ -22,6 +22,7 @@ from vuln_proof_claw.agent.authsession import (
     SessionState,
     redact_outbound,
 )
+from vuln_proof_claw.agent.endpoints import ProbeStrategy
 from vuln_proof_claw.config.identities import (
     parse_identity_bundle,
     resolve_credentials,
@@ -268,14 +269,68 @@ def test_probing_without_authenticating_first_is_refused() -> None:
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
-def test_a_probe_may_only_read(method: str) -> None:
+def test_a_direct_probe_may_only_read(method: str) -> None:
     """Differential probing must never change state on the target."""
     transport = RecordingTransport()
     sessions = build(transport)
     sessions.authenticate("account24", at=NOW)
 
-    with pytest.raises(ProbeError, match="reads only"):
+    with pytest.raises(ProbeError, match="GET or HEAD only"):
         sessions.probe("account24", method, f"https://{TARGET_HOST}/x", at=NOW)
+
+
+@pytest.mark.parametrize("method", ["GET", "PUT", "DELETE", "PATCH"])
+def test_an_empty_body_probe_is_sent_as_post_only(method: str) -> None:
+    """Pairing a strategy with any method would make the strategy meaningless."""
+    sessions = build(RecordingTransport())
+    sessions.authenticate("account24", at=NOW)
+
+    with pytest.raises(ProbeError, match="POST only"):
+        sessions.probe(
+            "account24",
+            method,
+            f"https://{TARGET_HOST}/x",
+            strategy=ProbeStrategy.EMPTY_BODY,
+            at=NOW,
+        )
+
+
+def test_a_destructive_endpoint_is_never_probed() -> None:
+    transport = RecordingTransport()
+    sessions = build(transport)
+    sessions.authenticate("account24", at=NOW)
+
+    with pytest.raises(ProbeError, match="destructive"):
+        sessions.probe(
+            "account24",
+            "POST",
+            f"https://{TARGET_HOST}/api/setDeviceSecureWipe",
+            strategy=ProbeStrategy.REFUSE,
+            at=NOW,
+        )
+
+    assert all("setDeviceSecureWipe" not in request.target for request in transport.sent)
+
+
+def test_an_empty_body_probe_carries_nothing_to_act_on() -> None:
+    """The containment is the body: an incomplete request cannot complete an action."""
+    transport = RecordingTransport()
+    sessions = build(transport)
+    sessions.authenticate("account24", at=NOW)
+    before = len(transport.sent)
+
+    sessions.probe(
+        "account24",
+        "POST",
+        f"https://{TARGET_HOST}/api/getCompanyDisplay",
+        strategy=ProbeStrategy.EMPTY_BODY,
+        at=NOW,
+    )
+
+    sent = transport.sent[before]
+    assert sent.body == "{}"
+    assert sent.method == "POST"
+    assert ("content-type", "application/json") in sent.headers
 
 
 def test_an_unknown_identity_is_refused() -> None:

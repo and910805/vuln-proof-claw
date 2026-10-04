@@ -13,8 +13,15 @@ holds a session cookie. The design keeps that blast radius small:
 It deliberately does *not* reuse the worker capture path. That path allows only GET and
 HEAD with a two-header allowlist, and those limits protect the disposable container
 boundary. Rather than widen them, this module provides a separate, equally narrow
-channel: one configured login endpoint may receive a POST, and everything else is a
-read.
+channel: one configured login endpoint may receive a POST, a classified endpoint may
+receive a POST carrying nothing, and everything else is a read.
+
+The empty-body POST exists because most of the APIs worth testing expose their reads
+over POST. Sending one changes nothing — the request is deliberately incomplete, so it
+fails in the target's own validation layer — but the *shape* of that failure still
+answers the question that matters: does authentication run before the business logic?
+It is permitted only for an endpoint the classifier has already judged, never on a
+caller's say-so.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 
 from vuln_proof_claw.agent.differential import ProbeResult, body_digest
+from vuln_proof_claw.agent.endpoints import ProbeStrategy
 from vuln_proof_claw.config.identities import (
     IdentityBundle,
     LoginFlow,
@@ -40,6 +48,11 @@ _LOGGER = logging.getLogger(__name__)
 _PERMITTED_OUTBOUND = frozenset({"accept", "user-agent", "content-type", "cookie"})
 
 _DEFAULT_USER_AGENT = "vuln-proof-claw/authenticated-probe"
+
+#: The entire body of an empty-body probe. No identifier, no value, nothing to act on.
+_EMPTY_BODY = "{}"
+_EMPTY_BODY_CONTENT_TYPE = "application/json"
+
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _REDIRECT_MIN = 300
 _REDIRECT_MAX = 399
@@ -192,16 +205,16 @@ class IdentitySessions:
         method: str,
         target: str,
         *,
+        strategy: ProbeStrategy = ProbeStrategy.DIRECT,
         at: datetime | None = None,
     ) -> ProbeResult:
-        """Perform one read as an identity and record only comparable facts.
+        """Perform one probe as an identity and record only comparable facts.
 
         The body is reduced to a digest and a length here, before anything else sees it,
         so no downstream component can base a judgement on content it interpreted.
         """
         normalized_method = method.upper()
-        if normalized_method not in {"GET", "HEAD"}:
-            raise ProbeError("differential probes are reads only")
+        extra_headers, body = self._shape(normalized_method, strategy)
         self._require_in_scope(target, at=at)
 
         state = self._sessions.get(identity)
@@ -211,6 +224,7 @@ class IdentitySessions:
         headers = (
             ("accept", "*/*"),
             ("user-agent", self.user_agent),
+            *extra_headers,
             *state.header(),
         )
         self._require_permitted(headers)
@@ -219,7 +233,7 @@ class IdentitySessions:
             normalized_method,
             target,
             headers=headers,
-            body=None,
+            body=body,
             limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
         )
         header_map = {name.lower(): value for name, value in response.headers}
@@ -235,6 +249,26 @@ class IdentitySessions:
             elapsed_ms=response.elapsed_ms,
             observed_at=started,
         )
+
+    @staticmethod
+    def _shape(
+        method: str, strategy: ProbeStrategy
+    ) -> tuple[tuple[tuple[str, str], ...], str | None]:
+        """Return the headers and body one strategy permits, or refuse to send.
+
+        Every refusal here is a method the strategy does not sanction. The pairing is
+        fixed rather than configurable: a strategy that could be sent with any method
+        would be no constraint at all.
+        """
+        if strategy is ProbeStrategy.REFUSE:
+            raise ProbeError("this endpoint is classified as destructive and is never probed")
+        if strategy is ProbeStrategy.DIRECT:
+            if method not in {"GET", "HEAD"}:
+                raise ProbeError("a direct probe is a read; GET or HEAD only")
+            return ((), None)
+        if method != "POST":
+            raise ProbeError("an empty-body probe is sent as POST only")
+        return ((("content-type", _EMPTY_BODY_CONTENT_TYPE),), _EMPTY_BODY)
 
     def authenticated_identities(self) -> tuple[str, ...]:
         """Return the identities that currently hold a session."""

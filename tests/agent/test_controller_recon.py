@@ -1,12 +1,13 @@
-"""Tests for reconnaissance and candidate recording inside the mission cycle.
+"""Tests for reconnaissance, probing and candidate recording inside the mission cycle.
 
-These close the loop: a bundle is read, endpoints are recovered and classified, and a
-machine-judged observation becomes work the controller will pick up on a later cycle.
+These close the loop: a bundle is read, endpoints are recovered and classified, the safe
+ones are probed, and a machine-judged observation becomes work the controller will pick
+up on a later cycle — all without a human between the steps.
 """
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +30,8 @@ from vuln_proof_claw.agent.controller import MissionController
 from vuln_proof_claw.agent.differential import OracleRule, OracleVerdict
 from vuln_proof_claw.agent.endpoints import EndpointClassification, classify_all
 from vuln_proof_claw.agent.planner import DeterministicPlanner
-from vuln_proof_claw.domain.autonomous import MissionCadence
+from vuln_proof_claw.agent.sweep import EndpointSpec, ProbeOutcome
+from vuln_proof_claw.domain.autonomous import MissionBudget, MissionCadence
 from vuln_proof_claw.domain.enums import LeadStatus
 from vuln_proof_claw.domain.identifiers import MissionId
 from vuln_proof_claw.persistence.autonomous_repositories import (
@@ -68,12 +70,33 @@ def recon_for(*paths: tuple[str, str]) -> StubRecon:
     return StubRecon(classifications=classify_all(paths))
 
 
-def controller_with(
+@dataclass
+class StubProber:
+    """Records the plan it was handed and returns canned verdicts."""
+
+    verdicts: tuple[OracleVerdict, ...] = field(default_factory=tuple)
+    requests_sent: int = 0
+    explode: bool = False
+    plans: list[tuple[EndpointSpec, ...]] = field(default_factory=list)
+
+    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
+        self.plans.append(tuple(endpoints))
+        if self.explode:
+            raise RuntimeError("target unreachable")
+        return ProbeOutcome(
+            verdicts=self.verdicts,
+            requests_sent=self.requests_sent or len(endpoints),
+        )
+
+
+def controller_with(  # noqa: PLR0913 - explicit collaborators keep the setup readable
     session: object,
     mission_id: MissionId,
     *,
     executor: RecordingExecutor,
     recon: StubRecon | None = None,
+    prober: StubProber | None = None,
+    probe_mutating: bool = False,
 ) -> MissionController:
     return MissionController(
         session,  # type: ignore[arg-type]
@@ -82,6 +105,17 @@ def controller_with(
         executor=executor,
         clock=frozen_clock(),  # type: ignore[arg-type]
         reconnaissance=recon,  # type: ignore[arg-type]
+        prober=prober,
+        probe_mutating=probe_mutating,
+    )
+
+
+def triggered_verdict(target: str = TARGET) -> OracleVerdict:
+    return OracleVerdict(
+        OracleRule.MISSING_AUTHENTICATION,
+        triggered=True,
+        target=target,
+        reason="an unauthenticated request received 200 with a 94-byte response",
     )
 
 
@@ -183,6 +217,230 @@ def test_an_empty_inventory_is_reported_not_recorded(engine: Engine) -> None:
         report = controller.run_cycle(controller.start_run())
 
     assert report.recon.skipped == "no_endpoints_recovered"
+
+
+def test_one_cycle_goes_from_a_bundle_to_a_lead(engine: Engine) -> None:
+    """The whole chain, unattended: discover, classify, probe, judge, record."""
+    factory = session_factory(engine)
+    recon = recon_for(
+        ("GET", "/api/getCompanyDisplay"),
+        ("POST", "/api/setDeviceSecureWipe"),
+    )
+    prober = StubProber(verdicts=(triggered_verdict(),))
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon,
+            prober=prober,
+        )
+        report = controller.run_cycle(controller.start_run())
+        worked = LeadRepository(session).list_by_status(
+            MissionId(mission.id), (LeadStatus.WAITING,)
+        )
+
+    assert report.recon.endpoints_recorded == 2
+    assert report.sweep.endpoints_probed == 1
+    assert report.sweep.verdicts_triggered == 1
+    assert report.sweep.leads_created == 1
+    # The lead the sweep raised is picked up by the same cycle that raised it, so a
+    # finding does not wait for the next pass to be investigated.
+    assert [outcome.disposition for outcome in report.outcomes] == ["executed"]
+    assert len(worked) == 1
+
+
+def test_a_destructive_endpoint_is_never_handed_to_the_prober(engine: Engine) -> None:
+    """The strongest guarantee in the loop: it has to hold at the boundary, not above it."""
+    factory = session_factory(engine)
+    prober = StubProber()
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(
+                ("POST", "/api/setDeviceSecureWipe"),
+                ("POST", "/api/deleteAccount"),
+                ("GET", "/api/getCompanyDisplay"),
+            ),
+            prober=prober,
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert [spec.path for spec in prober.plans[0]] == ["/api/getCompanyDisplay"]
+    assert report.sweep.endpoints_withheld == 2
+
+
+@pytest.mark.parametrize(
+    ("opt_in", "expected"), [(False, 0), (True, 1)], ids=["withheld", "opted-in"]
+)
+def test_a_mutating_endpoint_waits_for_an_operator(
+    engine: Engine, *, opt_in: bool, expected: int
+) -> None:
+    """An empty-body POST to setX is still a write; L1 does not authorize it."""
+    factory = session_factory(engine)
+    prober = StubProber()
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("POST", "/api/setDeviceMessage")),
+            prober=prober,
+            probe_mutating=opt_in,
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert report.sweep.endpoints_probed == expected
+    assert len(prober.plans[0] if prober.plans else ()) == expected
+
+
+def test_a_failing_prober_does_not_fail_the_cycle(engine: Engine) -> None:
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        seed_lead(session, engagement_id, MissionId(mission.id))
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/getCompanyDisplay")),
+            prober=StubProber(explode=True),
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert report.sweep.skipped == "sweep_failed"
+    assert report.outcomes
+
+
+def test_probing_is_skipped_when_no_prober_is_configured(engine: Engine) -> None:
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor()
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert report.sweep.skipped == "no_prober_configured"
+
+
+def test_nothing_is_probed_before_anything_is_discovered(engine: Engine) -> None:
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            prober=StubProber(),
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert report.sweep.skipped == "no_endpoints_known"
+
+
+def test_the_sweep_plan_is_bounded_by_the_remaining_request_budget(
+    engine: Engine,
+) -> None:
+    """A sweep commits to a plan up front, so the headroom has to bound the plan."""
+    factory = session_factory(engine)
+    prober = StubProber()
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session, engagement_id, budget=MissionBudget(requests_per_minute_per_domain=2)
+        )
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(
+                ("GET", "/api/getA"),
+                ("GET", "/api/getB"),
+                ("GET", "/api/getC"),
+                ("GET", "/api/getD"),
+            ),
+            prober=prober,
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert len(prober.plans[0]) == 2
+    assert report.sweep.endpoints_withheld == 2
+
+
+def test_the_budget_is_charged_for_what_was_actually_sent(engine: Engine) -> None:
+    """A sweep that stopped early must not be billed for the plan it abandoned."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session, engagement_id, budget=MissionBudget(requests_per_minute_per_domain=10)
+        )
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/getA"), ("GET", "/api/getB")),
+            prober=StubProber(requests_sent=3),
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert report.sweep.requests_sent == 3
+
+
+def test_probing_respects_its_own_cadence(engine: Engine) -> None:
+    """Re-probing every cycle is the repetition the activity rules forbid."""
+    factory = session_factory(engine)
+    prober = StubProber()
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session,
+            engagement_id,
+            cadence=MissionCadence(http_inventory_seconds=3_600, deep_recon_seconds=7_200),
+        )
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/getCompanyDisplay")),
+            prober=prober,
+        )
+        first = controller.run_cycle(controller.start_run())
+        second = controller.run_cycle(first.run)
+
+    assert len(prober.plans) == 1
+    assert first.sweep.endpoints_probed == 1
+    assert second.sweep.skipped == "interval_pending"
 
 
 def test_verdicts_become_candidates_and_schedulable_leads(engine: Engine) -> None:
