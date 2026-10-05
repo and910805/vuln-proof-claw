@@ -24,6 +24,13 @@ from vuln_proof_claw.domain.errors import DomainValidationError
 
 _READ_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS"})
 
+#: Methods that say what the request does regardless of what the path is called.
+#: A name is a hint; a method is a fact. ``DELETE /web/vans/blacklist`` is a delete,
+#: and reading it as a list because the word "list" appears inside "blacklist" would
+#: hand a destructive call to an unattended prober.
+_DESTRUCTIVE_METHODS: Final = frozenset({"DELETE"})
+_MUTATING_METHODS: Final = frozenset({"PUT", "PATCH"})
+
 #: Verbs whose effect cannot be undone, or whose effect weakens a security control.
 #: Matched before anything else and never probed automatically.
 _DESTRUCTIVE: Final = re.compile(
@@ -108,7 +115,9 @@ def _matched(pattern: re.Pattern[str], value: str) -> str | None:
     return found.group(0).lower() if found else None
 
 
-def classify_endpoint(method: str, path: str) -> EndpointClassification:
+def classify_endpoint(  # noqa: PLR0911 - one return per classification, each named
+    method: str, path: str
+) -> EndpointClassification:
     """Decide what probing this endpoint would do.
 
     Order matters. A destructive verb anywhere in the path wins, even when the method
@@ -121,6 +130,27 @@ def classify_endpoint(method: str, path: str) -> EndpointClassification:
         raise DomainValidationError("path must be absolute")
 
     normalized_method = method.upper()
+
+    # The method is checked before the name, because it is not a guess. A read verb
+    # inside a noun can only ever lower the risk, and lowering it is the direction that
+    # gets something called that should not have been.
+    if normalized_method in _DESTRUCTIVE_METHODS:
+        return EndpointClassification(
+            method=normalized_method,
+            path=path,
+            risk=EndpointRisk.DESTRUCTIVE,
+            strategy=ProbeStrategy.REFUSE,
+            reason=f"{normalized_method} removes a resource whatever the path is called",
+        )
+    if normalized_method in _MUTATING_METHODS:
+        return EndpointClassification(
+            method=normalized_method,
+            path=path,
+            risk=EndpointRisk.MUTATING,
+            strategy=ProbeStrategy.EMPTY_BODY,
+            reason=f"{normalized_method} replaces or modifies a resource",
+        )
+
     destructive = _matched(_DESTRUCTIVE, path)
     if destructive:
         return EndpointClassification(

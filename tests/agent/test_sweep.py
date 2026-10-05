@@ -10,7 +10,12 @@ import pytest
 from tests.agent.support import TARGET_HOST
 from vuln_proof_claw.agent.authsession import ProbeError
 from vuln_proof_claw.agent.differential import ANONYMOUS, OracleRule, ProbeResult, body_digest
-from vuln_proof_claw.agent.endpoints import ProbeStrategy, classify_all
+from vuln_proof_claw.agent.endpoints import (
+    EndpointClassification,
+    EndpointRisk,
+    ProbeStrategy,
+    classify_all,
+)
 from vuln_proof_claw.agent.sweep import (
     DifferentialSweep,
     EndpointSpec,
@@ -372,6 +377,29 @@ def test_no_budget_plans_nothing() -> None:
     plan = plan_sweep(classify_all(INVENTORY), limit=0)
 
     assert plan.endpoints == ()
+
+
+def test_a_classification_the_spec_refuses_is_withheld_not_raised() -> None:
+    """Observed live: a classification two of our own rules disagreed about took the
+    cycle down nine times running.
+
+    A disagreement between the classifier and the spec is not a reason to abandon the
+    other two hundred endpoints — it is withheld, with the refusal attached so the
+    disagreement is visible.
+    """
+    impossible = EndpointClassification(
+        method="DELETE",
+        path="/web/vans/blacklist",
+        risk=EndpointRisk.READ,
+        strategy=ProbeStrategy.EMPTY_BODY,
+        reason="a classification the spec will not accept",
+    )
+    alongside = classify_all((("GET", "/api/getStatus"),))
+
+    plan = plan_sweep((impossible, *alongside), limit=10)
+
+    assert [spec.path for spec in plan.endpoints] == ["/api/getStatus"]
+    assert any("not probeable" in reason for _, reason in plan.withheld)
 
 
 def test_a_negative_budget_is_refused() -> None:

@@ -366,11 +366,18 @@ def plan_sweep(
         if len(chosen) >= limit:
             withheld.append((item.path, "request_budget"))
             continue
-        chosen.append(
-            EndpointSpec(
-                method=item.method, path=probeable_path, strategy=item.strategy
+        try:
+            chosen.append(
+                EndpointSpec(
+                    method=item.method, path=probeable_path, strategy=item.strategy
+                )
             )
-        )
+        except DomainValidationError as refusal:
+            # A classification the spec will not accept is a disagreement between two
+            # of our own rules, not a reason to abandon the other two hundred
+            # endpoints. It is withheld with the refusal attached so the disagreement
+            # is visible instead of arriving as a cycle that fails nine times running.
+            withheld.append((item.path, f"not probeable: {refusal}"))
     return SweepPlan(endpoints=tuple(chosen), withheld=tuple(withheld))
 
 

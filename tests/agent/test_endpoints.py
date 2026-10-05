@@ -167,3 +167,30 @@ def test_classification_is_order_preserving() -> None:
     classifications = classify_all(INVENTORY)
 
     assert [item.path for item in classifications] == [path for _, path in INVENTORY]
+
+
+def test_a_delete_is_destructive_whatever_the_path_is_called() -> None:
+    """Observed live: DELETE /web/vans/blacklist read as a list, because "blacklist"
+    contains "list".
+
+    A name is a hint; a method is a fact. The hint was lowering the risk, which is the
+    direction that gets something called that should not have been.
+    """
+    classified = classify_endpoint("DELETE", "/web/vans/blacklist")
+
+    assert classified.risk is EndpointRisk.DESTRUCTIVE
+    assert classified.strategy is ProbeStrategy.REFUSE
+
+
+@pytest.mark.parametrize("method", ["PUT", "PATCH"])
+def test_a_replace_is_mutating_whatever_the_path_is_called(method: str) -> None:
+    classified = classify_endpoint(method, "/web/clients/list")
+
+    assert classified.risk is EndpointRisk.MUTATING
+    assert classified.strategy is ProbeStrategy.EMPTY_BODY
+
+
+def test_a_method_only_sets_a_floor() -> None:
+    """GET and POST say nothing on their own, so those stay judged by the name."""
+    assert classify_endpoint("GET", "/api/resetToken").risk is EndpointRisk.DESTRUCTIVE
+    assert classify_endpoint("POST", "/api/getUserMenuList").risk is EndpointRisk.READ
