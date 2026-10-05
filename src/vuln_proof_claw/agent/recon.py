@@ -34,6 +34,8 @@ from urllib.parse import urljoin
 
 from vuln_proof_claw.agent.authsession import AuthenticatedTransport, ProbeLimits
 from vuln_proof_claw.agent.endpoints import EndpointClassification, classify_all
+from vuln_proof_claw.agent.htmldiscovery import extract_endpoints as extract_html_endpoints
+from vuln_proof_claw.agent.htmldiscovery import inventory as html_inventory
 from vuln_proof_claw.agent.jsdiscovery import (
     DiscoveredCall,
     extract_assets,
@@ -206,11 +208,20 @@ class SpaReconnaissance:
                 wanted = (*wanted, *extra)
 
         calls = extract_calls("\n".join(sources))
+        recovered = inventory(calls)
+
+        # An application that renders on the server describes no API in its JavaScript,
+        # so the scripts yield nothing and the surface is in the markup instead: the
+        # links it offers and the forms it posts. Read that too rather than reporting an
+        # empty inventory for a target that plainly has one.
+        from_markup = html_inventory(extract_html_endpoints(html, page_url=self.base_url))
+        merged = (*recovered, *(item for item in from_markup if item not in recovered))
+
         return ReconResult(
             base_url=self.base_url,
             assets=tuple(assets),
             calls=calls,
-            classifications=classify_all(inventory(calls)),
+            classifications=classify_all(merged),
             errors=tuple(errors),
             sent_at=tuple(self._sent_at[started_with:]),
         )

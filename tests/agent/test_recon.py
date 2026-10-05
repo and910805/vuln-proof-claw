@@ -371,6 +371,38 @@ def test_the_application_bundle_is_fetched_before_vendor_code() -> None:
     assert transport.requested[1].endswith("index-abc.js")
 
 
+def test_a_server_rendered_page_still_yields_its_surface() -> None:
+    """Observed on IT-01 and IT-02: PHP applications describe no API in JavaScript.
+
+    Reporting an empty inventory for a target that plainly has one was the gap; the
+    markup is where a server-rendered application's surface actually lives.
+    """
+    page = (
+        b"<html><body>"
+        b'<form method="POST" action="/index.php"></form>'
+        b'<a href="/reports.php?id=1">r</a>'
+        b"</body></html>"
+    )
+    transport = StubTransport(responses={BASE: (200, page)})
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+    found = {(item.method, item.path) for item in result.classifications}
+
+    assert ("POST", "/index.php") in found
+    assert ("GET", "/reports.php?id=1") in found
+
+
+def test_markup_endpoints_do_not_displace_the_api_a_bundle_describes() -> None:
+    """A single-page application keeps giving its JavaScript-described API."""
+    recon, _ = build(default_transport())
+
+    result = recon.discover(at=NOW)
+    found = {item.path for item in result.classifications}
+
+    assert "/api/getUserMenuList" in found
+
+
 def test_the_surface_digest_changes_when_a_bundle_changes() -> None:
     first = default_transport()
     recon_a, _ = build(first)
