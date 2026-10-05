@@ -284,7 +284,22 @@ def _probing_roles(bundle: IdentityBundle) -> tuple[str, str | None, str | None]
         None,
     )
     if not users:
-        raise IdentityDefinitionError("a sweep needs at least one identity with role 'user'")
+        # No credentialled identity: probe anonymously. Only the rules that judge a
+        # single response can fire, which is the honest limit of what an unauthenticated
+        # pass can establish — and it is the pass that needs no account on the target.
+        anonymous = next(
+            (
+                identity.name
+                for identity in bundle.identities
+                if identity.identity_role is IdentityRole.ANONYMOUS
+            ),
+            None,
+        )
+        if anonymous is None:
+            raise IdentityDefinitionError(
+                "a sweep needs an identity with role 'user' or 'anonymous'"
+            )
+        return (anonymous, None, privileged)
     return (users[0], users[1] if len(users) > 1 else None, privileged)
 
 

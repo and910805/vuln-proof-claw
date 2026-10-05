@@ -252,8 +252,8 @@ def test_persistent_failures_stop_the_sweep() -> None:
     assert len(report.outcomes) == 1
 
 
-def test_a_single_probe_yields_no_verdict() -> None:
-    """One observation cannot be a comparison."""
+def test_a_single_probe_yields_no_comparison_verdict() -> None:
+    """One observation cannot be a comparison, and the comparison rules must say so."""
     sessions = ScriptedSessions(failures={("account25", "/a"), (ANONYMOUS, "/a")})
     sweep = build(sessions)
 
@@ -261,7 +261,33 @@ def test_a_single_probe_yields_no_verdict() -> None:
         [EndpointSpec("GET", "/a")], owner="account24", other="account25"
     )
 
-    assert report.outcomes[0].verdicts == ()
+    assert all(not verdict.triggered for verdict in report.outcomes[0].verdicts)
+
+
+def test_an_anonymous_only_sweep_still_judges_authentication() -> None:
+    """Without credentials this is the only rule that can fire — and it is the one
+    that matters most, so the sweep must not stay silent for want of a comparison."""
+    sessions = ScriptedSessions(
+        responses={(ANONYMOUS, "/api/getCompanyDisplay"): (200, OWNER_DIGEST, 94)}
+    )
+    sweep = build(sessions)
+
+    report = sweep.run([EndpointSpec("GET", "/api/getCompanyDisplay")], owner=ANONYMOUS)
+
+    rules = [verdict.rule for verdict in report.triggered[0].triggered]
+    assert rules == [OracleRule.MISSING_AUTHENTICATION]
+    assert report.requests_sent == 1
+
+
+def test_an_anonymous_only_sweep_respects_a_correct_refusal() -> None:
+    sessions = ScriptedSessions(
+        responses={(ANONYMOUS, "/api/getCompanyDisplay"): (401, DENIED_DIGEST, 40)}
+    )
+    sweep = build(sessions)
+
+    report = sweep.run([EndpointSpec("GET", "/api/getCompanyDisplay")], owner=ANONYMOUS)
+
+    assert report.triggered == ()
 
 
 def test_the_plan_size_is_predictable_before_starting() -> None:

@@ -182,6 +182,16 @@ def check_unauthenticated_access(
     user = _find(probes, authenticated)
     target = _target_of(anonymous, user)
 
+    if authenticated == ANONYMOUS:
+        # An unauthenticated-only pass names anonymous as its own baseline. Comparing a
+        # probe to itself would match every time and report every endpoint as a leak.
+        return OracleVerdict(
+            OracleRule.UNAUTHENTICATED_ACCESS,
+            triggered=False,
+            target=target,
+            reason="no authenticated identity to compare against",
+            suppressed_by="anonymous_is_its_own_baseline",
+        )
     if anonymous is None or user is None:
         return OracleVerdict(
             OracleRule.UNAUTHENTICATED_ACCESS,

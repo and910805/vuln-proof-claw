@@ -171,9 +171,15 @@ class DifferentialSweep:
                     stopped = "consecutive_probe_errors"
                     break
 
+            # One probe is enough to run the oracles. The comparison rules each refuse
+            # on their own when an identity they need is missing, while
+            # check_missing_authentication is not a comparison at all: the signal is the
+            # kind of answer an anonymous caller gets, which one observation carries.
+            # Requiring two here silenced exactly that rule whenever no credentials were
+            # configured, which is the most common way this runs.
             verdicts = (
                 evaluate_all(probes, owner=owner, other=other, privileged=privileged)
-                if len(probes) >= 2  # noqa: PLR2004 - a comparison needs two observations
+                if probes
                 else ()
             )
             outcomes.append(
@@ -282,9 +288,11 @@ class SweepProber:
     def _ensure_sessions(self, *, at: datetime) -> None:
         if self._ready:
             return
+        seen: set[str] = set()
         for identity in (self.owner, self.other, self.privileged, ANONYMOUS):
-            if identity is None:
+            if identity is None or identity in seen:
                 continue
+            seen.add(identity)
             self.sweep.sessions.authenticate(identity, at=at)
         self._ready = True
 
