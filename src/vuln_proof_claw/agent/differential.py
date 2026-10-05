@@ -159,6 +159,14 @@ def _target_of(*candidates: ProbeResult | None) -> str:
     return "?"
 
 
+def _is_html(content_type: str) -> bool:
+    """Return whether a response is a web page rather than an API answer."""
+    return content_type.split(";", 1)[0].strip().lower() in {
+        "text/html",
+        "application/xhtml+xml",
+    }
+
+
 def _find(probes: Sequence[ProbeResult], identity: str) -> ProbeResult | None:
     for probe in probes:
         if probe.identity == identity:
@@ -409,7 +417,9 @@ def check_denial_inconsistency(probes: Sequence[ProbeResult]) -> OracleVerdict:
     )
 
 
-def check_missing_authentication(probe: ProbeResult) -> OracleVerdict:
+def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppression
+    probe: ProbeResult,
+) -> OracleVerdict:
     """Decide whether an endpoint runs its business logic without authenticating.
 
     This needs only one probe, because the signal is not a difference between
@@ -426,7 +436,9 @@ def check_missing_authentication(probe: ProbeResult) -> OracleVerdict:
     * ``404`` — the endpoint may not exist at all;
     * ``405`` — the method was wrong, so no handler ran;
     * ``5xx`` with an empty body — an unhandled crash, not a business answer;
-    * any redirect — commonly a login redirect, which *is* an auth check.
+    * any redirect — commonly a login redirect, which *is* an auth check;
+    * an HTML body — a single-page application serves its own shell on every path it
+      does not recognise, so this says nothing about the endpoint.
     """
     if probe.identity != ANONYMOUS:
         return OracleVerdict(
@@ -457,6 +469,19 @@ def check_missing_authentication(probe: ProbeResult) -> OracleVerdict:
             target=probe.target,
             reason=f"{probe.status_code} proves nothing about authentication",
             suppressed_by="no_handler_reached",
+        )
+    if _is_html(probe.content_type):
+        # A single-page application answers every unmatched path with its own
+        # index.html at 200. That is the router's fallback, not a business-layer
+        # answer, and treating it as one reports a finding on any path that does not
+        # exist. An API that genuinely answers without authenticating does so in the
+        # content type it serves its API in.
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"{probe.status_code} returned HTML, not an API response",
+            suppressed_by="html_response_is_an_application_shell",
         )
     if probe.status_code >= _SERVER_ERROR_MIN and probe.body_size == 0:
         return OracleVerdict(

@@ -32,13 +32,14 @@ OTHER_BODY = body_digest(b'{"error":"forbidden"}' * 4)
 BIG = 400
 
 
-def probe(
+def probe(  # noqa: PLR0913 - each field is one observable fact about one response
     identity: str,
     status: int,
     *,
     digest: str = OWNER_BODY,
     size: int = BIG,
     target: str = TARGET,
+    content_type: str = "application/json",
 ) -> ProbeResult:
     return ProbeResult(
         identity=identity,
@@ -47,6 +48,7 @@ def probe(
         status_code=status,
         body_digest=digest,
         body_size=size,
+        content_type=content_type,
     )
 
 
@@ -313,8 +315,15 @@ def test_the_same_probes_always_produce_the_same_verdict() -> None:
 # so a regression would be caught against reality rather than against an invention.
 
 
-def anon(status: int, size: int = BIG, digest: str = OWNER_BODY) -> ProbeResult:
-    return probe(ANONYMOUS, status, size=size, digest=digest)
+def anon(
+    status: int,
+    size: int = BIG,
+    digest: str = OWNER_BODY,
+    content_type: str = "application/json",
+) -> ProbeResult:
+    return probe(
+        ANONYMOUS, status, size=size, digest=digest, content_type=content_type
+    )
 
 
 def test_an_unauthenticated_success_is_reported() -> None:
@@ -342,6 +351,34 @@ def test_a_business_layer_lookup_error_is_reported() -> None:
     verdict = check_missing_authentication(anon(500, size=106))
 
     assert verdict
+
+
+def test_an_application_shell_is_not_a_finding() -> None:
+    """Observed: GET /redfish -> 200 text/html, the Vue app's own index.html.
+
+    A single-page application answers every unmatched path with its shell. Read as a
+    business-layer response it reports a finding on every path that does not exist —
+    which is exactly what happened on the first live run.
+    """
+    verdict = check_missing_authentication(anon(200, size=810, content_type="text/html"))
+
+    assert not verdict
+    assert verdict.suppressed_by == "html_response_is_an_application_shell"
+
+
+def test_the_html_suppression_tolerates_a_charset() -> None:
+    verdict = check_missing_authentication(
+        anon(200, size=810, content_type="text/html; charset=UTF-8")
+    )
+
+    assert not verdict
+
+
+def test_a_json_answer_is_still_reported() -> None:
+    """The suppression must not swallow the case it sits next to."""
+    assert check_missing_authentication(
+        anon(200, size=94, content_type="application/json")
+    )
 
 
 @pytest.mark.parametrize("status", [401, 403])
