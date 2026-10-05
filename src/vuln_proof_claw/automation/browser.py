@@ -38,6 +38,19 @@ class LoginInstruction:
     username: SecretStr
     password: SecretStr
 
+    continue_selector: str | None = None
+    """Clicked after signing in, when the application does not land you in the console.
+
+    Some products stop at a chooser — pick an identity, then proceed. Observed without
+    this step, a run records the sign-in and the handful of calls that chooser makes,
+    and reports them as the application's surface.
+
+    Naming it matters here more than anywhere else: on this engagement that screen puts
+    a change-password button beside the one that proceeds, and the rules forbid changing
+    a shared account's password. Anything that found its way forward by clicking what
+    looked right would eventually click that.
+    """
+
     open_selector: str | None = None
     """Clicked before the fields are filled, when the form is behind something.
 
@@ -56,8 +69,11 @@ class LoginInstruction:
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise DomainValidationError("login_url must be an absolute HTTP URL")
         selectors = [self.username_selector, self.password_selector, self.submit_selector]
-        if self.open_selector is not None:
-            selectors.append(self.open_selector)
+        selectors.extend(
+            value
+            for value in (self.open_selector, self.continue_selector)
+            if value is not None
+        )
         for value in selectors:
             if not value.strip() or len(value) > _MAX_SELECTOR_LENGTH:
                 raise DomainValidationError("login selectors must contain 1-256 characters")
@@ -76,6 +92,19 @@ class BrowserRunRequest:
     A single-page application fetches its real data after DOMContentLoaded, so
     returning the moment the document is ready observes the boot requests and misses
     the ones worth having.
+    """
+
+    navigate_after_login: bool = False
+    """Load ``target`` again once signed in.
+
+    Off by default, because a single-page application keeps its access token in memory
+    and a fresh navigation discards it: the app reloads, finds no session, and routes
+    straight back to the login screen. Observed that way, a run records the handful of
+    calls made between signing in and being thrown out, and reports them as the
+    application's whole surface.
+
+    Signing in already leaves the browser where the application decided to put you, so
+    there is normally nowhere to navigate to.
     """
 
     ignore_https_errors: bool = False
@@ -254,7 +283,14 @@ class IsolatedBrowserRunner:
                     # stored yet. Leaving here would navigate away mid-login and then
                     # observe an anonymous session that looks like a logged-in one.
                     await page.wait_for_timeout(request.settle_ms)
-                response = await page.goto(request.target, wait_until="domcontentloaded")
+                    if request.login.continue_selector is not None:
+                        await page.locator(request.login.continue_selector).first.click()
+                        await page.wait_for_timeout(request.settle_ms)
+                response = None
+                if request.login is None or request.navigate_after_login:
+                    response = await page.goto(
+                        request.target, wait_until="domcontentloaded"
+                    )
                 # A single-page application fetches its data after the document is
                 # ready; returning here would record the boot requests and miss the API.
                 await page.wait_for_timeout(request.settle_ms)
