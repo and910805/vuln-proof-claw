@@ -176,6 +176,63 @@ def test_an_unreachable_entry_page_still_reports_its_request() -> None:
     assert recon.discover(at=NOW).requests_sent == 1
 
 
+CDN = "cdn.example.net"
+CDN_PAGE = PAGE.replace(
+    b'src="/assets/index-abc.js"', f'src="https://{CDN}/packs/app.js"'.encode()
+)
+
+
+def test_an_asset_on_a_named_origin_is_read() -> None:
+    """The code describing an in-scope API often sits on an out-of-scope CDN."""
+    transport = StubTransport(
+        responses={BASE: (200, CDN_PAGE), f"https://{CDN}/packs/app.js": (200, APP_BUNDLE)}
+    )
+    recon = SpaReconnaissance(
+        transport=transport,  # type: ignore[arg-type]
+        scope=SCOPE,
+        base_url=BASE,
+        asset_origins=frozenset({CDN}),
+        pacer=lambda _: None,
+    )
+
+    result = recon.discover(at=NOW)
+
+    assert "/api/getUserMenuList" in {call.path for call in result.calls}
+
+
+def test_an_origin_not_named_is_still_refused() -> None:
+    transport = StubTransport(responses={BASE: (200, CDN_PAGE)})
+    recon = SpaReconnaissance(
+        transport=transport,  # type: ignore[arg-type]
+        scope=SCOPE,
+        base_url=BASE,
+        asset_origins=frozenset({"other.example.net"}),
+        pacer=lambda _: None,
+    )
+
+    result = recon.discover(at=NOW)
+
+    assert all(CDN not in url for url in transport.requested)
+    assert result.calls == ()
+
+
+def test_an_asset_origin_cannot_supply_the_entry_page() -> None:
+    """The application being examined must always be one the engagement authorizes."""
+    transport = StubTransport(responses={f"https://{CDN}/": (200, PAGE)})
+    recon = SpaReconnaissance(
+        transport=transport,  # type: ignore[arg-type]
+        scope=SCOPE,
+        base_url=f"https://{CDN}/",
+        asset_origins=frozenset({CDN}),
+        pacer=lambda _: None,
+    )
+
+    result = recon.discover(at=NOW)
+
+    assert transport.requested == []
+    assert "refused by scope" in result.errors[0]
+
+
 def test_an_out_of_scope_asset_is_never_fetched() -> None:
     page = PAGE.replace(b'src="/assets/index-abc.js"', b'src="https://evil.test/x.js"')
     transport = StubTransport(responses={BASE: (200, page)})

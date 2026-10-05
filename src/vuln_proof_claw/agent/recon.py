@@ -10,6 +10,15 @@ The cost is bounded by construction: one request for the page, then at most
 enumerated — the entry and shared bundles carry the application's own API layer, and
 fetching the rest would turn reconnaissance into the kind of sweep the activity rules
 forbid.
+
+**Asset origins are not scope.** Many applications serve their own JavaScript from a
+CDN that is not itself an authorized target, which leaves the code describing the
+in-scope API sitting on an out-of-scope host. ``asset_origins`` names hosts whose
+*static code may be read*, and it grants nothing else: the entry page must still be in
+scope, only assets that page references are fetched, and no endpoint on such a host is
+ever probed, recorded, or promoted to a lead. Reading a public script is what a browser
+does when it loads the authorized page; testing the host that served it is a different
+act, and the scope engine still decides that one alone.
 """
 
 from __future__ import annotations
@@ -125,6 +134,12 @@ class SpaReconnaissance:
     base_url: str
     maximum_assets: int = _DEFAULT_MAX_ASSETS
     maximum_redirects: int = _DEFAULT_MAX_REDIRECTS
+    asset_origins: frozenset[str] = frozenset()
+    """Hosts whose static code may be read although they are not authorized targets.
+
+    Grants exactly one thing: fetching a script the in-scope entry page references.
+    Never a probe target, never a lead.
+    """
     user_agent: str = "vuln-proof-claw/recon"
     pacer: Callable[[float], None] | None = None
     interval_seconds: float = 2.0
@@ -153,7 +168,7 @@ class SpaReconnaissance:
         sources: list[str] = []
         for relative in wanted[: self.maximum_assets]:
             url = urljoin(self.base_url, relative)
-            fetched = self._fetch(url, _ASSET_LIMITS, at=moment)
+            fetched = self._fetch(url, _ASSET_LIMITS, at=moment, as_asset=True)
             if fetched.body is None:
                 errors.append(f"asset not retrieved: {relative} — {fetched.reason}")
                 continue
@@ -212,7 +227,9 @@ class SpaReconnaissance:
         ]
         return tuple(f"{directory}/{name}" if directory else name for name in selected)
 
-    def _fetch(self, url: str, limits: ProbeLimits, *, at: datetime) -> Fetched:
+    def _fetch(
+        self, url: str, limits: ProbeLimits, *, at: datetime, as_asset: bool = False
+    ) -> Fetched:
         """Retrieve one URL, refusing anything the scope does not permit.
 
         Follows a redirect when it stays inside the authorized scope, up to
@@ -223,14 +240,30 @@ class SpaReconnaissance:
         """
         current = url
         for _ in range(self.maximum_redirects + 1):
-            outcome = self._fetch_once(current, limits, at=at)
+            outcome = self._fetch_once(current, limits, at=at, as_asset=as_asset)
             if outcome.redirect_to is None:
                 return outcome
             current = outcome.redirect_to
         return Fetched(reason=f"more than {self.maximum_redirects} redirects from {url}")
 
+    def _permitted(self, target: str, *, as_asset: bool, at: datetime) -> str | None:
+        """Return why this URL may not be fetched, or None if it may.
+
+        An asset origin is consulted only after the scope has refused, and only for an
+        asset. The entry page is never fetched on that basis, so the application being
+        examined is always one the engagement authorizes — the origin list only says
+        where that application's own code is allowed to live.
+        """
+        decision = evaluate_scope(target, self.scope, at=at)
+        if decision.allowed:
+            return None
+        if as_asset and normalize_target(target).host in self.asset_origins:
+            _LOGGER.info("reading asset from permitted origin: %s", target)
+            return None
+        return f"refused by scope ({decision.reason}): {target}"
+
     def _fetch_once(  # noqa: PLR0911 - one return per distinct outcome, each named
-        self, url: str, limits: ProbeLimits, *, at: datetime
+        self, url: str, limits: ProbeLimits, *, at: datetime, as_asset: bool = False
     ) -> Fetched:
         """Send exactly one request and say plainly what came back."""
         try:
@@ -238,9 +271,9 @@ class SpaReconnaissance:
         except DomainValidationError:
             return Fetched(reason=f"not a valid URL: {url}")
 
-        decision = evaluate_scope(target, self.scope, at=at)
-        if not decision.allowed:
-            return Fetched(reason=f"refused by scope ({decision.reason}): {url}")
+        refusal = self._permitted(target, as_asset=as_asset, at=at)
+        if refusal is not None:
+            return Fetched(reason=refusal)
 
         if self._fetched:
             self._pace()

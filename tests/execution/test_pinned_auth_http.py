@@ -6,6 +6,7 @@ POST to one configured login path. These tests exist to prove it widened nothing
 
 from __future__ import annotations
 
+import ssl
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -13,7 +14,10 @@ import pytest
 
 from vuln_proof_claw.agent.authsession import EMPTY_PROBE_BODY, ProbeLimits
 from vuln_proof_claw.execution.http_capture import CaptureTransportError
-from vuln_proof_claw.execution.pinned_auth_http import PinnedAuthTransport
+from vuln_proof_claw.execution.pinned_auth_http import (
+    PinnedAuthTransport,
+    unverified_tls_context,
+)
 from vuln_proof_claw.policy.scope import EngagementScope
 
 HOST = "api.example.com"
@@ -78,6 +82,7 @@ def build(
     addresses: tuple[str, ...] = (PUBLIC_IP,),
     connection: FakeConnection | None = None,
     login_path: str | None = LOGIN,
+    read_only_origins: frozenset[str] = frozenset(),
 ) -> tuple[PinnedAuthTransport, FakeConnection]:
     conn = connection or FakeConnection()
     transport = PinnedAuthTransport(
@@ -85,6 +90,7 @@ def build(
         login_path=login_path,
         resolver=lambda hostname, port: addresses,
         connection_factory=lambda *args, **kwargs: conn,
+        read_only_origins=read_only_origins,
     )
     return (transport, conn)
 
@@ -167,6 +173,59 @@ def test_only_an_exactly_empty_body_passes_the_guard(body: str | None) -> None:
         )
 
     assert conn.requests == []
+
+
+CDN = "cdn.example.net"
+
+
+def test_a_named_origin_may_be_read_although_it_is_out_of_scope() -> None:
+    """An application's own code often lives on a CDN that is not a target."""
+    transport, conn = build(read_only_origins=frozenset({CDN}))
+
+    transport.send(
+        "GET", f"https://{CDN}/packs/app.js", headers=(), body=None, limits=limits()
+    )
+
+    assert len(conn.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("method", "body"),
+    [("POST", EMPTY_PROBE_BODY), ("HEAD", None)],
+    ids=["post", "head"],
+)
+def test_a_named_origin_permits_nothing_but_a_plain_get(
+    method: str, body: str | None
+) -> None:
+    """Reading a script is not testing the host that served it."""
+    transport, conn = build(read_only_origins=frozenset({CDN}))
+
+    with pytest.raises(CaptureTransportError, match="transport_scope_denied"):
+        transport.send(
+            method, f"https://{CDN}/packs/app.js", headers=(), body=body, limits=limits()
+        )
+
+    assert conn.requests == []
+
+
+def test_an_unnamed_origin_is_still_refused() -> None:
+    transport, conn = build(read_only_origins=frozenset({CDN}))
+
+    with pytest.raises(CaptureTransportError, match="transport_scope_denied"):
+        transport.send(
+            "GET", "https://other.example.net/app.js", headers=(), body=None, limits=limits()
+        )
+
+    assert conn.requests == []
+
+
+def test_an_unverified_context_is_not_the_default() -> None:
+    assert ssl.create_default_context().verify_mode is ssl.CERT_REQUIRED
+
+    relaxed = unverified_tls_context()
+
+    assert relaxed.verify_mode is ssl.CERT_NONE
+    assert relaxed.check_hostname is False
 
 
 def test_a_post_with_data_is_refused_when_no_login_path_is_configured() -> None:

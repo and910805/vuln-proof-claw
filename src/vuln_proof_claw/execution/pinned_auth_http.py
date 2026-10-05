@@ -24,6 +24,7 @@ is bounded.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import ssl
 import time
 from collections.abc import Callable
@@ -49,10 +50,33 @@ from vuln_proof_claw.policy.scope import (
     normalize_target,
 )
 
+_LOGGER: Final = logging.getLogger(__name__)
 _ALLOWED_METHODS: Final = frozenset({"GET", "HEAD", "POST"})
 _ALLOWED_OUTBOUND: Final = frozenset({"accept", "user-agent", "content-type", "cookie"})
 _MAX_HEADER_BYTES: Final = 16 * 1024
 _MILLISECONDS: Final = 1000
+
+
+def unverified_tls_context() -> ssl.SSLContext:
+    """Return a context that does not verify the server's certificate.
+
+    Programs routinely publish test systems with self-signed or expired certificates,
+    and refusing to connect means the target cannot be tested at all. This exists for
+    that case and is never the default: a caller has to ask for it by name.
+
+    What it costs is worth stating plainly. Without verification the connection could
+    be intercepted, so evidence gathered through it attests to what this machine
+    received and not necessarily to what the target sent. Anything found this way
+    should say so when it is reported.
+    """
+    _LOGGER.warning(
+        "TLS certificate verification is DISABLED for this transport; "
+        "evidence gathered through it is not protected against interception"
+    )
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 class PinnedAuthTransport(AuthenticatedTransport):
@@ -74,6 +98,7 @@ class PinnedAuthTransport(AuthenticatedTransport):
         ssl_context: ssl.SSLContext | None = None,
         connection_factory: Callable[..., HttpConnection] = _connection_factory,
         allow_private: bool = False,
+        read_only_origins: frozenset[str] = frozenset(),
     ) -> None:
         self._scope = scope
         self._login_path = login_path
@@ -81,6 +106,20 @@ class PinnedAuthTransport(AuthenticatedTransport):
         self._ssl_context = ssl_context or ssl.create_default_context()
         self._connection_factory = connection_factory
         self._allow_private = allow_private
+        self._read_only_origins = read_only_origins
+
+    def _origin_permitted(self, host: str, method: str, body: str | None) -> bool:
+        """Return whether an out-of-scope host may be read from.
+
+        Only a bodyless GET, and only for a host named in advance. An application's own
+        code often lives on a CDN that is not an authorized target; reading that code is
+        what a browser does loading the authorized page. Anything beyond a plain read is
+        testing the host, which this never permits — so the check is on the shape of the
+        request, not on the caller's intent.
+        """
+        return (
+            host in self._read_only_origins and method == "GET" and body is None
+        )
 
     def _post_permitted(self, path: str, body: str | None) -> bool:
         """Return whether this POST may be sent.
@@ -117,7 +156,9 @@ class PinnedAuthTransport(AuthenticatedTransport):
             raise CaptureTransportError("body_permitted_only_on_post")
 
         decision = evaluate_scope(parsed, self._scope, at=utc_now())
-        if not decision.allowed:
+        if not decision.allowed and not self._origin_permitted(
+            parsed.host, normalized_method, body
+        ):
             raise CaptureTransportError("transport_scope_denied")
 
         self._require_permitted(headers)
@@ -199,4 +240,4 @@ class PinnedAuthTransport(AuthenticatedTransport):
         return tuple(validated)
 
 
-__all__ = ["PinnedAuthTransport"]
+__all__ = ["PinnedAuthTransport", "unverified_tls_context"]

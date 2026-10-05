@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import signal
+import ssl
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -47,7 +48,10 @@ from vuln_proof_claw.config.settings import load_settings
 from vuln_proof_claw.domain.autonomous import Mission, MissionBudget
 from vuln_proof_claw.domain.enums import MissionState
 from vuln_proof_claw.domain.identifiers import EngagementId, MissionId
-from vuln_proof_claw.execution.pinned_auth_http import PinnedAuthTransport
+from vuln_proof_claw.execution.pinned_auth_http import (
+    PinnedAuthTransport,
+    unverified_tls_context,
+)
 from vuln_proof_claw.execution.pinned_http import PinnedHttpTransport
 from vuln_proof_claw.observability.logging import configure_logging
 from vuln_proof_claw.persistence.autonomous_repositories import MissionRepository
@@ -318,13 +322,16 @@ def _sweep_rate(budget: MissionBudget, requested: int | None) -> int:
 
 
 def _build_prober(
-    path: Path, *, scope: object, rate: int
+    path: Path, *, scope: object, rate: int, tls: ssl.SSLContext | None = None
 ) -> tuple[SweepProber, tuple[str, ...]]:
     bundle = load_identity_bundle(path)
     credentials, literals = resolve_credentials(bundle)
     owner, other, privileged = _probing_roles(bundle)
     sessions = IdentitySessions(
-        transport=PinnedAuthTransport(scope),  # type: ignore[arg-type]
+        # Probing reaches only the engagement's own targets, so no asset origins here:
+        # reading a CDN's code is reconnaissance, and this is the part that asks
+        # questions of a host.
+        transport=PinnedAuthTransport(scope, ssl_context=tls),  # type: ignore[arg-type]
         bundle=bundle,
         credentials=credentials,
         scope=scope,  # type: ignore[arg-type]
@@ -386,6 +393,24 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
             help="Also probe state-changing endpoints with an empty body. Off by default.",
         ),
     ] = False,
+    asset_origin: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--asset-origin",
+            help="Host whose static code may be read although it is not a target, "
+            "for applications that serve their own JavaScript from a CDN. "
+            "Grants reading only: never a probe target. Repeatable.",
+        ),
+    ] = None,
+    insecure_tls: Annotated[
+        bool,
+        typer.Option(
+            "--insecure-tls",
+            help="Do not verify the target's TLS certificate. For published test "
+            "systems with self-signed certificates. Evidence gathered this way is "
+            "not protected against interception and should say so when reported.",
+        ),
+    ] = False,
 ) -> None:
     """Run a mission continuously until interrupted.
 
@@ -405,6 +430,16 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
     with suppress(AttributeError, ValueError):
         signal.signal(signal.SIGTERM, request_stop)
 
+    origins = frozenset(asset_origin or ())
+    tls = unverified_tls_context() if insecure_tls else None
+    if insecure_tls:
+        typer.echo(
+            "[warning] TLS certificate verification is disabled; evidence from this "
+            "run is not protected against interception"
+        )
+    if origins:
+        typer.echo(f"[note] reading static code from: {', '.join(sorted(origins))}")
+
     engine = create_engine_from_settings(load_settings())
     session_factory = create_session_factory(engine)
 
@@ -419,7 +454,7 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
             if identities is not None:
                 budget = _mission_of(session, mission_id).budget
                 prober, literals = _build_prober(
-                    identities, scope=scope, rate=_sweep_rate(budget, rate)
+                    identities, scope=scope, rate=_sweep_rate(budget, rate), tls=tls
                 )
                 if literals:
                     typer.echo(
@@ -438,9 +473,12 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                 actor=f"agent:runner:{mission_id[:8]}",
                 reconnaissance=(
                     SpaReconnaissance(
-                        transport=PinnedAuthTransport(scope),
+                        transport=PinnedAuthTransport(
+                            scope, ssl_context=tls, read_only_origins=origins
+                        ),
                         scope=scope,
                         base_url=recon_base_url,
+                        asset_origins=origins,
                     )
                     if recon_base_url
                     else None
