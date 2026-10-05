@@ -15,6 +15,7 @@ discovery source, and the classifier decides what may be called.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import import_module
 from typing import Any, Final
 from urllib.parse import urlsplit
@@ -106,6 +107,13 @@ class ObservedRequest:
     url: str
     resource_type: str
     carried_body: bool
+    sent_at: datetime | None = None
+    """When the browser issued it, taken as it was issued.
+
+    Recorded rather than derived from the run's start and end, because the budget
+    ledger charges each request to the minute it actually left and a time inferred
+    from the span would be a plausible-looking invention.
+    """
 
     @property
     def path(self) -> str:
@@ -187,6 +195,7 @@ class IsolatedBrowserRunner:
                             url=outgoing.url,
                             resource_type=outgoing.resource_type,
                             carried_body=outgoing.post_data is not None,
+                            sent_at=datetime.now(UTC),
                         )
                     )
 

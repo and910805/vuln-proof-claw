@@ -20,10 +20,12 @@ from vuln_proof_claw.agent.authsession import (
     IdentitySessions,
     ProbeError,
 )
+from vuln_proof_claw.agent.browserrecon import BrowserReconnaissance
 from vuln_proof_claw.agent.controller import (
     DEFAULT_WATCHDOG_SECONDS,
     MissionController,
     MissionControllerError,
+    Reconnaissance,
 )
 from vuln_proof_claw.agent.differential import IdentityRole
 from vuln_proof_claw.agent.executor import HttpCaptureExecutor
@@ -414,6 +416,39 @@ def _build_prober(
     )
 
 
+def _reconnaissance(  # noqa: PLR0913 - each argument is a separate operator decision
+    base_url: str | None,
+    *,
+    scope: object,
+    tls: ssl.SSLContext | None,
+    origins: frozenset[str],
+    session_headers: Callable[[], tuple[tuple[str, str], ...]] | None,
+    use_browser: bool,
+) -> Reconnaissance | None:
+    """Build the discovery source, or none when no entry point was given."""
+    if base_url is None:
+        return None
+    if use_browser:
+        # The browser path carries its own session: it logs in through the page rather
+        # than replaying a cookie, so the header supplier does not apply to it.
+        return BrowserReconnaissance(
+            scope=scope,  # type: ignore[arg-type]
+            base_url=base_url,
+            ignore_https_errors=tls is not None,
+        )
+    return SpaReconnaissance(
+        transport=PinnedAuthTransport(
+            scope,  # type: ignore[arg-type]
+            ssl_context=tls,
+            read_only_origins=origins,
+        ),
+        scope=scope,  # type: ignore[arg-type]
+        base_url=base_url,
+        asset_origins=origins,
+        session_headers=session_headers,
+    )
+
+
 def _discovery_session(
     probing: _Probing,
 ) -> Callable[[], tuple[tuple[str, str], ...]]:
@@ -556,6 +591,16 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
             "Grants reading only: never a probe target. Repeatable.",
         ),
     ] = None,
+    browser: Annotated[
+        bool,
+        typer.Option(
+            "--browser",
+            help="Recover the surface by watching a browser use the target, instead "
+            "of reading its JavaScript. Finds the paths the application actually "
+            "sends, which are not always the ones its source contains. Needs "
+            "vuln-proof-claw[browser].",
+        ),
+    ] = False,
     insecure_tls: Annotated[
         bool,
         typer.Option(
@@ -638,18 +683,13 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                     engagement_id=engagement_id,
                 ),
                 actor=f"agent:runner:{mission_id[:8]}",
-                reconnaissance=(
-                    SpaReconnaissance(
-                        transport=PinnedAuthTransport(
-                            scope, ssl_context=tls, read_only_origins=origins
-                        ),
-                        scope=scope,
-                        base_url=recon_base_url,
-                        asset_origins=origins,
-                        session_headers=session_headers,
-                    )
-                    if recon_base_url
-                    else None
+                reconnaissance=_reconnaissance(
+                    recon_base_url,
+                    scope=scope,
+                    tls=tls,
+                    origins=origins,
+                    session_headers=session_headers,
+                    use_browser=browser,
                 ),
                 prober=prober,
                 probe_mutating=probe_mutating,
