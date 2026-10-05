@@ -105,8 +105,12 @@ class SweepReport:
     """What a whole sweep observed."""
 
     outcomes: tuple[EndpointOutcome, ...]
-    requests_sent: int
+    sent_at: tuple[datetime, ...] = ()
     stopped_early: str | None = None
+
+    @property
+    def requests_sent(self) -> int:
+        return len(self.sent_at)
 
     @property
     def triggered(self) -> tuple[EndpointOutcome, ...]:
@@ -137,7 +141,7 @@ class DifferentialSweep:
             owner=owner, other=other, privileged=privileged, include_anonymous=include_anonymous
         )
         outcomes: list[EndpointOutcome] = []
-        sent = 0
+        sent: list[datetime] = []
         consecutive_errors = 0
         stopped: str | None = None
 
@@ -149,6 +153,7 @@ class DifferentialSweep:
             for identity in identities:
                 if sent:
                     self._pace()
+                moment = self.clock()
                 try:
                     probes.append(
                         self.sessions.probe(
@@ -156,7 +161,7 @@ class DifferentialSweep:
                             endpoint.method,
                             target,
                             strategy=endpoint.strategy,
-                            at=self.clock(),
+                            at=moment,
                         )
                     )
                     consecutive_errors = 0
@@ -165,7 +170,7 @@ class DifferentialSweep:
                     consecutive_errors += 1
                     _LOGGER.warning("probe failed for %s as %s: %s", target, identity, failure)
                 finally:
-                    sent += 1
+                    sent.append(moment)
 
                 if consecutive_errors >= self.policy.maximum_consecutive_errors:
                     stopped = "consecutive_probe_errors"
@@ -194,7 +199,7 @@ class DifferentialSweep:
             if stopped:
                 break
 
-        return SweepReport(tuple(outcomes), requests_sent=sent, stopped_early=stopped)
+        return SweepReport(tuple(outcomes), sent_at=tuple(sent), stopped_early=stopped)
 
     def _identity_order(
         self,
@@ -240,14 +245,19 @@ def probe_plan_size(endpoints: Sequence[EndpointSpec], identities: int) -> int:
 class ProbeOutcome:
     """What one sweep observed, reduced to what a scheduler needs.
 
-    ``requests_sent`` is reported rather than inferred from the plan: a sweep that
-    stopped early sent fewer requests than it intended, and the budget must be charged
-    for what actually left the machine.
+    ``sent_at`` carries the moment each request actually left, not how many there were.
+    A sweep paces itself across minutes, so charging the whole batch to the instant the
+    cycle began would record a burst that never happened — and a rate limit is answered
+    by when requests were sent, not by how many a cycle produced in total.
     """
 
     verdicts: tuple[OracleVerdict, ...] = ()
-    requests_sent: int = 0
+    sent_at: tuple[datetime, ...] = ()
     stopped_early: str | None = None
+
+    @property
+    def requests_sent(self) -> int:
+        return len(self.sent_at)
 
 
 @dataclass
@@ -281,7 +291,7 @@ class SweepProber:
         )
         return ProbeOutcome(
             verdicts=verdicts,
-            requests_sent=report.requests_sent,
+            sent_at=report.sent_at,
             stopped_early=report.stopped_early,
         )
 

@@ -64,13 +64,18 @@ class ReconResult:
     calls: tuple[DiscoveredCall, ...] = ()
     classifications: tuple[EndpointClassification, ...] = ()
     errors: tuple[str, ...] = ()
-    requests_sent: int = 0
-    """Every request this pass put on the wire, including the ones that failed.
+    sent_at: tuple[datetime, ...] = ()
+    """When each request left, including the ones that failed.
 
     Reconnaissance is bounded and paced, but bounded is not the same as unaccounted:
     a request that left the machine has to appear in the ledger, or the mission's own
-    record of how much it touched the target is understated.
+    record of how much it touched the target is understated. The times are kept rather
+    than a count, because a rate limit is answered by when requests were sent.
     """
+
+    @property
+    def requests_sent(self) -> int:
+        return len(self.sent_at)
 
     @property
     def surface_digest(self) -> str:
@@ -103,20 +108,22 @@ class SpaReconnaissance:
     user_agent: str = "vuln-proof-claw/recon"
     pacer: Callable[[float], None] | None = None
     interval_seconds: float = 2.0
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
     _fetched: int = field(default=0, init=False, repr=False)
+    _sent_at: list[datetime] = field(default_factory=list, init=False, repr=False)
 
     def discover(self, *, at: datetime | None = None) -> ReconResult:
         """Fetch the page and its scripts, then recover the API inventory."""
         moment = at or datetime.now(UTC)
         errors: list[str] = []
-        started_with = self._fetched
+        started_with = len(self._sent_at)
 
         page = self._fetch(self.base_url, _PAGE_LIMITS, at=moment)
         if page is None:
             return ReconResult(
                 base_url=self.base_url,
                 errors=("entry page could not be retrieved",),
-                requests_sent=self._fetched - started_with,
+                sent_at=tuple(self._sent_at[started_with:]),
             )
 
         html = page.decode("utf-8", errors="replace")
@@ -149,7 +156,7 @@ class SpaReconnaissance:
             calls=calls,
             classifications=classify_all(inventory(calls)),
             errors=tuple(errors),
-            requests_sent=self._fetched - started_with,
+            sent_at=tuple(self._sent_at[started_with:]),
         )
 
     @staticmethod
@@ -200,6 +207,7 @@ class SpaReconnaissance:
         if self._fetched:
             self._pace()
         self._fetched += 1
+        self._sent_at.append(self.clock())
         try:
             response = self.transport.send(
                 "GET",

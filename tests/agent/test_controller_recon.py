@@ -9,12 +9,11 @@ from __future__ import annotations
 
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from tests.agent.support import (
     NOW,
@@ -31,6 +30,7 @@ from vuln_proof_claw.agent.controller import MissionController
 from vuln_proof_claw.agent.differential import OracleRule, OracleVerdict
 from vuln_proof_claw.agent.endpoints import EndpointClassification, classify_all
 from vuln_proof_claw.agent.planner import DeterministicPlanner
+from vuln_proof_claw.agent.recon import ReconResult
 from vuln_proof_claw.agent.sweep import EndpointSpec, ProbeOutcome
 from vuln_proof_claw.domain.autonomous import MissionBudget, MissionCadence
 from vuln_proof_claw.domain.enums import LeadStatus
@@ -58,15 +58,17 @@ class StubRecon:
     calls: int = 0
     requests_sent: int = 0
 
-    def discover(self, *, at: datetime) -> SimpleNamespace:
+    def discover(self, *, at: datetime) -> ReconResult:
         self.calls += 1
         if self.explode:
             raise RuntimeError("bundle unreachable")
-        return SimpleNamespace(
+        return ReconResult(
             base_url=f"https://{TARGET_HOST}/",
             classifications=self.classifications,
-            surface_digest="d" * 64,
-            requests_sent=self.requests_sent,
+            # Spread across minutes, as a paced reconnaissance pass really is.
+            sent_at=tuple(
+                at + timedelta(seconds=30 * index) for index in range(self.requests_sent)
+            ),
         )
 
 
@@ -87,9 +89,11 @@ class StubProber:
         self.plans.append(tuple(endpoints))
         if self.explode:
             raise RuntimeError("target unreachable")
+        count = self.requests_sent or len(endpoints)
+        # A real sweep paces itself, so the times it reports span minutes.
         return ProbeOutcome(
             verdicts=self.verdicts,
-            requests_sent=self.requests_sent or len(endpoints),
+            sent_at=tuple(at + timedelta(seconds=20 * index) for index in range(count)),
         )
 
 
@@ -108,7 +112,7 @@ def controller_with(  # noqa: PLR0913 - explicit collaborators keep the setup re
         planner=DeterministicPlanner(),
         executor=executor,
         clock=frozen_clock(),  # type: ignore[arg-type]
-        reconnaissance=recon,  # type: ignore[arg-type]
+        reconnaissance=recon,
         prober=prober,
         probe_mutating=probe_mutating,
     )
@@ -171,6 +175,41 @@ def test_reconnaissance_requests_reach_the_budget_ledger(engine: Engine) -> None
 
     assert report.recon.requests_sent == 9
     assert remaining == 100 - 9
+
+
+def test_a_paced_batch_is_not_recorded_as_a_burst(engine: Engine) -> None:
+    """Charging a paced batch to one instant writes a burst that never happened.
+
+    Six requests spread over three minutes must not read as six in one, or the ledger
+    claims the mission exceeded a rate limit the wire never exceeded — and the ledger
+    is the mission's answer to how hard it hit the host.
+    """
+    factory = session_factory(engine)
+    recon = recon_for(("GET", "/api/getCompanyDisplay"))
+    recon.requests_sent = 6  # the stub spreads these 30 seconds apart
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session,
+            engagement_id,
+            budget=MissionBudget(requests_per_minute_per_domain=3, requests_per_hour=100),
+        )
+        session.commit()
+
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=recon
+        )
+        controller.run_cycle(controller.start_run())
+        rows = session.execute(
+            text(
+                "select window_start, request_count from budget_ledger "
+                "where window_kind = 'minute' order by window_start"
+            )
+        ).all()
+
+    # Six requests, thirty seconds apart, land across three separate minutes.
+    assert len(rows) == 3
+    assert [count for _, count in rows] == [2, 2, 2]
 
 
 def test_a_failing_reconnaissance_does_not_fail_the_cycle(engine: Engine) -> None:
