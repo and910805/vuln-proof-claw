@@ -324,9 +324,16 @@ def plan_sweep(
     * **Mutating endpoints.** Withheld by default. An empty-body POST to ``setX`` is
       still a write attempt, and autonomous execution is capped at L1; a human decides
       whether to make it. ``include_mutating`` is for an operator who has.
-    * **Parameterised paths.** ``/api/companies/{param}/members`` has no meaning until
-      something supplies an identifier. Probing the literal placeholder would produce a
-      404 and a confident-looking verdict about nothing.
+    * **Placeholders in a path segment.** ``/api/companies/{param}/members`` has no
+      meaning until something supplies an identifier. Probing the literal placeholder
+      would produce a 404 and a confident-looking verdict about nothing.
+
+    A placeholder in the *query* is different, and the distinction matters. Dropping
+    ``?adminUuid={param}`` leaves ``/api/getCompanyDisplay``, a request the server will
+    route and answer. Omitting a required parameter is how you learn whether the
+    rejection comes from the authentication layer or the validation layer behind it —
+    which is the whole question. A path segment cannot be dropped the same way,
+    because what is left is a different endpoint.
 
     ``limit`` bounds the plan to what the mission's remaining request budget allows.
     """
@@ -342,14 +349,17 @@ def plan_sweep(
         if item.risk is EndpointRisk.MUTATING and not include_mutating:
             withheld.append((item.path, "mutating_requires_approval"))
             continue
-        if "{" in item.path:
+        probeable_path = item.path.split("?", 1)[0]
+        if "{" in probeable_path:
             withheld.append((item.path, "parameterised_path_needs_an_identifier"))
             continue
         if len(chosen) >= limit:
             withheld.append((item.path, "request_budget"))
             continue
         chosen.append(
-            EndpointSpec(method=item.method, path=item.path, strategy=item.strategy)
+            EndpointSpec(
+                method=item.method, path=probeable_path, strategy=item.strategy
+            )
         )
     return SweepPlan(endpoints=tuple(chosen), withheld=tuple(withheld))
 

@@ -168,6 +168,7 @@ class ReconSummary:
     endpoints_held_back: int = 0
     candidates_created: int = 0
     leads_created: int = 0
+    requests_sent: int = 0
     skipped: str | None = None
 
 
@@ -431,8 +432,15 @@ class MissionController:
             self._session.commit()
             return ReconSummary(skipped="reconnaissance_failed")
 
+        # Reconnaissance is bounded and paced, but every request it sent still has to
+        # appear in the ledger. A mission that under-reports what it put on the wire
+        # cannot answer the only question the rate limit exists to answer.
+        self._charge(mission, result.base_url, result.requests_sent, at=at)
+
         if not result.classifications:
-            return ReconSummary(skipped="no_endpoints_recovered")
+            return ReconSummary(
+                requests_sent=result.requests_sent, skipped="no_endpoints_recovered"
+            )
 
         stored, held = record_endpoints(
             self._session,
@@ -446,12 +454,28 @@ class MissionController:
             {
                 "endpoints": stored,
                 "held_back": held,
+                "requests_sent": result.requests_sent,
                 "surface_digest": result.surface_digest,
             },
             at=at,
         )
         self._session.commit()
-        return ReconSummary(endpoints_recorded=stored, endpoints_held_back=held)
+        return ReconSummary(
+            endpoints_recorded=stored,
+            endpoints_held_back=held,
+            requests_sent=result.requests_sent,
+        )
+
+    def _charge(
+        self, mission: Mission, base_url: str, requests: int, *, at: datetime
+    ) -> None:
+        """Record requests already sent against every budget window."""
+        if requests <= 0:
+            return
+        gate = BudgetGate(self._session, mission)
+        host = normalize_target(base_url).host
+        for _ in range(requests):
+            gate.record_request(host=host, at=at)
 
     def _probe_surface(self, mission: Mission, *, at: datetime) -> SweepSummary:
         """Probe the recovered surface and turn what the oracles say into leads.

@@ -337,7 +337,7 @@ def test_a_read_exposed_over_post_is_planned_with_an_empty_body() -> None:
     assert by_path["/api/getCompanyDisplay"].strategy is ProbeStrategy.DIRECT
 
 
-def test_a_parameterised_path_is_not_probed_literally() -> None:
+def test_a_placeholder_in_a_path_segment_is_not_probed_literally() -> None:
     """A placeholder would answer 404 and produce a confident verdict about nothing."""
     plan = plan_sweep(classify_all(INVENTORY), limit=10)
 
@@ -345,6 +345,20 @@ def test_a_parameterised_path_is_not_probed_literally() -> None:
         reasons(plan)["/api/companies/{param}/members"]
         == "parameterised_path_needs_an_identifier"
     )
+
+
+def test_a_placeholder_in_the_query_is_dropped_and_the_path_probed() -> None:
+    """Omitting a required parameter is how you learn which layer does the rejecting.
+
+    This is the case the IT-08 authentication gap was found through: the server routes
+    and answers the bare path, and what it answers says whether authentication ran.
+    """
+    plan = plan_sweep(
+        classify_all((("GET", "/api/getCompanyDisplay?adminUuid={param}"),)), limit=10
+    )
+
+    assert [spec.path for spec in plan.endpoints] == ["/api/getCompanyDisplay"]
+    assert plan.withheld == ()
 
 
 def test_the_plan_stops_at_the_request_budget() -> None:

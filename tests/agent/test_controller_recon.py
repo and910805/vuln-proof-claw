@@ -26,6 +26,7 @@ from tests.agent.support import (
     session_factory,
 )
 from tests.agent.test_controller import RecordingExecutor, frozen_clock
+from vuln_proof_claw.agent.budget import BudgetGate
 from vuln_proof_claw.agent.controller import MissionController
 from vuln_proof_claw.agent.differential import OracleRule, OracleVerdict
 from vuln_proof_claw.agent.endpoints import EndpointClassification, classify_all
@@ -37,6 +38,7 @@ from vuln_proof_claw.domain.identifiers import MissionId
 from vuln_proof_claw.persistence.autonomous_repositories import (
     EndpointRepository,
     LeadRepository,
+    MissionRepository,
 )
 
 TARGET = f"https://{TARGET_HOST}:443/api/getCompanyDisplay"
@@ -54,6 +56,7 @@ class StubRecon:
     classifications: tuple[EndpointClassification, ...] = field(default_factory=tuple)
     explode: bool = False
     calls: int = 0
+    requests_sent: int = 0
 
     def discover(self, *, at: datetime) -> SimpleNamespace:
         self.calls += 1
@@ -63,6 +66,7 @@ class StubRecon:
             base_url=f"https://{TARGET_HOST}/",
             classifications=self.classifications,
             surface_digest="d" * 64,
+            requests_sent=self.requests_sent,
         )
 
 
@@ -142,6 +146,31 @@ def test_reconnaissance_records_endpoints_into_the_knowledge_base(engine: Engine
     assert report.recon.endpoints_recorded == 3
     assert report.recon.endpoints_held_back == 1
     assert stored == 3
+
+
+def test_reconnaissance_requests_reach_the_budget_ledger(engine: Engine) -> None:
+    """A pass that spends nine requests must leave nine in the ledger, or the mission
+    under-reports how much it touched the target."""
+    factory = session_factory(engine)
+    recon = recon_for(("GET", "/api/getCompanyDisplay"))
+    recon.requests_sent = 9
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session, engagement_id, budget=MissionBudget(requests_per_hour=100)
+        )
+        session.commit()
+
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=recon
+        )
+        report = controller.run_cycle(controller.start_run())
+        reloaded = MissionRepository(session).get(MissionId(mission.id))
+        assert reloaded is not None
+        remaining = BudgetGate(session, reloaded.entity).sustained_requests(at=NOW)
+
+    assert report.recon.requests_sent == 9
+    assert remaining == 100 - 9
 
 
 def test_a_failing_reconnaissance_does_not_fail_the_cycle(engine: Engine) -> None:

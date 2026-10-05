@@ -133,6 +133,46 @@ def test_requests_are_paced_after_the_first() -> None:
     assert naps == [pytest.approx(2.0), pytest.approx(2.0)]
 
 
+def test_every_request_sent_is_counted() -> None:
+    """Bounded is not the same as unaccounted; the ledger needs the number."""
+    transport = default_transport()
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert result.requests_sent == len(transport.requested)
+    assert result.requests_sent == 3  # the page and its two scripts
+
+
+def test_a_failed_fetch_is_still_counted() -> None:
+    """It reached the target; whether it answered does not change that."""
+    transport = default_transport()
+    transport.fail_on = {f"{BASE}assets/vendor-xyz.js"}
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert len(result.assets) == 1
+    assert result.requests_sent == 3
+
+
+def test_an_asset_refused_by_scope_is_not_counted() -> None:
+    """Nothing left the machine, so nothing is charged."""
+    page = PAGE.replace(b'src="/assets/index-abc.js"', b'src="https://evil.test/x.js"')
+    transport = StubTransport(responses={BASE: (200, page)})
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert result.requests_sent == len(transport.requested)
+
+
+def test_an_unreachable_entry_page_still_reports_its_request() -> None:
+    recon, _ = build(StubTransport())
+
+    assert recon.discover(at=NOW).requests_sent == 1
+
+
 def test_an_out_of_scope_asset_is_never_fetched() -> None:
     page = PAGE.replace(b'src="/assets/index-abc.js"', b'src="https://evil.test/x.js"')
     transport = StubTransport(responses={BASE: (200, page)})

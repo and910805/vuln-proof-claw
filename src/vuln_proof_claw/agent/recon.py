@@ -64,6 +64,13 @@ class ReconResult:
     calls: tuple[DiscoveredCall, ...] = ()
     classifications: tuple[EndpointClassification, ...] = ()
     errors: tuple[str, ...] = ()
+    requests_sent: int = 0
+    """Every request this pass put on the wire, including the ones that failed.
+
+    Reconnaissance is bounded and paced, but bounded is not the same as unaccounted:
+    a request that left the machine has to appear in the ledger, or the mission's own
+    record of how much it touched the target is understated.
+    """
 
     @property
     def surface_digest(self) -> str:
@@ -102,12 +109,14 @@ class SpaReconnaissance:
         """Fetch the page and its scripts, then recover the API inventory."""
         moment = at or datetime.now(UTC)
         errors: list[str] = []
+        started_with = self._fetched
 
         page = self._fetch(self.base_url, _PAGE_LIMITS, at=moment)
         if page is None:
             return ReconResult(
                 base_url=self.base_url,
                 errors=("entry page could not be retrieved",),
+                requests_sent=self._fetched - started_with,
             )
 
         html = page.decode("utf-8", errors="replace")
@@ -140,6 +149,7 @@ class SpaReconnaissance:
             calls=calls,
             classifications=classify_all(inventory(calls)),
             errors=tuple(errors),
+            requests_sent=self._fetched - started_with,
         )
 
     @staticmethod
