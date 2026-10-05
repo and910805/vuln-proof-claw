@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -43,15 +44,21 @@ class FrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+def _variable_of(value: str) -> str | None:
+    """Return the environment variable a value references, or None if it is literal."""
+    reference = _ENV_REFERENCE.match(value.strip())
+    return reference.group(1) if reference else None
+
+
 def _resolve(value: str, *, field_name: str) -> tuple[SecretStr, bool]:
     """Resolve an environment reference, or accept a literal and flag it."""
-    reference = _ENV_REFERENCE.match(value.strip())
-    if reference is None:
+    variable = _variable_of(value)
+    if variable is None:
         return (SecretStr(value), True)
-    resolved = os.environ.get(reference.group(1))
+    resolved = os.environ.get(variable)
     if resolved is None:
         raise IdentityDefinitionError(
-            f"{field_name} references ${{{reference.group(1)}}} but that variable is not set"
+            f"{field_name} references ${{{variable}}} but that variable is not set"
         )
     return (SecretStr(resolved), False)
 
@@ -210,28 +217,124 @@ class ResolvedCredential(FrozenModel):
     literal_in_file: bool = False
 
 
-def resolve_credentials(
-    bundle: IdentityBundle,
-) -> tuple[dict[str, ResolvedCredential], tuple[str, ...]]:
-    """Resolve every credential, reporting which identities held literals in the file."""
+@dataclass(frozen=True, slots=True)
+class CredentialSlot:
+    """One credential an engagement needs, and whether it has been supplied.
+
+    Carries variable *names* only. Nothing here holds or can print a secret, which is
+    what makes it safe to show an operator, write to a status report, or log.
+    """
+
+    identity: str
+    role: str
+    username_variable: str | None
+    password_variable: str | None
+    satisfied: bool
+    literal_in_file: bool
+
+    @property
+    def pending_variables(self) -> tuple[str, ...]:
+        """The variables an operator still has to set, in the order they are read."""
+        if self.satisfied:
+            return ()
+        return tuple(
+            variable
+            for variable in (self.username_variable, self.password_variable)
+            if variable is not None and os.environ.get(variable) is None
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialResolution:
+    """What could be resolved, and what is still waiting on a human.
+
+    An unattended agent should not fall over because one identity has no password yet.
+    It should do the work that identity is not needed for, and say plainly what it is
+    missing — so this reports rather than raises.
+    """
+
+    resolved: dict[str, ResolvedCredential]
+    slots: tuple[CredentialSlot, ...]
+
+    @property
+    def pending(self) -> tuple[CredentialSlot, ...]:
+        return tuple(slot for slot in self.slots if not slot.satisfied)
+
+    @property
+    def literals(self) -> tuple[str, ...]:
+        return tuple(slot.identity for slot in self.slots if slot.literal_in_file)
+
+    @property
+    def complete(self) -> bool:
+        return not self.pending
+
+
+def inspect_credentials(bundle: IdentityBundle) -> CredentialResolution:
+    """Resolve what is available and describe what is not.
+
+    Never raises for a missing variable: a credential nobody has supplied yet is a
+    normal state for a long-running agent, not an error in the file.
+    """
     resolved: dict[str, ResolvedCredential] = {}
-    literals: list[str] = []
+    slots: list[CredentialSlot] = []
+
     for identity in bundle.identities:
         if identity.credentials is None:
             continue
-        username, _ = _resolve(
-            identity.credentials.username, field_name=f"{identity.name}.username"
+        username_raw = identity.credentials.username
+        password_raw = identity.credentials.password.get_secret_value()
+        username_variable = _variable_of(username_raw)
+        password_variable = _variable_of(password_raw)
+
+        username_value = (
+            os.environ.get(username_variable)
+            if username_variable is not None
+            else username_raw
         )
-        password, literal = _resolve(
-            identity.credentials.password.get_secret_value(),
-            field_name=f"{identity.name}.password",
+        password_value = (
+            os.environ.get(password_variable)
+            if password_variable is not None
+            else password_raw
         )
-        resolved[identity.name] = ResolvedCredential(
-            username=username, password=password, literal_in_file=literal
+        satisfied = bool(username_value) and bool(password_value)
+        literal = password_variable is None
+
+        slots.append(
+            CredentialSlot(
+                identity=identity.name,
+                role=identity.role,
+                username_variable=username_variable,
+                password_variable=password_variable,
+                satisfied=satisfied,
+                literal_in_file=literal,
+            )
         )
-        if literal:
-            literals.append(identity.name)
-    return (resolved, tuple(literals))
+        if satisfied:
+            resolved[identity.name] = ResolvedCredential(
+                username=SecretStr(username_value or ""),
+                password=SecretStr(password_value or ""),
+                literal_in_file=literal,
+            )
+
+    return CredentialResolution(resolved=resolved, slots=tuple(slots))
+
+
+def resolve_credentials(
+    bundle: IdentityBundle,
+) -> tuple[dict[str, ResolvedCredential], tuple[str, ...]]:
+    """Resolve every credential, refusing when one is missing.
+
+    The strict form, for callers that cannot proceed without a full set.
+    :func:`inspect_credentials` is the one an unattended run should use.
+    """
+    resolution = inspect_credentials(bundle)
+    if resolution.pending:
+        missing = ", ".join(
+            f"{slot.identity} needs {' and '.join(slot.pending_variables)}"
+            for slot in resolution.pending
+        )
+        raise IdentityDefinitionError(f"credentials are not supplied: {missing}")
+    return (resolution.resolved, resolution.literals)
 
 
 def parse_identity_bundle(document: str) -> IdentityBundle:

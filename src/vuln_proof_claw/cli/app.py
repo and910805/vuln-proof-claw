@@ -39,10 +39,11 @@ from vuln_proof_claw.config.engagement import (
     load_engagement_definition,
 )
 from vuln_proof_claw.config.identities import (
+    CredentialResolution,
     IdentityBundle,
     IdentityDefinitionError,
+    inspect_credentials,
     load_identity_bundle,
-    resolve_credentials,
 )
 from vuln_proof_claw.config.settings import load_settings
 from vuln_proof_claw.domain.autonomous import Mission, MissionBudget
@@ -269,21 +270,31 @@ def _apply_state(
         raise typer.Exit(code=1)
 
 
-def _probing_roles(bundle: IdentityBundle) -> tuple[str, str | None, str | None]:
+def _probing_roles(
+    bundle: IdentityBundle, *, available: set[str] | None = None
+) -> tuple[str, str | None, str | None]:
     """Pick the identities a sweep compares, from the roles the bundle declares.
 
     Taking them from the file rather than from flags means the comparison cannot be
-    pointed at an identity the authorization package never covered.
+    pointed at an identity the authorization package never covered. ``available``
+    narrows that to the identities whose credentials have actually been supplied, so a
+    bundle declaring an admin nobody has filled in degrades to the comparisons it can
+    still make instead of failing.
     """
+    usable = (
+        bundle.identities
+        if available is None
+        else tuple(i for i in bundle.identities if i.name in available)
+    )
     users = [
         identity.name
-        for identity in bundle.identities
+        for identity in usable
         if identity.identity_role is IdentityRole.USER
     ]
     privileged = next(
         (
             identity.name
-            for identity in bundle.identities
+            for identity in usable
             if identity.identity_role is IdentityRole.PRIVILEGED
         ),
         None,
@@ -295,7 +306,7 @@ def _probing_roles(bundle: IdentityBundle) -> tuple[str, str | None, str | None]
         anonymous = next(
             (
                 identity.name
-                for identity in bundle.identities
+                for identity in usable
                 if identity.identity_role is IdentityRole.ANONYMOUS
             ),
             None,
@@ -323,10 +334,16 @@ def _sweep_rate(budget: MissionBudget, requested: int | None) -> int:
 
 def _build_prober(
     path: Path, *, scope: object, rate: int, tls: ssl.SSLContext | None = None
-) -> tuple[SweepProber, tuple[str, ...]]:
+) -> tuple[SweepProber, CredentialResolution]:
     bundle = load_identity_bundle(path)
-    credentials, literals = resolve_credentials(bundle)
-    owner, other, privileged = _probing_roles(bundle)
+    # Deliberately the lenient form. A credential nobody has filled in yet is a normal
+    # state for an agent meant to run unattended for days: it should do the work that
+    # identity is not needed for and say what it is waiting on, not refuse to start.
+    resolution = inspect_credentials(bundle)
+    credentials = resolution.resolved
+    supplied = {identity.name for identity in bundle.identities if identity.credentials is None}
+    supplied |= set(credentials)
+    owner, other, privileged = _probing_roles(bundle, available=supplied)
     sessions = IdentitySessions(
         # Probing reaches only the engagement's own targets, so no asset origins here:
         # reading a CDN's code is reconnaissance, and this is the part that asks
@@ -346,7 +363,63 @@ def _build_prober(
         other=other,
         privileged=privileged,
     )
-    return (prober, literals)
+    return (prober, resolution)
+
+
+@mission_app.command("credentials")
+def mission_credentials_command(
+    identities: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, readable=True, resolve_path=True),
+    ],
+    json_output: JsonOption = False,
+) -> None:
+    """Show which credentials an identity bundle needs and which are still missing.
+
+    Prints variable names and never a value, so the output is safe to paste into a
+    ticket or a log.
+    """
+    try:
+        bundle = load_identity_bundle(identities)
+    except IdentityDefinitionError as error:
+        typer.echo(f"[failed] {error}")
+        raise typer.Exit(code=1) from error
+
+    resolution = inspect_credentials(bundle)
+    document: dict[str, object] = {
+        "schema_version": "v1",
+        "base_url": bundle.base_url,
+        "complete": resolution.complete,
+        "identities": [
+            {
+                "identity": slot.identity,
+                "role": slot.role,
+                "satisfied": slot.satisfied,
+                "literal_in_file": slot.literal_in_file,
+                "waiting_for": list(slot.pending_variables),
+            }
+            for slot in resolution.slots
+        ],
+    }
+    if json_output:
+        typer.echo(json.dumps(document, separators=(",", ":"), sort_keys=True))
+        raise typer.Exit(code=0 if resolution.complete else 1)
+
+    anonymous = [i.name for i in bundle.identities if i.credentials is None]
+    if anonymous:
+        typer.echo(f"no credentials needed: {', '.join(anonymous)}")
+    for slot in resolution.slots:
+        if slot.satisfied:
+            source = "literal in file" if slot.literal_in_file else "from environment"
+            typer.echo(f"[ok     ] {slot.identity} ({slot.role}) — {source}")
+        else:
+            typer.echo(
+                f"[pending] {slot.identity} ({slot.role}) — set "
+                + ", ".join(slot.pending_variables)
+            )
+    if not resolution.complete:
+        typer.echo("\nsupply the variables above, then re-run this command to confirm.")
+    raise typer.Exit(code=0 if resolution.complete else 1)
 
 
 @mission_app.command("run")
@@ -453,13 +526,19 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
             prober = None
             if identities is not None:
                 budget = _mission_of(session, mission_id).budget
-                prober, literals = _build_prober(
+                prober, resolution = _build_prober(
                     identities, scope=scope, rate=_sweep_rate(budget, rate), tls=tls
                 )
-                if literals:
+                if resolution.literals:
                     typer.echo(
                         "[warning] passwords are literal in the identity file for: "
-                        + ", ".join(literals)
+                        + ", ".join(resolution.literals)
+                    )
+                for slot in resolution.pending:
+                    typer.echo(
+                        f"[pending] identity '{slot.identity}' ({slot.role}) is waiting "
+                        f"for: {', '.join(slot.pending_variables)} — "
+                        "running without it until supplied"
                     )
             yield MissionController(
                 session,
