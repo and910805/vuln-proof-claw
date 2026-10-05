@@ -7,6 +7,7 @@ up on a later cycle — all without a human between the steps.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -210,6 +211,36 @@ def test_a_paced_batch_is_not_recorded_as_a_burst(engine: Engine) -> None:
     # Six requests, thirty seconds apart, land across three separate minutes.
     assert len(rows) == 3
     assert [count for _, count in rows] == [2, 2, 2]
+
+
+def test_the_sweep_audit_records_when_it_finished_and_its_span(engine: Engine) -> None:
+    """A paced sweep runs for half an hour; stamping it at the cycle's start time
+    tells an auditor that every request happened in one instant."""
+    factory = session_factory(engine)
+    prober = StubProber(requests_sent=4)  # the stub spreads these 20 seconds apart
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/getA")),
+            prober=prober,
+        )
+        controller.run_cycle(controller.start_run())
+        payload = session.execute(
+            text(
+                "select payload from audit_events "
+                "where event_type = 'agent.sweep_completed'"
+            )
+        ).scalar_one()
+
+    recorded = payload if isinstance(payload, dict) else json.loads(payload)
+    assert recorded["first_request_at"] != recorded["last_request_at"]
+    assert recorded["requests_sent"] == 4
 
 
 def test_a_failing_reconnaissance_does_not_fail_the_cycle(engine: Engine) -> None:

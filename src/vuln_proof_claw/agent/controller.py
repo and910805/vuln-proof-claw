@@ -207,6 +207,11 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _moment_text(moments: Sequence[datetime]) -> str:
+    """Render one timestamp for an audit payload, or empty when there is none."""
+    return moments[0].isoformat() if moments else ""
+
+
 class MissionController:
     """Drive one autonomous mission across cycles, crashes, and restarts."""
 
@@ -455,9 +460,11 @@ class MissionController:
                 "endpoints": stored,
                 "held_back": held,
                 "requests_sent": result.requests_sent,
+                "first_request_at": _moment_text(result.sent_at[:1]),
+                "last_request_at": _moment_text(result.sent_at[-1:]),
                 "surface_digest": result.surface_digest,
             },
-            at=at,
+            at=self._now(),
         )
         self._session.commit()
         return ReconSummary(
@@ -517,15 +524,21 @@ class MissionController:
 
         for moment in outcome.sent_at:
             gate.record_request(host=host, at=moment)
+        # Timestamped when it finished, not when the cycle began. A paced sweep runs for
+        # half an hour; recording it at the cycle's start time tells an auditor that
+        # ninety-six requests happened in one instant, which is both untrue and the
+        # opposite of the shape they would be looking for.
         self._audit(
             _SWEEP_COMPLETED_EVENT,
             {
                 "probed": len(plan.endpoints),
                 "withheld": len(plan.withheld),
                 "requests_sent": outcome.requests_sent,
+                "first_request_at": _moment_text(outcome.sent_at[:1]),
+                "last_request_at": _moment_text(outcome.sent_at[-1:]),
                 "stopped_early": outcome.stopped_early or "",
             },
-            at=at,
+            at=self._now(),
         )
         self._session.commit()
 
