@@ -28,6 +28,7 @@ from vuln_proof_claw.agent.recon import ReconResult
 from vuln_proof_claw.automation.browser import (
     BrowserRunRequest,
     IsolatedBrowserRunner,
+    LoginInstruction,
     inventory,
 )
 from vuln_proof_claw.policy.scope import EngagementScope, normalize_target
@@ -47,6 +48,16 @@ class BrowserReconnaissance:
     timeout_ms: int = _DEFAULT_TIMEOUT_MS
     settle_ms: int = _DEFAULT_SETTLE_MS
     ignore_https_errors: bool = False
+    login: LoginInstruction | None = None
+    """Sign in through the page before observing.
+
+    Unauthenticated, a browser sees whatever the login screen itself fetches — on one
+    target, three endpoints out of a surface of two hundred. The application only
+    *uses* its API once someone is logged in, and using it is the whole point of
+    watching. The credential lives in the instruction as a secret and reaches only the
+    browser's own form fill; nothing here reads it, logs it, or records it.
+    """
+
     runner: IsolatedBrowserRunner = field(default_factory=IsolatedBrowserRunner)
 
     def discover(self, *, at: datetime | None = None) -> ReconResult:
@@ -102,6 +113,7 @@ class BrowserReconnaissance:
             target=self.base_url,
             allowed_hosts=frozenset(hosts),
             allowed_ports=frozenset(self.scope.allowed_ports or (443,)),
+            login=self.login,
             timeout_ms=self.timeout_ms,
             settle_ms=self.settle_ms,
             ignore_https_errors=self.ignore_https_errors,

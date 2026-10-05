@@ -1,19 +1,22 @@
 """Tests for recovering a surface by watching what an application actually requests.
 
 Parsing a bundle only finds the idioms the parser knows. A recorded request has no
-idiom, which is the whole reason this path exists — so what matters here is that the
+idiom, which is the whole reason this path exists, so what matters here is that the
 recording is faithful, bounded, and safe to put in evidence.
 """
 
 from __future__ import annotations
 
 import pytest
+from pydantic import SecretStr
 
 from vuln_proof_claw.automation.browser import (
     BrowserRunResult,
+    LoginInstruction,
     ObservedRequest,
     inventory,
 )
+from vuln_proof_claw.domain.errors import DomainValidationError
 
 
 def observed(
@@ -112,3 +115,40 @@ def test_an_observation_records_that_a_body_existed_not_what_it_was() -> None:
 @pytest.mark.parametrize("resource_type", ["stylesheet", "image", "font", "media"])
 def test_nothing_rendered_reaches_the_inventory(resource_type: str) -> None:
     assert result(observed(resource_type=resource_type)).api_requests == ()
+
+
+def instruction(**overrides: object) -> LoginInstruction:
+    defaults: dict[str, object] = {
+        "login_url": "https://10.26.0.40/#/login",
+        "username_selector": "#textbox-account",
+        "password_selector": "#textbox-password",
+        "submit_selector": "button.submit",
+        "username": SecretStr("account"),
+        "password": SecretStr("not-a-real-password"),
+    }
+    defaults.update(overrides)
+    return LoginInstruction(**defaults)  # type: ignore[arg-type]
+
+
+def test_a_form_behind_a_button_can_be_opened_first() -> None:
+    """Observed live: the login page is a landing screen with one button, and the
+    account and password fields only exist after it has been clicked."""
+    assert instruction(open_selector="button.start").open_selector == "button.start"
+
+
+def test_no_opener_means_no_extra_click() -> None:
+    assert instruction().open_selector is None
+
+
+def test_a_blank_opener_is_refused() -> None:
+    """Unset means "no step". Blank means a mistake that would click nothing and then
+    fail on fields that were never revealed, which reads as a broken selector."""
+    with pytest.raises(DomainValidationError, match="selectors"):
+        instruction(open_selector="   ")
+
+
+def test_a_login_instruction_never_prints_its_credentials() -> None:
+    rendered = repr(instruction(password=SecretStr("sup3r-s3cret-value")))
+
+    assert "sup3r-s3cret-value" not in rendered
+

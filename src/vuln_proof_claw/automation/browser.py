@@ -38,11 +38,27 @@ class LoginInstruction:
     username: SecretStr
     password: SecretStr
 
+    open_selector: str | None = None
+    """Clicked before the fields are filled, when the form is behind something.
+
+    A landing page with a single button that reveals the real form is common, and
+    without this the fill fails on elements that are not there yet — which reads as a
+    broken selector rather than a form that had not been opened.
+
+    One click, named explicitly. The agent never explores a page by clicking: on this
+    engagement the same application carries a change-password form, and the rules
+    forbid changing a shared account's password. Every element this touches is one an
+    operator named.
+    """
+
     def __post_init__(self) -> None:
         parsed = urlsplit(self.login_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise DomainValidationError("login_url must be an absolute HTTP URL")
-        for value in (self.username_selector, self.password_selector, self.submit_selector):
+        selectors = [self.username_selector, self.password_selector, self.submit_selector]
+        if self.open_selector is not None:
+            selectors.append(self.open_selector)
+        for value in selectors:
             if not value.strip() or len(value) > _MAX_SELECTOR_LENGTH:
                 raise DomainValidationError("login selectors must contain 1-256 characters")
 
@@ -222,6 +238,9 @@ class IsolatedBrowserRunner:
                 page = await context.new_page()
                 if request.login is not None:
                     await page.goto(request.login.login_url, wait_until="domcontentloaded")
+                    if request.login.open_selector is not None:
+                        await page.locator(request.login.open_selector).first.click()
+                        await page.wait_for_timeout(request.settle_ms)
                     await page.locator(request.login.username_selector).fill(
                         request.login.username.get_secret_value()
                     )
@@ -230,6 +249,11 @@ class IsolatedBrowserRunner:
                     )
                     await page.locator(request.login.submit_selector).click()
                     await page.wait_for_load_state("domcontentloaded")
+                    # A single-page application signs in over XHR and never navigates,
+                    # so the load state settles at once and the token has not been
+                    # stored yet. Leaving here would navigate away mid-login and then
+                    # observe an anonymous session that looks like a logged-in one.
+                    await page.wait_for_timeout(request.settle_ms)
                 response = await page.goto(request.target, wait_until="domcontentloaded")
                 # A single-page application fetches its data after the document is
                 # ready; returning here would record the boot requests and miss the API.
