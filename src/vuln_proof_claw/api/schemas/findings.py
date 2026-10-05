@@ -39,6 +39,8 @@ class FindingReviewSummary(BaseModel):
     engagement_id: str
     title: str
     vulnerability_class: str
+    cwe_id: str | None = None
+    verification_method: str | None = None
     affected_target: str
     status: str
     severity: str

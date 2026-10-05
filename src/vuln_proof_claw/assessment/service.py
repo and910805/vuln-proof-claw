@@ -29,6 +29,7 @@ from vuln_proof_claw.domain.enums import (
     FindingConfidence,
     FindingSeverity,
     FindingStatus,
+    VerificationMethod,
 )
 from vuln_proof_claw.domain.identifiers import (
     ActionId,
@@ -608,6 +609,9 @@ class PassiveAssessmentService:
                 affected_target=operation.target,
                 evidence_ids=(evidence_id,),
                 status=FindingStatus.CANDIDATE,
+                # The document declares the operation protected and the captured
+                # response succeeded without credentials; that is one observation.
+                verification_method=VerificationMethod.OBSERVED,
                 severity=FindingSeverity.HIGH,
                 confidence=FindingConfidence.MEDIUM,
                 remediation=(

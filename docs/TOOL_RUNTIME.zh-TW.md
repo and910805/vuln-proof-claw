@@ -28,6 +28,19 @@ WhatWeb、WAFW00F、Subfinder、Amass、Semgrep 與 Trivy。新工具必須先�
   100 次、每分鐘最多 30 次，預設成功即停止。
 - `exploit_poc` 必須提供 Registry ID、Artifact SHA-256、成功訊號，且最多十次；Request
   不內嵌 Exploit Payload。
+- `httpx` 只探測一個已核准的標的，探測項是有界枚舉。它不提供標的檔案、埠清單、額外路徑、
+  Proxy，也不跟隨轉址——每一項都是「標的可以從別的地方來」的第二個入口。
+- `nuclei` 用 Template ID、Tag 與 Severity 從 Worker Image 內釘住的 Corpus 挑選 Template，
+  永不接受 Template 路徑：路徑是核准之後才選定、核准當時沒看過內容的第二份 Corpus。
+  頻外偵測（OAST）預設關閉，除非明確指定 interactsh Server，所以不可能誤用原廠的公開
+  OAST 伺服器。argv 同時關掉每一個會超出標的或送出主機外的 nuclei 預設行為：更新檢查、
+  從 stdin 讀標的、雙 Scheme 探測、公開 DNS Resolver，以及 Template 自行跟隨轉址。
+
+nuclei 有兩個輸入不在 argv 裡：`$HOME/.config/nuclei/config.yaml` 可以設定任何選項，包含
+`-proxy` 與 `-list`；以及環境變數，Cloud Upload 不需要任何旗標就能從環境變數啟用。因此
+Parameter Digest 本身並不足以釘住 nuclei 的行為。`tooling/executor.py` 裡的
+`NUCLEI_WORKER_ENVIRONMENT` 明列 Worker 必須設定與必須清除的變數；忽略它的 Worker
+仍然可能被一個設定檔改變行為。
 
 每個計畫都會正規化、計算 Digest、建立 Flow／Task／Action、檢查 Engagement Scope 與
 Maximum Risk，再寫入 Audit Log。L2 必須取得精確 Approval 或套用 Approval Preset。

@@ -38,6 +38,7 @@ EXPECTED_TABLES = {
     "report_exports",
     "surface_snapshots",
     "tasks",
+    "usage_samples",
     "worker_executions",
 }
 

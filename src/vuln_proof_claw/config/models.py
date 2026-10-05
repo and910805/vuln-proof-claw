@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from vuln_proof_claw import __version__
+
 _ENGINE_TOKEN_MINIMUM_LENGTH = 32
 _ENGINE_TOKEN_MAXIMUM_LENGTH = 4096
 _VISIBLE_ASCII_MINIMUM = 33
@@ -281,7 +283,11 @@ class AssessmentConfig(FrozenConfigModel):
     allow_private_targets: bool = False
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_response_bytes: int = Field(default=1024 * 1024, ge=1, le=10 * 1024 * 1024)
-    user_agent: str = Field(default="vuln-proof-claw/0.7.1", min_length=1, max_length=255)
+    # Derived, not written out: a hand-maintained copy of the version drifts on
+    # every release, and the probe would then advertise a version we are not.
+    user_agent: str = Field(
+        default=f"vuln-proof-claw/{__version__}", min_length=1, max_length=255
+    )
 
     @field_validator("user_agent")
     @classmethod

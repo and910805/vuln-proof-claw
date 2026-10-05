@@ -17,17 +17,17 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     with op.batch_alter_table("report_exports") as batch:
-        batch.drop_constraint("ck_report_exports_format", type_="check")
+        batch.drop_constraint("format", type_="check")
         batch.create_check_constraint(
-            "ck_report_exports_format",
+            "format",
             "format IN ('json', 'markdown', 'sarif')",
         )
 
 
 def downgrade() -> None:
     with op.batch_alter_table("report_exports") as batch:
-        batch.drop_constraint("ck_report_exports_format", type_="check")
+        batch.drop_constraint("format", type_="check")
         batch.create_check_constraint(
-            "ck_report_exports_format",
+            "format",
             "format IN ('json', 'markdown')",
         )

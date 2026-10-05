@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from vuln_proof_claw.assessment.analyzer import analyze_passive_response
-from vuln_proof_claw.domain.enums import FindingConfidence, FindingSeverity
+from vuln_proof_claw.domain.enums import (
+    FindingConfidence,
+    FindingSeverity,
+    VerificationMethod,
+)
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId
+from vuln_proof_claw.domain.models import Finding
 from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
 
 
@@ -24,6 +29,45 @@ def analyze(
         ),
     )
     return tuple(item.title for item in findings)
+
+
+def analyze_findings(
+    headers: tuple[tuple[str, str], ...], *, target: str = "https://example.test/"
+) -> tuple[Finding, ...]:
+    return analyze_passive_response(
+        EngagementId("00000000-0000-7000-8000-000000000001"),
+        target,
+        EvidenceId("00000000-0000-7000-8000-000000000002"),
+        HttpCaptureResponse(
+            status_code=200,
+            final_target=target,
+            headers=headers,
+            body=b"response",
+            duration_ms=1,
+        ),
+    )
+
+
+def test_every_finding_carries_a_validated_cwe_and_a_stated_basis() -> None:
+    # cwe_id is the field an external consumer keys on and the one the scoring
+    # layer counts coverage with, so a finding that only sets vulnerability_class
+    # is invisible to both. Finding.__post_init__ validates the format, so a
+    # malformed id cannot reach here -- what this pins is that the value is set
+    # at all, on every finding, and agrees with the class.
+    findings = analyze_findings(
+        (
+            ("Content-Type", "text/html"),
+            ("Server", "nginx/1.24.0"),
+            ("Set-Cookie", "sessionid=secret; Path=/"),
+        )
+    )
+
+    assert findings
+    for finding in findings:
+        assert finding.cwe_id is not None, finding.title
+        assert finding.cwe_id == finding.vulnerability_class, finding.title
+        # Each check reads one captured response against a fixed expectation.
+        assert finding.verification_method is VerificationMethod.OBSERVED, finding.title
 
 
 def test_secure_non_html_response_has_no_findings() -> None:

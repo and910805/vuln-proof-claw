@@ -19,10 +19,11 @@ from vuln_proof_claw.domain.enums import (
     FindingSeverity,
     FindingStatus,
     LeadStatus,
+    VerificationMethod,
 )
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import EvidenceId
-from vuln_proof_claw.domain.models import Finding
+from vuln_proof_claw.domain.models import SEVERITY_REQUIRES_STATED_METHOD, Finding
 
 _CONFIDENCE_WEIGHT = 60
 _RECENCY_WEIGHT = 20
@@ -63,10 +64,41 @@ class VerificationOutcome:
     confidence: FindingConfidence = FindingConfidence.MEDIUM
     remediation: str = "Review the evidence and apply the relevant security control."
 
+    verification_method: VerificationMethod | None = None
+    """How the claim was established: a single observation, or a comparison.
+
+    Deliberately without a default. A finding at high severity or above must state
+    this, and choosing one here on the verifier's behalf would forge the answer to the
+    question a reviewer most wants to ask. A verifier that does not know says nothing,
+    and promotion then refuses rather than inventing it.
+    """
+
+    control_evidence_ids: tuple[EvidenceId, ...] = ()
+    """The responses the finding's evidence was compared against.
+
+    A differential claim is a claim about a difference, so it is only as good as what
+    sat on the other side. Required when the method is differential: without the
+    control, "this identity saw the record" is an observation, not a comparison.
+    """
+
     def __post_init__(self) -> None:
         for name in ("vulnerability_class", "affected_target", "rationale", "remediation"):
             if not str(getattr(self, name)).strip():
                 raise DomainValidationError(f"{name} must not be empty")
+        if (
+            self.severity in SEVERITY_REQUIRES_STATED_METHOD
+            and self.verification_method is None
+        ):
+            raise DomainValidationError(
+                f"a {self.severity.value} outcome must state a verification_method"
+            )
+        if (
+            self.verification_method is VerificationMethod.DIFFERENTIAL
+            and not self.control_evidence_ids
+        ):
+            raise DomainValidationError(
+                "a differential outcome must carry the control it compared against"
+            )
 
 
 def dedupe_key(*, category: str, target: str, hypothesis: str) -> str:
@@ -266,6 +298,8 @@ def promote_to_finding(
         severity=outcome.severity,
         confidence=outcome.confidence,
         remediation=outcome.remediation,
+        verification_method=outcome.verification_method,
+        control_evidence_ids=outcome.control_evidence_ids,
         created_at=now,
     )
     verified = replace(

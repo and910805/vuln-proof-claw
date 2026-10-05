@@ -9,7 +9,7 @@ import pytest
 from vuln_proof_claw.agent.leads import VerificationOutcome
 from vuln_proof_claw.agent.manual import HttpExchange
 from vuln_proof_claw.domain.autonomous import Lead
-from vuln_proof_claw.domain.enums import FindingSeverity
+from vuln_proof_claw.domain.enums import FindingSeverity, VerificationMethod
 from vuln_proof_claw.domain.identifiers import (
     EvidenceId,
     new_engagement_id,
@@ -74,6 +74,11 @@ def make_outcome(**overrides: object) -> VerificationOutcome:
         "evidence_ids": (EvidenceId("11111111-1111-7111-8111-111111111111"),),
         "severity": FindingSeverity.HIGH,
         "remediation": "在查詢訂單時比對工作階段主體與訂單擁有者。",
+        # The rationale describes one identity's session reaching another's order, so
+        # the method is a comparison, and the control is the response it was measured
+        # against. At this severity both have to be stated.
+        "verification_method": VerificationMethod.DIFFERENTIAL,
+        "control_evidence_ids": (EvidenceId("22222222-2222-7222-8222-222222222222"),),
     }
     defaults.update(overrides)
     return VerificationOutcome(**defaults)  # type: ignore[arg-type]

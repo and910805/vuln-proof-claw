@@ -59,6 +59,7 @@ from vuln_proof_claw.execution.pinned_auth_http import (
     unverified_tls_context,
 )
 from vuln_proof_claw.execution.pinned_http import PinnedHttpTransport
+from vuln_proof_claw.execution.preflight import run_preflight
 from vuln_proof_claw.observability.logging import configure_logging
 from vuln_proof_claw.persistence.autonomous_repositories import MissionRepository
 from vuln_proof_claw.persistence.repositories import ScopeRepository
@@ -125,6 +126,27 @@ def doctor_command(
             marker = "ok" if check.ready else "failed"
             typer.echo(f"[{marker}] {check.name}: {check.code}")
         typer.echo("doctor: ready" if report.ready else "doctor: not ready")
+    if not report.ready:
+        raise typer.Exit(code=1)
+
+
+@app.command("preflight")
+def preflight_command(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the stable machine-readable v1 report."),
+    ] = False,
+) -> None:
+    """Execute each security tool and report which binary actually answered."""
+    report = run_preflight()
+    if json_output:
+        typer.echo(json.dumps(report.as_dict(), separators=(",", ":"), sort_keys=True))
+    else:
+        for result in report.results:
+            marker = "ok" if result.ready else "failed"
+            location = result.resolved_path or "not found"
+            typer.echo(f"[{marker}] {result.name}: {result.code} ({location})")
+        typer.echo("preflight: ready" if report.ready else "preflight: not ready")
     if not report.ready:
         raise typer.Exit(code=1)
 

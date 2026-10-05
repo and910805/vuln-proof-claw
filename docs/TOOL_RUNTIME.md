@@ -28,6 +28,22 @@ Trivy. New tools must declare an action type and risk before they can be planned
   attempts at 100 and rate at 30/minute, and stops on success by default.
 - `exploit_poc` requires a registry ID, artifact SHA-256, expected success signal, and no more
   than ten attempts. ProofClaw does not ship an exploit payload in the request.
+- `httpx` probes exactly one approved target with a bounded probe set. It offers no target
+  file, no port list, no extra paths, no proxy and no redirect following, because each of
+  those is a second place a target could come from.
+- `nuclei` selects templates by id, tag and severity against the Worker image's pinned
+  corpus. It never accepts a template path: a path is a second corpus, chosen after the
+  approval, whose contents the approval never saw. Out-of-band detection is off unless an
+  interactsh server is named, so the vendor's public OAST servers cannot be used by
+  accident. The argv also switches off every nuclei default that reaches beyond the target
+  or off the host: the update check, stdin targets, dual-scheme probing, public DNS
+  resolvers and template-driven redirects.
+
+Two of nuclei's inputs are outside argv: `$HOME/.config/nuclei/config.yaml`, which can set
+any option including `-proxy` and `-list`, and the environment, from which cloud upload arms
+itself with no flag. A parameter digest therefore does not pin nuclei's behaviour on its own.
+`NUCLEI_WORKER_ENVIRONMENT` in `tooling/executor.py` states what the Worker must set and
+scrub; a Worker that ignores it can still be redirected by a config file.
 
 Every accepted plan is normalized, hashed, converted into a Flow/Task/Action, checked against
 engagement scope and maximum risk, and written to the audit log. L2 actions wait for an exact

@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("canonical_metadata", sa.LargeBinary(), nullable=False),
         sa.Column("raw_content", sa.LargeBinary(), nullable=False),
         sa.Column("raw_size", sa.Integer(), nullable=False),
-        sa.CheckConstraint("raw_size >= 0", name="ck_evidence_payloads_raw_size"),
+        sa.CheckConstraint("raw_size >= 0", name="raw_size"),
         sa.ForeignKeyConstraint(
             ["engagement_id"],
             ["engagements.id"],

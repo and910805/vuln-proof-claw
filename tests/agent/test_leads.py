@@ -21,7 +21,12 @@ from vuln_proof_claw.agent.leads import (
     verification_verdict,
 )
 from vuln_proof_claw.domain.autonomous import Lead, MissionBudget, MissionCadence
-from vuln_proof_claw.domain.enums import FindingSeverity, FindingStatus, LeadStatus
+from vuln_proof_claw.domain.enums import (
+    FindingSeverity,
+    FindingStatus,
+    LeadStatus,
+    VerificationMethod,
+)
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import (
     EngagementId,
@@ -37,6 +42,9 @@ CADENCE = MissionCadence()
 ENGAGEMENT: EngagementId = new_engagement_id()
 MISSION: MissionId = new_mission_id()
 EVIDENCE = (EvidenceId("11111111-1111-7111-8111-111111111111"),)
+#: The other side of a comparison. Distinct from EVIDENCE because a finding refuses to
+#: let one record be both the payload and the control it is measured against.
+CONTROL_EVIDENCE = (EvidenceId("22222222-2222-7222-8222-222222222222"),)
 
 
 def make_lead(**overrides: object) -> Lead:
@@ -185,9 +193,41 @@ def outcome(**overrides: object) -> VerificationOutcome:
         "rationale": "Two authorized identities received the same object.",
         "evidence_ids": EVIDENCE,
         "severity": FindingSeverity.HIGH,
+        # A comparison between two authorized identities is what this rationale
+        # describes, and at this severity the outcome has to say so — along with the
+        # control response it was compared against.
+        "verification_method": VerificationMethod.DIFFERENTIAL,
+        "control_evidence_ids": CONTROL_EVIDENCE,
     }
     defaults.update(overrides)
     return VerificationOutcome(**defaults)  # type: ignore[arg-type]
+
+
+def test_a_high_severity_outcome_must_state_how_it_was_established() -> None:
+    """Letting it through here only moves the failure to the finding it cannot become."""
+    with pytest.raises(DomainValidationError, match="verification_method"):
+        outcome(verification_method=None)
+
+
+def test_an_informational_outcome_need_not_state_a_method() -> None:
+    assert outcome(
+        severity=FindingSeverity.INFORMATIONAL, verification_method=None
+    ).verification_method is None
+
+
+def test_a_promoted_finding_carries_the_method_the_verifier_stated() -> None:
+    """The reviewer's first question is what the claim rests on; it travels through."""
+    _, finding = promote_to_finding(make_lead(), outcome(), now=NOW)
+
+    assert finding is not None
+    assert finding.verification_method is VerificationMethod.DIFFERENTIAL
+    assert finding.control_evidence_ids == CONTROL_EVIDENCE
+
+
+def test_a_differential_outcome_must_carry_its_control() -> None:
+    """Without the other side, "this identity saw the record" is not a comparison."""
+    with pytest.raises(DomainValidationError, match="control"):
+        outcome(control_evidence_ids=())
 
 
 @pytest.mark.parametrize(
