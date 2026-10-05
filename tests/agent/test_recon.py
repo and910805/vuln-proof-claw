@@ -41,6 +41,7 @@ class StubTransport:
     responses: dict[str, tuple[int, bytes]] = field(default_factory=dict)
     requested: list[str] = field(default_factory=list)
     fail_on: set[str] = field(default_factory=set)
+    redirects: dict[str, str] = field(default_factory=dict)
 
     def send(
         self,
@@ -54,6 +55,8 @@ class StubTransport:
         self.requested.append(target)
         if target in self.fail_on:
             raise OSError("connection reset")
+        if target in self.redirects:
+            return RawResponse(302, (("location", self.redirects[target]),), b"")
         status, payload = self.responses.get(target, (404, b""))
         return RawResponse(status, (("content-type", "text/plain"),), payload)
 
@@ -196,14 +199,65 @@ def test_an_unreachable_asset_does_not_end_reconnaissance() -> None:
     assert result.calls  # the application bundle was still parsed
 
 
-def test_an_unreachable_entry_page_yields_an_empty_result() -> None:
+def test_an_unreachable_entry_page_says_why() -> None:
+    """'could not be retrieved' and 'HTTP 302 to /tw/' send an operator to very
+    different places, and only one of them is a dead end."""
     recon, _ = build(StubTransport())
 
     result = recon.discover(at=NOW)
 
     assert result.assets == ()
     assert result.calls == ()
-    assert result.errors == ("entry page could not be retrieved",)
+    assert result.errors == ("entry page not retrieved — HTTP 404",)
+
+
+def test_a_transport_failure_is_named_in_the_error() -> None:
+    transport = default_transport()
+    transport.fail_on = {BASE}
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert "OSError" in result.errors[0]
+    assert "connection reset" in result.errors[0]
+
+
+def test_an_entry_redirect_is_followed_inside_scope() -> None:
+    """An entry page commonly 301s to a locale prefix; that is not a dead end."""
+    transport = StubTransport(
+        responses={
+            f"{BASE}tw/": (200, PAGE),
+            f"{BASE}assets/index-abc.js": (200, APP_BUNDLE),
+            f"{BASE}assets/vendor-xyz.js": (200, VENDOR_BUNDLE),
+        },
+        redirects={BASE: f"{BASE}tw/"},
+    )
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert {call.path for call in result.calls} >= {"/api/getUserMenuList"}
+    assert f"{BASE}tw/" in transport.requested
+
+
+def test_a_redirect_out_of_scope_is_not_followed() -> None:
+    """The transport refuses to follow one itself; re-pointing must not bypass that."""
+    transport = StubTransport(redirects={BASE: "https://evil.test/"})
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert all("evil.test" not in url for url in transport.requested)
+    assert "refused by scope" in result.errors[0]
+
+
+def test_a_redirect_loop_ends() -> None:
+    transport = StubTransport(redirects={BASE: BASE})
+    recon, _ = build(transport)
+
+    result = recon.discover(at=NOW)
+
+    assert "redirects" in result.errors[0]
 
 
 def test_the_asset_budget_is_respected() -> None:

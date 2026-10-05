@@ -38,12 +38,31 @@ from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope, normal
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_MAX_ASSETS: Final = 8
+#: An entry page commonly redirects once, to a locale prefix or a sign-in page. Two
+#: allows for a chain; more than that is a loop or a target leading us somewhere.
+_DEFAULT_MAX_REDIRECTS: Final = 2
+_REDIRECT_MIN: Final = 300
+_REDIRECT_MAX: Final = 399
 _ASSET_LIMITS: Final = ProbeLimits(timeout_seconds=20, max_response_bytes=8 * 1024 * 1024)
 _PAGE_LIMITS: Final = ProbeLimits(timeout_seconds=15, max_response_bytes=1024 * 1024)
 _SUCCESS_MIN: Final = 200
 _SUCCESS_MAX: Final = 299
 _RUNTIME_HINT: Final = "runtime"
 _SHARED_HINTS: Final = ("commons", "main", "index", "app")
+
+
+@dataclass(frozen=True, slots=True)
+class Fetched:
+    """One fetch attempt: the bytes, a redirect to follow, or why neither happened.
+
+    The reason is carried rather than logged and discarded. "entry page could not be
+    retrieved" and "HTTP 302 to /tw/" send an operator to completely different places,
+    and only one of them is a dead end.
+    """
+
+    body: bytes | None = None
+    redirect_to: str | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +124,7 @@ class SpaReconnaissance:
     scope: EngagementScope
     base_url: str
     maximum_assets: int = _DEFAULT_MAX_ASSETS
+    maximum_redirects: int = _DEFAULT_MAX_REDIRECTS
     user_agent: str = "vuln-proof-claw/recon"
     pacer: Callable[[float], None] | None = None
     interval_seconds: float = 2.0
@@ -119,24 +139,25 @@ class SpaReconnaissance:
         started_with = len(self._sent_at)
 
         page = self._fetch(self.base_url, _PAGE_LIMITS, at=moment)
-        if page is None:
+        if page.body is None:
             return ReconResult(
                 base_url=self.base_url,
-                errors=("entry page could not be retrieved",),
+                errors=(f"entry page not retrieved — {page.reason}",),
                 sent_at=tuple(self._sent_at[started_with:]),
             )
 
-        html = page.decode("utf-8", errors="replace")
+        html = page.body.decode("utf-8", errors="replace")
         wanted = self._prioritise(extract_assets(html).all)
 
         assets: list[FetchedAsset] = []
         sources: list[str] = []
         for relative in wanted[: self.maximum_assets]:
             url = urljoin(self.base_url, relative)
-            body = self._fetch(url, _ASSET_LIMITS, at=moment)
-            if body is None:
-                errors.append(f"asset not retrieved: {relative}")
+            fetched = self._fetch(url, _ASSET_LIMITS, at=moment)
+            if fetched.body is None:
+                errors.append(f"asset not retrieved: {relative} — {fetched.reason}")
                 continue
+            body = fetched.body
             text = body.decode("utf-8", errors="replace")
             assets.append(
                 FetchedAsset(
@@ -191,18 +212,35 @@ class SpaReconnaissance:
         ]
         return tuple(f"{directory}/{name}" if directory else name for name in selected)
 
-    def _fetch(self, url: str, limits: ProbeLimits, *, at: datetime) -> bytes | None:
-        """Retrieve one URL, refusing anything the scope does not permit."""
+    def _fetch(self, url: str, limits: ProbeLimits, *, at: datetime) -> Fetched:
+        """Retrieve one URL, refusing anything the scope does not permit.
+
+        Follows a redirect when it stays inside the authorized scope, up to
+        ``maximum_redirects``. The transport still refuses to follow one itself: this
+        re-evaluates the new location against the scope and issues a fresh request, so
+        every address reached is one the engagement allows rather than one the target
+        talked us into.
+        """
+        current = url
+        for _ in range(self.maximum_redirects + 1):
+            outcome = self._fetch_once(current, limits, at=at)
+            if outcome.redirect_to is None:
+                return outcome
+            current = outcome.redirect_to
+        return Fetched(reason=f"more than {self.maximum_redirects} redirects from {url}")
+
+    def _fetch_once(  # noqa: PLR0911 - one return per distinct outcome, each named
+        self, url: str, limits: ProbeLimits, *, at: datetime
+    ) -> Fetched:
+        """Send exactly one request and say plainly what came back."""
         try:
             target = str(normalize_target(url))
         except DomainValidationError:
-            _LOGGER.warning("recon target is not a valid URL: %s", url)
-            return None
+            return Fetched(reason=f"not a valid URL: {url}")
 
         decision = evaluate_scope(target, self.scope, at=at)
         if not decision.allowed:
-            _LOGGER.warning("recon target refused by scope: %s (%s)", url, decision.reason)
-            return None
+            return Fetched(reason=f"refused by scope ({decision.reason}): {url}")
 
         if self._fetched:
             self._pace()
@@ -218,11 +256,20 @@ class SpaReconnaissance:
             )
         except Exception as error:  # noqa: BLE001 - one bad asset must not end recon
             _LOGGER.warning("recon fetch failed for %s: %s", url, error)
-            return None
+            return Fetched(reason=f"{type(error).__name__}: {str(error)[:120]}")
+
+        if _REDIRECT_MIN <= response.status_code <= _REDIRECT_MAX:
+            location = next(
+                (value for name, value in response.headers if name.lower() == "location"),
+                "",
+            )
+            if not location:
+                return Fetched(reason=f"HTTP {response.status_code} with no location")
+            return Fetched(redirect_to=urljoin(url, location))
+
         if not _SUCCESS_MIN <= response.status_code <= _SUCCESS_MAX:
-            _LOGGER.info("recon fetch returned %d for %s", response.status_code, url)
-            return None
-        return response.body
+            return Fetched(reason=f"HTTP {response.status_code}")
+        return Fetched(body=response.body)
 
     def _pace(self) -> None:
         if self.pacer is not None:
