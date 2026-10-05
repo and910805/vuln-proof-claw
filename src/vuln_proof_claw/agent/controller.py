@@ -540,7 +540,7 @@ class MissionController:
 
         host = normalize_target(self._base_of(mission)).host
         gate = BudgetGate(self._session, mission)
-        headroom = gate.remaining_requests(host=host, at=at)
+        headroom = gate.sustained_requests(at=at)
         if headroom <= 0:
             return "request_budget_exhausted"
 

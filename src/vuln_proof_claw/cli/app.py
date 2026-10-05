@@ -44,6 +44,7 @@ from vuln_proof_claw.config.identities import (
     resolve_credentials,
 )
 from vuln_proof_claw.config.settings import load_settings
+from vuln_proof_claw.domain.autonomous import Mission, MissionBudget
 from vuln_proof_claw.domain.enums import MissionState
 from vuln_proof_claw.domain.identifiers import EngagementId, MissionId
 from vuln_proof_claw.execution.pinned_auth_http import PinnedAuthTransport
@@ -303,6 +304,19 @@ def _probing_roles(bundle: IdentityBundle) -> tuple[str, str | None, str | None]
     return (users[0], users[1] if len(users) > 1 else None, privileged)
 
 
+def _sweep_rate(budget: MissionBudget, requested: int | None) -> int:
+    """Return the probe rate, never above what the engagement authorizes.
+
+    The engagement's own per-domain limit is the default and the ceiling. A command
+    line flag may slow a sweep down; it must not be able to speed one past the number
+    the authorization package set.
+    """
+    authorized = budget.requests_per_minute_per_domain
+    if requested is None:
+        return authorized
+    return min(requested, authorized)
+
+
 def _build_prober(
     path: Path, *, scope: object, rate: int
 ) -> tuple[SweepProber, tuple[str, ...]]:
@@ -358,9 +372,13 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
         ),
     ] = None,
     rate: Annotated[
-        int,
-        typer.Option("--rate", help="Probe requests per minute."),
-    ] = 30,
+        int | None,
+        typer.Option(
+            "--rate",
+            help="Probe requests per minute. Defaults to, and is capped by, the "
+            "engagement's own per-domain limit.",
+        ),
+    ] = None,
     probe_mutating: Annotated[
         bool,
         typer.Option(
@@ -399,7 +417,10 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                 raise MissionControllerError("engagement_scope_unavailable")
             prober = None
             if identities is not None:
-                prober, literals = _build_prober(identities, scope=scope, rate=rate)
+                budget = _mission_of(session, mission_id).budget
+                prober, literals = _build_prober(
+                    identities, scope=scope, rate=_sweep_rate(budget, rate)
+                )
                 if literals:
                     typer.echo(
                         "[warning] passwords are literal in the identity file for: "
@@ -451,11 +472,15 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
         raise typer.Exit(code=1)
 
 
-def _engagement_of(session: Session, mission_id: str) -> EngagementId:
+def _mission_of(session: Session, mission_id: str) -> Mission:
     stored = MissionRepository(session).get(MissionId(mission_id))
     if stored is None:
         raise MissionControllerError("mission_not_found")
-    return stored.entity.engagement_id
+    return stored.entity
+
+
+def _engagement_of(session: Session, mission_id: str) -> EngagementId:
+    return _mission_of(session, mission_id).engagement_id
 
 
 def main() -> None:

@@ -87,18 +87,35 @@ class BudgetGate:
     def remaining_requests(self, *, host: str, at: datetime) -> int:
         """Return how many more requests fit inside every ceiling at once.
 
-        A sweep commits to a plan before it sends anything, so it needs the headroom as
-        a number rather than a yes or no. The tightest window wins: being allowed 400
-        more today means nothing if this minute's allowance is two.
+        The tightest window wins: being allowed 400 more today means nothing if this
+        minute's allowance is two. Use this for work that is about to be sent now.
         """
+        return self._headroom(host=host, at=at, include_minute=True)
+
+    def sustained_requests(self, *, at: datetime) -> int:
+        """Return the headroom for work that will be paced over several minutes.
+
+        A sweep decides its whole plan up front and then spaces the requests out, so
+        the per-minute rate governs how fast it sends, not how much it may do. Letting
+        the minute window bound the plan would cut a paced sweep down to one minute's
+        allowance and leave the hourly budget permanently unused.
+        """
+        return self._headroom(host="", at=at, include_minute=False)
+
+    def _headroom(self, *, host: str, at: datetime, include_minute: bool) -> int:
         budget = self._mission.budget
-        headroom = []
-        for kind, scope_key, ceiling in (
-            (BudgetWindowKind.MINUTE, host, budget.requests_per_minute_per_domain),
+        checks = [
             (BudgetWindowKind.HOUR, "", budget.requests_per_hour),
             (BudgetWindowKind.DAY, "", budget.requests_per_day),
             (BudgetWindowKind.TOTAL, "", budget.total_requests),
-        ):
+        ]
+        if include_minute:
+            checks.insert(
+                0,
+                (BudgetWindowKind.MINUTE, host, budget.requests_per_minute_per_domain),
+            )
+        headroom = []
+        for kind, scope_key, ceiling in checks:
             window = BudgetWindow(kind.value, window_start(kind, at), scope_key)
             headroom.append(ceiling - self._ledger.usage(self._mission.id, window).requests)
         return max(0, min(headroom))

@@ -365,13 +365,19 @@ def test_nothing_is_probed_before_anything_is_discovered(engine: Engine) -> None
 def test_the_sweep_plan_is_bounded_by_the_remaining_request_budget(
     engine: Engine,
 ) -> None:
-    """A sweep commits to a plan up front, so the headroom has to bound the plan."""
+    """A sweep commits to a plan up front, so the headroom has to bound the plan.
+
+    The per-minute rate is deliberately tight here and must not bound it: the sweep
+    paces itself across minutes, so the hourly ceiling is what limits the plan's size.
+    """
     factory = session_factory(engine)
     prober = StubProber()
     with factory() as session:
         engagement_id = seed_engagement(session)
         mission = seed_mission(
-            session, engagement_id, budget=MissionBudget(requests_per_minute_per_domain=2)
+            session,
+            engagement_id,
+            budget=MissionBudget(requests_per_minute_per_domain=1, requests_per_hour=2),
         )
         session.commit()
 
@@ -399,7 +405,7 @@ def test_the_budget_is_charged_for_what_was_actually_sent(engine: Engine) -> Non
     with factory() as session:
         engagement_id = seed_engagement(session)
         mission = seed_mission(
-            session, engagement_id, budget=MissionBudget(requests_per_minute_per_domain=10)
+            session, engagement_id, budget=MissionBudget(requests_per_hour=10)
         )
         session.commit()
 

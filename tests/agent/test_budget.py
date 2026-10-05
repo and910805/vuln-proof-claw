@@ -126,6 +126,55 @@ def test_token_budgets_apply_per_day_and_per_lead(engine: Engine) -> None:
     assert over_day.reason == "daily_token_budget_exhausted"
 
 
+def test_immediate_headroom_is_bounded_by_the_minute(engine: Engine) -> None:
+    factory = session_factory(engine)
+    with factory.begin() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session,
+            engagement_id,
+            budget=MissionBudget(requests_per_minute_per_domain=3, requests_per_hour=100),
+        )
+        gate = BudgetGate(session, mission)
+
+        assert gate.remaining_requests(host=HOST, at=NOW) == 3
+
+
+def test_paced_work_is_not_bounded_by_one_minute(engine: Engine) -> None:
+    """A sweep spaces its own requests out, so the minute rate sets speed, not size.
+
+    Letting the minute window bound the plan would cut a paced sweep down to one
+    minute's allowance and leave the hourly budget permanently unused.
+    """
+    factory = session_factory(engine)
+    with factory.begin() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session,
+            engagement_id,
+            budget=MissionBudget(requests_per_minute_per_domain=3, requests_per_hour=100),
+        )
+        gate = BudgetGate(session, mission)
+
+        assert gate.sustained_requests(at=NOW) == 100
+
+
+def test_paced_work_still_respects_the_hourly_ceiling(engine: Engine) -> None:
+    factory = session_factory(engine)
+    with factory.begin() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session,
+            engagement_id,
+            budget=MissionBudget(requests_per_minute_per_domain=3, requests_per_hour=5),
+        )
+        gate = BudgetGate(session, mission)
+        for _ in range(4):
+            gate.record_request(host=HOST, at=NOW)
+
+        assert gate.sustained_requests(at=NOW) == 1
+
+
 def test_budget_refuses_negative_consumption(engine: Engine) -> None:
     factory = session_factory(engine)
     with factory.begin() as session:
