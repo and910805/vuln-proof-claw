@@ -135,6 +135,15 @@ class LoginFlow(FrozenModel):
     csrf_path: str | None = None
     """Page to read the token from, when it is not the login path itself."""
 
+    token_field: str | None = Field(default=None, min_length=1, max_length=128)
+    """Where the access token sits in the login response, for bearer-token APIs.
+
+    Dotted, so ``data.accessToken`` reaches into a nested object. Set this and the
+    session carries ``Authorization: Bearer <token>`` instead of a cookie — which is
+    how a single-page application that keeps no session cookie authenticates, and
+    without it such a target cannot be tested as a logged-in identity at all.
+    """
+
     @field_validator("path")
     @classmethod
     def require_absolute_path(cls, value: str) -> str:

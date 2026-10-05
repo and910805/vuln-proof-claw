@@ -7,6 +7,8 @@ of a feature, because that is the failure that matters.
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -21,6 +23,7 @@ from vuln_proof_claw.agent.authsession import (
     RawResponse,
     SessionState,
     extract_hidden_field,
+    extract_token,
     redact_outbound,
 )
 from vuln_proof_claw.agent.endpoints import ProbeStrategy
@@ -29,6 +32,7 @@ from vuln_proof_claw.config.identities import (
     parse_identity_bundle,
     resolve_credentials,
 )
+from vuln_proof_claw.config.redaction import REDACTED
 from vuln_proof_claw.policy.scope import EngagementScope
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
@@ -132,7 +136,7 @@ def test_a_successful_login_establishes_a_session() -> None:
 
 
 def test_the_credential_reaches_the_transport_and_nowhere_else() -> None:
-    """The password may appear in the login body — and in nothing the caller can see."""
+    """The password may appear in the login body ??and in nothing the caller can see."""
     transport = RecordingTransport()
     sessions = build(transport)
 
@@ -370,6 +374,117 @@ def test_a_csrf_field_without_a_placeholder_is_refused() -> None:
 
     with pytest.raises(IdentityDefinitionError, match="csrf_field"):
         parse_identity_bundle(broken)
+
+
+TOKEN = "eyJhbGciOiJIUzI1NiJ9.notarealtoken.signature"  # noqa: S105 - test value
+
+TOKEN_BUNDLE_YAML = f"""
+base_url: https://{TARGET_HOST}
+login:
+  method: POST
+  path: /web/login
+  content_type: application/json
+  body: '{{"account": "{{username}}", "password": "{{password}}"}}'
+  token_field: data.accessToken
+  success_statuses: [200]
+identities:
+  - name: anonymous
+    role: anonymous
+  - name: account24
+    role: user
+    credentials:
+      username: account24
+      password: {PASSWORD}
+"""
+
+
+@dataclass
+class TokenTransport(RecordingTransport):
+    """Issues a bearer token instead of a session cookie."""
+
+    def send(
+        self,
+        method: str,
+        target: str,
+        *,
+        headers: tuple[tuple[str, str], ...],
+        body: str | None,
+        limits: ProbeLimits,
+    ) -> RawResponse:
+        self.sent.append(SentRequest(method, target, headers, body))
+        if method == "POST":
+            payload = json.dumps({"data": {"accessToken": TOKEN}}).encode()
+            return RawResponse(200, (), payload)
+        return RawResponse(200, (("content-type", "application/json"),), b"{}")
+
+
+def token_sessions(transport: TokenTransport) -> IdentitySessions:
+    bundle = parse_identity_bundle(TOKEN_BUNDLE_YAML)
+    credentials, _ = resolve_credentials(bundle)
+    return IdentitySessions(
+        transport=transport,  # type: ignore[arg-type]
+        bundle=bundle,
+        credentials=credentials,
+        scope=SCOPE,
+    )
+
+
+def test_a_token_is_read_from_a_nested_field() -> None:
+    body = json.dumps({"data": {"accessToken": TOKEN}}).encode()
+
+    assert extract_token(body, "data.accessToken") == TOKEN
+    assert extract_token(body, "data.missing") is None
+    assert extract_token(body, "data") is None  # an object is not a token
+    assert extract_token(b"not json", "data.accessToken") is None
+
+
+def test_an_api_without_a_session_cookie_still_authenticates() -> None:
+    """A single-page application that keeps no cookie could not be tested at all."""
+    transport = TokenTransport()
+    sessions = token_sessions(transport)
+
+    state = sessions.authenticate("account24", at=NOW)
+
+    assert state.authenticated
+    assert sessions.authenticated_identities() == ("account24",)
+
+
+def test_a_probe_carries_the_token_as_a_bearer_header() -> None:
+    transport = TokenTransport()
+    sessions = token_sessions(transport)
+    sessions.authenticate("account24", at=NOW)
+    before = len(transport.sent)
+
+    sessions.probe("account24", "GET", f"https://{TARGET_HOST}/web/x", at=NOW)
+
+    sent = transport.sent[before]
+    assert ("authorization", f"Bearer {TOKEN}") in sent.headers
+
+
+def test_a_login_that_issues_no_token_fails_by_saying_so() -> None:
+    """Otherwise every later probe is anonymous and the results look like a finding."""
+    transport = TokenTransport()
+    transport.login_status = 200
+    sessions = token_sessions(transport)
+    sessions.bundle = parse_identity_bundle(
+        TOKEN_BUNDLE_YAML.replace("data.accessToken", "data.absent")
+    )
+
+    with pytest.raises(AuthenticationError, match=re.escape("no token at 'data.absent'")):
+        sessions.authenticate("account24", at=NOW)
+
+
+def test_the_token_is_redacted_wherever_a_request_is_recorded() -> None:
+    """It is a credential; evidence must not carry it."""
+    transport = TokenTransport()
+    sessions = token_sessions(transport)
+    sessions.authenticate("account24", at=NOW)
+    sessions.probe("account24", "GET", f"https://{TARGET_HOST}/web/x", at=NOW)
+
+    recorded = redact_outbound(transport.sent[-1].headers)
+
+    assert ("authorization", REDACTED) in recorded
+    assert all(TOKEN not in value for _, value in recorded)
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])

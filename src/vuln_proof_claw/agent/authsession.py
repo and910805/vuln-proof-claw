@@ -26,6 +26,7 @@ caller's say-so.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -47,7 +48,9 @@ _LOGGER = logging.getLogger(__name__)
 
 #: Headers this module may add to an outgoing request. Narrow on purpose: everything
 #: here is either required to speak to the target or supplied by the login flow.
-_PERMITTED_OUTBOUND = frozenset({"accept", "user-agent", "content-type", "cookie"})
+_PERMITTED_OUTBOUND = frozenset(
+    {"accept", "user-agent", "content-type", "cookie", "authorization"}
+)
 
 _DEFAULT_USER_AGENT = "vuln-proof-claw/authenticated-probe"
 
@@ -109,6 +112,25 @@ class AuthenticatedTransport:
         raise NotImplementedError
 
 
+def extract_token(body: bytes, field_path: str) -> str | None:
+    """Pull an access token out of a JSON login response.
+
+    ``field_path`` is dotted, so ``data.accessToken`` reaches into a nested object.
+    Returns None when the path is absent or does not hold a string, which keeps "the
+    server did not issue one" distinguishable from "it issued something unusable" —
+    both are failures, but only one of them is a configuration mistake.
+    """
+    try:
+        document: object = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    for part in field_path.split("."):
+        if not isinstance(document, dict) or part not in document:
+            return None
+        document = document[part]
+    return document if isinstance(document, str) and document else None
+
+
 def extract_hidden_field(html: str, name: str) -> str | None:
     """Return the value of a hidden input, or None when the page has no such field.
 
@@ -138,20 +160,30 @@ def redact_outbound(headers: tuple[tuple[str, str], ...]) -> tuple[tuple[str, st
 
 @dataclass
 class SessionState:
-    """Cookies held for one identity. Never serialised."""
+    """What one identity holds to prove who it is. Never serialised.
+
+    A cookie or a bearer token, depending on what the target issues. Both are
+    credentials and neither leaves this module except as an outgoing header.
+    """
 
     cookies: dict[str, str] = field(default_factory=dict, repr=False)
+    token: str | None = field(default=None, repr=False)
     established_at: datetime | None = None
 
     @property
     def authenticated(self) -> bool:
-        return bool(self.cookies)
+        return bool(self.cookies) or bool(self.token)
 
     def header(self) -> tuple[tuple[str, str], ...]:
-        if not self.cookies:
-            return ()
-        value = "; ".join(f"{name}={token}" for name, token in sorted(self.cookies.items()))
-        return (("cookie", value),)
+        headers: list[tuple[str, str]] = []
+        if self.cookies:
+            value = "; ".join(
+                f"{name}={token}" for name, token in sorted(self.cookies.items())
+            )
+            headers.append(("cookie", value))
+        if self.token:
+            headers.append(("authorization", f"Bearer {self.token}"))
+        return tuple(headers)
 
     def absorb(self, headers: tuple[tuple[str, str], ...], *, keep: tuple[str, ...]) -> None:
         """Record Set-Cookie values, keeping only the configured session cookies."""
@@ -360,12 +392,23 @@ class IdentitySessions:
             raise AuthenticationError(f"login for {identity} matched the failure marker")
 
         state.absorb(response.headers, keep=login.session_cookies)
+        if login.token_field:
+            state.token = extract_token(response.body, login.token_field)
+            if state.token is None:
+                raise AuthenticationError(
+                    f"login for {identity} returned no token at {login.token_field!r}"
+                )
         if not state.authenticated:
             raise AuthenticationError(
                 f"login for {identity} returned no session cookie"
                 + (f" matching {list(login.session_cookies)}" if login.session_cookies else "")
             )
-        _LOGGER.info("identity %s authenticated (%d cookie(s))", identity, len(state.cookies))
+        _LOGGER.info(
+            "identity %s authenticated (%d cookie(s), token: %s)",
+            identity,
+            len(state.cookies),
+            "yes" if state.token else "no",
+        )
 
     def _absolute(self, path: str) -> str:
         return f"{self.bundle.base_url.rstrip('/')}{path}"
