@@ -47,6 +47,11 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "structlog>=25.4,<27",
   "typer>=0.16,<1",
+  # Not imported directly; pinned because it arrives transitively and 2.7.0 carries
+  # two HIGH advisories the image scan refuses — traffic interception through an
+  # HTTPS proxy, and unbounded memory on a malformed response. A tool that opens
+  # connections to targets is exactly the wrong place to carry either.
+  "urllib3>=2.8",
   "uvicorn[standard]>=0.35,<1",
 ]
 

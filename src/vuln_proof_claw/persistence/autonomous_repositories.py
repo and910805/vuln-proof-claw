@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
@@ -378,11 +380,11 @@ class LeadRepository:
         *,
         limit: int = _DEFAULT_LIMIT,
     ) -> tuple[Stored[Lead], ...]:
-        rows = self._session.scalars(
+        rows: Sequence[LeadRecord] = self._session.scalars(
             self._status_query(mission_id, statuses)
             .order_by(LeadRecord.priority.desc(), LeadRecord.created_at.asc())
             .limit(limit)
-        )
+        ).all()
         return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
 
     def list_due(
@@ -394,14 +396,14 @@ class LeadRepository:
         limit: int = _DEFAULT_LIMIT,
     ) -> tuple[Stored[Lead], ...]:
         """Return schedulable leads whose cooldown has elapsed, highest priority first."""
-        rows = self._session.scalars(
+        rows: Sequence[LeadRecord] = self._session.scalars(
             self._status_query(mission_id, statuses)
             .where(
                 (LeadRecord.next_attempt_at.is_(None)) | (LeadRecord.next_attempt_at <= at),
             )
             .order_by(LeadRecord.priority.desc(), LeadRecord.created_at.asc())
             .limit(limit)
-        )
+        ).all()
         return tuple(Stored(self._domain_from_record(row), row.version) for row in rows)
 
     def count_by_status(self, mission_id: MissionId) -> dict[LeadStatus, int]:
@@ -447,7 +449,12 @@ class LeadRepository:
     def _status_query(
         mission_id: MissionId,
         statuses: tuple[LeadStatus, ...],
-    ) -> Select[tuple[LeadRecord]]:
+    ) -> Select[Any]:
+        # Select's type parameter changed shape across the SQLAlchemy versions this
+        # project allows — one spells it Select[tuple[X]], the other Select[X] — so
+        # naming it here pins the code to whichever happens to be installed. The
+        # callers annotate their rows instead, which keeps the checking where it
+        # catches something rather than where it only has to be kept in sync.
         return select(LeadRecord).where(
             LeadRecord.mission_id == mission_id,
             LeadRecord.status.in_([status.value for status in statuses]),
@@ -938,7 +945,9 @@ class BudgetLedgerRepository:
 
     def usage(self, mission_id: MissionId, window: BudgetWindow) -> BudgetUsage:
         """Return the consumption already recorded in one window."""
-        row = self._session.scalar(self._window_query(mission_id, window))
+        row: BudgetLedgerRecord | None = self._session.scalar(
+            self._window_query(mission_id, window)
+        )
         if row is None:
             return BudgetUsage()
         return BudgetUsage(requests=row.request_count, tokens=row.token_count)
@@ -953,7 +962,9 @@ class BudgetLedgerRepository:
         if usage.requests < 0 or usage.tokens < 0:
             msg = "budget consumption must not be negative"
             raise ValueError(msg)
-        row = self._session.scalar(self._window_query(mission_id, window))
+        row: BudgetLedgerRecord | None = self._session.scalar(
+            self._window_query(mission_id, window)
+        )
         if row is None:
             row = BudgetLedgerRecord(
                 id=new_identifier(),
@@ -975,7 +986,9 @@ class BudgetLedgerRepository:
     def _window_query(
         mission_id: MissionId,
         window: BudgetWindow,
-    ) -> Select[tuple[BudgetLedgerRecord]]:
+    ) -> Select[Any]:
+        # See the note on LeadRepository._status_query: the type parameter is not
+        # portable across the SQLAlchemy versions this project accepts.
         return select(BudgetLedgerRecord).where(
             BudgetLedgerRecord.mission_id == mission_id,
             BudgetLedgerRecord.window_kind == window.kind,
