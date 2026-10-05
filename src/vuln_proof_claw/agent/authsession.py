@@ -30,6 +30,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http.cookies import SimpleCookie
+from typing import Final
 
 from vuln_proof_claw.agent.differential import ProbeResult, body_digest
 from vuln_proof_claw.agent.endpoints import ProbeStrategy
@@ -50,7 +51,9 @@ _PERMITTED_OUTBOUND = frozenset({"accept", "user-agent", "content-type", "cookie
 _DEFAULT_USER_AGENT = "vuln-proof-claw/authenticated-probe"
 
 #: The entire body of an empty-body probe. No identifier, no value, nothing to act on.
-_EMPTY_BODY = "{}"
+#: Public because the transport checks for it byte for byte: that check is what makes
+#: "this POST changes nothing" a property of the request rather than a claim about it.
+EMPTY_PROBE_BODY: Final = "{}"
 _EMPTY_BODY_CONTENT_TYPE = "application/json"
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -268,7 +271,7 @@ class IdentitySessions:
             return ((), None)
         if method != "POST":
             raise ProbeError("an empty-body probe is sent as POST only")
-        return ((("content-type", _EMPTY_BODY_CONTENT_TYPE),), _EMPTY_BODY)
+        return ((("content-type", _EMPTY_BODY_CONTENT_TYPE),), EMPTY_PROBE_BODY)
 
     def authenticated_identities(self) -> tuple[str, ...]:
         """Return the identities that currently hold a session."""
@@ -320,6 +323,7 @@ def is_redirect(status: int) -> bool:
 
 
 __all__ = [
+    "EMPTY_PROBE_BODY",
     "AuthenticatedTransport",
     "AuthenticationError",
     "IdentitySessions",

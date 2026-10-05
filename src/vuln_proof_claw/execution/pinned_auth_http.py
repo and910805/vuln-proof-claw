@@ -11,7 +11,10 @@ authenticated differential testing and both kept as narrow as possible:
 
 * a ``cookie`` and ``content-type`` header may be sent, because a session cannot be
   carried otherwise;
-* the single configured login path may receive a ``POST``.
+* the single configured login path may receive a ``POST``, and any other path may
+  receive one only when the body is *exactly* empty — checked here, byte for byte,
+  so that "this request changes nothing" is a property of what goes on the wire
+  rather than a claim made by the layer above.
 
 Everything else is unchanged: scope is evaluated before connecting, the connection is
 pinned to a validated literal address, redirects are never followed, and the response
@@ -27,6 +30,7 @@ from collections.abc import Callable
 from typing import Final
 
 from vuln_proof_claw.agent.authsession import (
+    EMPTY_PROBE_BODY,
     AuthenticatedTransport,
     ProbeLimits,
     RawResponse,
@@ -54,9 +58,9 @@ _MILLISECONDS: Final = 1000
 class PinnedAuthTransport(AuthenticatedTransport):
     """Send one authenticated request to a scope-approved, DNS-pinned address.
 
-    ``login_path`` is the only path permitted to receive a POST. Anything else is
-    refused before a socket is opened, so a planner cannot turn a read sweep into a
-    state-changing one.
+    ``login_path`` is the only path permitted to receive a POST carrying data. Any
+    other path may receive a POST only with an empty body. Both are decided before a
+    socket is opened, so a planner cannot turn a read sweep into a state-changing one.
     """
 
     identity = "pinned-auth-http/v1"
@@ -78,6 +82,20 @@ class PinnedAuthTransport(AuthenticatedTransport):
         self._connection_factory = connection_factory
         self._allow_private = allow_private
 
+    def _post_permitted(self, path: str, body: str | None) -> bool:
+        """Return whether this POST may be sent.
+
+        Two cases, and the second is checked byte for byte rather than taken on trust.
+        The login path may receive a real body. Any other path may receive a POST only
+        when the body is exactly the empty probe body: a request that carries no data
+        cannot carry an instruction to change anything, and verifying that here —
+        below the layer that decided to send it — means a caller cannot assert its way
+        past the guard by claiming a strategy it is not using.
+        """
+        if path == self._login_path:
+            return True
+        return body == EMPTY_PROBE_BODY
+
     def send(
         self,
         method: str,
@@ -93,8 +111,8 @@ class PinnedAuthTransport(AuthenticatedTransport):
             raise CaptureTransportError("method_not_allowed")
 
         parsed = normalize_target(target)
-        if normalized_method == "POST" and parsed.path != self._login_path:
-            raise CaptureTransportError("post_permitted_only_on_the_login_path")
+        if normalized_method == "POST" and not self._post_permitted(parsed.path, body):
+            raise CaptureTransportError("post_permitted_only_on_login_or_with_an_empty_body")
         if body is not None and normalized_method != "POST":
             raise CaptureTransportError("body_permitted_only_on_post")
 

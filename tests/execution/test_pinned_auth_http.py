@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from vuln_proof_claw.agent.authsession import ProbeLimits
+from vuln_proof_claw.agent.authsession import EMPTY_PROBE_BODY, ProbeLimits
 from vuln_proof_claw.execution.http_capture import CaptureTransportError
 from vuln_proof_claw.execution.pinned_auth_http import PinnedAuthTransport
 from vuln_proof_claw.policy.scope import EngagementScope
@@ -125,27 +125,57 @@ def test_post_is_allowed_only_on_the_configured_login_path() -> None:
     assert conn.requests[0]["body"] == b'{"username":"a","password":"b"}'
 
 
-def test_post_anywhere_else_is_refused_before_connecting() -> None:
+def test_a_post_carrying_data_is_refused_before_connecting() -> None:
     """A planner must not be able to turn a read sweep into a state change."""
     transport, conn = build()
 
-    with pytest.raises(CaptureTransportError, match="post_permitted_only_on_the_login_path"):
+    with pytest.raises(CaptureTransportError, match="post_permitted_only_on_login"):
         transport.send(
             "POST",
             f"https://{HOST}/web/policy-groups/1/clone",
             headers=(),
-            body="{}",
+            body='{"name":"copy"}',
             limits=limits(),
         )
 
     assert conn.requests == []
 
 
-def test_post_is_refused_entirely_when_no_login_path_is_configured() -> None:
+def test_an_empty_post_is_permitted_off_the_login_path() -> None:
+    """The empty-body probe: a request carrying no data cannot instruct a change."""
+    transport, conn = build()
+
+    transport.send(
+        "POST",
+        f"https://{HOST}/api/getCompanyDisplay",
+        headers=(("content-type", "application/json"),),
+        body=EMPTY_PROBE_BODY,
+        limits=limits(),
+    )
+
+    assert len(conn.requests) == 1
+
+
+@pytest.mark.parametrize("body", ["", " {}", '{"a":1}', "{} ", None])
+def test_only_an_exactly_empty_body_passes_the_guard(body: str | None) -> None:
+    """Checked byte for byte: anything a caller could smuggle data in is refused."""
+    transport, conn = build()
+
+    with pytest.raises(CaptureTransportError):
+        transport.send(
+            "POST", f"https://{HOST}/api/getX", headers=(), body=body, limits=limits()
+        )
+
+    assert conn.requests == []
+
+
+def test_a_post_with_data_is_refused_when_no_login_path_is_configured() -> None:
     transport, conn = build(login_path=None)
 
     with pytest.raises(CaptureTransportError):
-        transport.send("POST", f"https://{HOST}/anything", headers=(), body="{}", limits=limits())
+        transport.send(
+            "POST", f"https://{HOST}/anything", headers=(), body="x=1", limits=limits()
+        )
 
     assert conn.requests == []
 
