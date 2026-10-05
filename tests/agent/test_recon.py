@@ -317,6 +317,41 @@ def test_a_redirect_loop_ends() -> None:
     assert "redirects" in result.errors[0]
 
 
+def test_a_refused_asset_does_not_consume_the_budget() -> None:
+    """A page may reference a third-party reporter before its own code.
+
+    Refusing that costs no request, so it must not cost a slot either — otherwise the
+    budget is spent on scripts that were never read.
+    """
+    page = PAGE.replace(
+        b'<script type="module" crossorigin src="/assets/index-abc.js"></script>',
+        b'<script src="https://tracker.test/a.js"></script>'
+        b'<script src="https://tracker.test/b.js"></script>'
+        b'<script type="module" crossorigin src="/assets/index-abc.js"></script>',
+    )
+    transport = StubTransport(
+        responses={BASE: (200, page), f"{BASE}assets/index-abc.js": (200, APP_BUNDLE)}
+    )
+    recon, _ = build(transport, maximum_assets=1)
+
+    result = recon.discover(at=NOW)
+
+    assert len(result.assets) == 1
+    assert "/api/getUserMenuList" in {call.path for call in result.calls}
+
+
+def test_a_split_build_chunk_outranks_a_third_party_script() -> None:
+    """shared~<hash>.chunk.js is where a split build keeps the API layer."""
+    ordered = SpaReconnaissance._prioritise(
+        (
+            "https://browser.sentry-cdn.com/7/bundle.min.js",
+            "https://cdn.test/packs/js/shared~38c579ec-439cff9e.chunk.js",
+        )
+    )
+
+    assert "shared~" in ordered[0]
+
+
 def test_the_asset_budget_is_respected() -> None:
     transport = default_transport()
     recon, _ = build(transport, maximum_assets=1)

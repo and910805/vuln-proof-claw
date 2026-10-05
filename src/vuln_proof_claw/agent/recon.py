@@ -57,7 +57,14 @@ _PAGE_LIMITS: Final = ProbeLimits(timeout_seconds=15, max_response_bytes=1024 * 
 _SUCCESS_MIN: Final = 200
 _SUCCESS_MAX: Final = 299
 _RUNTIME_HINT: Final = "runtime"
-_SHARED_HINTS: Final = ("commons", "main", "index", "app")
+#: Names webpack and friends give the bundles that hold an application's own code.
+#: "shared" and "chunk" matter as much as the rest: a split build puts the API layer in
+#: ``shared~<hash>.chunk.js``, and omitting those ranked the real code below a
+#: third-party error reporter.
+_SHARED_HINTS: Final = ("commons", "main", "index", "app", "shared", "chunk", "vendors~")
+#: How many requests an asset budget of N may spend before giving up, so a page whose
+#: scripts all 404 cannot keep trying forever.
+_ATTEMPT_ALLOWANCE: Final = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +153,7 @@ class SpaReconnaissance:
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
     _fetched: int = field(default=0, init=False, repr=False)
     _sent_at: list[datetime] = field(default_factory=list, init=False, repr=False)
+    _asset_requests: int = field(default=0, init=False, repr=False)
 
     def discover(self, *, at: datetime | None = None) -> ReconResult:
         """Fetch the page and its scripts, then recover the API inventory."""
@@ -166,9 +174,21 @@ class SpaReconnaissance:
 
         assets: list[FetchedAsset] = []
         sources: list[str] = []
-        for relative in wanted[: self.maximum_assets]:
+        index = 0
+        # The budget counts requests that were actually sent. An asset the scope
+        # refuses costs nothing — no socket is opened — so letting it consume a slot
+        # would spend the budget on scripts we never read. On a page referencing a
+        # third-party error reporter before its own code, that is the whole budget.
+        while index < len(wanted) and len(assets) < self.maximum_assets:
+            relative = wanted[index]
+            index += 1
+            if self._asset_requests >= self.maximum_assets * _ATTEMPT_ALLOWANCE:
+                errors.append("asset budget spent on failed fetches")
+                break
             url = urljoin(self.base_url, relative)
+            before = len(self._sent_at)
             fetched = self._fetch(url, _ASSET_LIMITS, at=moment, as_asset=True)
+            self._asset_requests += len(self._sent_at) - before
             if fetched.body is None:
                 errors.append(f"asset not retrieved: {relative} — {fetched.reason}")
                 continue
