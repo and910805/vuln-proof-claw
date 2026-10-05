@@ -60,10 +60,15 @@ _SUCCESS_MIN: Final = 200
 _SUCCESS_MAX: Final = 299
 _RUNTIME_HINT: Final = "runtime"
 #: Names webpack and friends give the bundles that hold an application's own code.
-#: "shared" and "chunk" matter as much as the rest: a split build puts the API layer in
-#: ``shared~<hash>.chunk.js``, and omitting those ranked the real code below a
-#: third-party error reporter.
-_SHARED_HINTS: Final = ("commons", "main", "index", "app", "shared", "chunk", "vendors~")
+#:
+#: "chunk" is deliberately absent. Every file in a split build is named
+#: ``<something>.chunk.js``, so including it matched all of them and the ranking
+#: stopped distinguishing anything: a target whose API layer sat in
+#: ``commons.<hash>.chunk.js`` had it tie with ``27.<hash>.chunk.js``, and the budget
+#: went to whichever the chunk table happened to list first. A hint that matches
+#: everything is not a hint. "shared" stays, because ``shared~<hash>.chunk.js`` names
+#: a specific thing.
+_SHARED_HINTS: Final = ("commons", "main", "index", "app", "shared", "vendors~")
 #: How many requests an asset budget of N may spend before giving up, so a page whose
 #: scripts all 404 cannot keep trying forever.
 _ATTEMPT_ALLOWANCE: Final = 2

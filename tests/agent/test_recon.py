@@ -357,6 +357,24 @@ def test_a_split_build_chunk_outranks_a_third_party_script() -> None:
     assert "shared~" in ordered[0]
 
 
+def test_a_named_chunk_outranks_a_numbered_one() -> None:
+    """Observed on a live target: the API layer sat in commons.<hash>.chunk.js.
+
+    Every file in a split build ends in .chunk.js, so treating that suffix as a hint
+    matched all of them and the ranking stopped separating anything — the budget went
+    to 27.<hash>.chunk.js and the one worth reading was never fetched.
+    """
+    ordered = SpaReconnaissance._prioritise(
+        (
+            "dist/27.95dfb3a6360c85380083.chunk.js",
+            "dist/140.322b19ae950c8b1c2cc6.chunk.js",
+            "dist/commons.3b25d8db336b9de057d4.chunk.js",
+        )
+    )
+
+    assert "commons" in ordered[0]
+
+
 def test_the_asset_budget_is_respected() -> None:
     transport = default_transport()
     recon, _ = build(transport, maximum_assets=1)
