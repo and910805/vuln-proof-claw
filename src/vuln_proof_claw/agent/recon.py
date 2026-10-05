@@ -143,6 +143,15 @@ class SpaReconnaissance:
     base_url: str
     maximum_assets: int = _DEFAULT_MAX_ASSETS
     maximum_redirects: int = _DEFAULT_MAX_REDIRECTS
+    session_headers: Callable[[], tuple[tuple[str, str], ...]] | None = None
+    """Supplies the cookie header to look at the target as a logged-in identity.
+
+    Without this, discovery sees only what an anonymous caller sees — which, on an
+    application whose surface is behind a login, is the login page and nothing else.
+    Called per request rather than captured once, so a session re-established between
+    passes is picked up instead of a stale cookie being reused.
+    """
+
     asset_origins: frozenset[str] = frozenset()
     """Hosts whose static code may be read although they are not authorized targets.
 
@@ -311,10 +320,22 @@ class SpaReconnaissance:
         self._fetched += 1
         self._sent_at.append(self.clock())
         try:
+            # An asset origin is a third party, so the session cookie is withheld
+            # there: it has no business leaving the application it belongs to.
+            supplier = self.session_headers
+            carry_session = (
+                supplier is not None
+                and normalize_target(target).host not in self.asset_origins
+            )
+            session = supplier() if supplier is not None and carry_session else ()
             response = self.transport.send(
                 "GET",
                 url,
-                headers=(("accept", "*/*"), ("user-agent", self.user_agent)),
+                headers=(
+                    ("accept", "*/*"),
+                    ("user-agent", self.user_agent),
+                    *session,
+                ),
                 body=None,
                 limits=limits,
             )

@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import signal
 import ssl
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 from typing import Annotated
@@ -14,7 +15,11 @@ from typing import Annotated
 import typer
 from sqlalchemy.orm import Session
 
-from vuln_proof_claw.agent.authsession import IdentitySessions
+from vuln_proof_claw.agent.authsession import (
+    AuthenticationError,
+    IdentitySessions,
+    ProbeError,
+)
 from vuln_proof_claw.agent.controller import (
     DEFAULT_WATCHDOG_SECONDS,
     MissionController,
@@ -332,9 +337,25 @@ def _sweep_rate(budget: MissionBudget, requested: int | None) -> int:
     return min(requested, authorized)
 
 
+@dataclass(frozen=True, slots=True)
+class _Probing:
+    """The probing collaborators a run builds from one identity bundle."""
+
+    prober: SweepProber
+    resolution: CredentialResolution
+    sessions: IdentitySessions
+    discovery_identity: str
+    """Whose session reconnaissance should look through.
+
+    The most privileged identity available, because discovery is about seeing the
+    whole surface: an administrator's pages list what a user's never mention, and an
+    inventory is only as complete as the account that fetched it.
+    """
+
+
 def _build_prober(
     path: Path, *, scope: object, rate: int, tls: ssl.SSLContext | None = None
-) -> tuple[SweepProber, CredentialResolution]:
+) -> _Probing:
     bundle = load_identity_bundle(path)
     # Deliberately the lenient form. A credential nobody has filled in yet is a normal
     # state for an agent meant to run unattended for days: it should do the work that
@@ -363,7 +384,45 @@ def _build_prober(
         other=other,
         privileged=privileged,
     )
-    return (prober, resolution)
+    return _Probing(
+        prober=prober,
+        resolution=resolution,
+        sessions=sessions,
+        discovery_identity=privileged or owner,
+    )
+
+
+def _discovery_session(
+    probing: _Probing,
+) -> Callable[[], tuple[tuple[str, str], ...]]:
+    """Return a supplier of the cookie header reconnaissance should fetch with.
+
+    Authenticating lazily, on the first request, keeps a run that never reaches
+    reconnaissance from sending a login nobody asked for. A failure is reported and
+    then treated as "no session": discovery degrades to the anonymous view rather than
+    taking the cycle down, which is the same bargain every other optional capability
+    in the loop makes.
+    """
+    state: dict[str, bool] = {"tried": False}
+
+    def headers() -> tuple[tuple[str, str], ...]:
+        if not state["tried"]:
+            state["tried"] = True
+            try:
+                probing.sessions.authenticate(probing.discovery_identity)
+                typer.echo(
+                    f"[note] discovery is looking through '"
+                    f"{probing.discovery_identity}'"
+                )
+            except (AuthenticationError, ProbeError) as error:
+                typer.echo(
+                    f"[warning] could not authenticate "
+                    f"'{probing.discovery_identity}' for discovery: {error} — "
+                    "continuing anonymously"
+                )
+        return probing.sessions.cookie_header(probing.discovery_identity)
+
+    return headers
 
 
 @mission_app.command("credentials")
@@ -524,11 +583,14 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
             if scope is None:
                 raise MissionControllerError("engagement_scope_unavailable")
             prober = None
+            session_headers: Callable[[], tuple[tuple[str, str], ...]] | None = None
             if identities is not None:
                 budget = _mission_of(session, mission_id).budget
-                prober, resolution = _build_prober(
+                probing = _build_prober(
                     identities, scope=scope, rate=_sweep_rate(budget, rate), tls=tls
                 )
+                prober = probing.prober
+                resolution = probing.resolution
                 if resolution.literals:
                     typer.echo(
                         "[warning] passwords are literal in the identity file for: "
@@ -540,6 +602,10 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                         f"for: {', '.join(slot.pending_variables)} — "
                         "running without it until supplied"
                     )
+                # Discovery looks through the same session probing uses. Without this,
+                # reconnaissance sees what an anonymous caller sees, which on an
+                # application behind a login is the login page and nothing else.
+                session_headers = _discovery_session(probing)
             yield MissionController(
                 session,
                 MissionId(mission_id),
@@ -558,6 +624,7 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                         scope=scope,
                         base_url=recon_base_url,
                         asset_origins=origins,
+                        session_headers=session_headers,
                     )
                     if recon_base_url
                     else None

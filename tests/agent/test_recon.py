@@ -42,6 +42,10 @@ class StubTransport:
     requested: list[str] = field(default_factory=list)
     fail_on: set[str] = field(default_factory=set)
     redirects: dict[str, str] = field(default_factory=dict)
+    sent_headers: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
+
+    def headers_for(self, url: str) -> tuple[tuple[str, str], ...] | None:
+        return self.sent_headers.get(url)
 
     def send(
         self,
@@ -53,6 +57,7 @@ class StubTransport:
         limits: ProbeLimits,
     ) -> RawResponse:
         self.requested.append(target)
+        self.sent_headers[target] = headers
         if target in self.fail_on:
             raise OSError("connection reset")
         if target in self.redirects:
@@ -369,6 +374,51 @@ def test_the_application_bundle_is_fetched_before_vendor_code() -> None:
     recon.discover(at=NOW)
 
     assert transport.requested[1].endswith("index-abc.js")
+
+
+def test_discovery_looks_through_the_supplied_session() -> None:
+    """On an application behind a login, anonymous discovery sees the login page."""
+    transport = default_transport()
+    recon = SpaReconnaissance(
+        transport=transport,  # type: ignore[arg-type]
+        scope=SCOPE,
+        base_url=BASE,
+        session_headers=lambda: (("cookie", "session=abc123"),),
+        pacer=lambda _: None,
+    )
+
+    recon.discover(at=NOW)
+
+    sent = transport.headers_for(BASE)
+    assert sent is not None
+    assert ("cookie", "session=abc123") in sent
+
+
+def test_a_session_cookie_is_withheld_from_an_asset_origin() -> None:
+    """A CDN is a third party; the application's session has no business there."""
+    page = PAGE.replace(
+        b'src="/assets/index-abc.js"', b'src="https://cdn.example.net/app.js"'
+    )
+    transport = StubTransport(
+        responses={
+            BASE: (200, page),
+            "https://cdn.example.net/app.js": (200, APP_BUNDLE),
+        }
+    )
+    recon = SpaReconnaissance(
+        transport=transport,  # type: ignore[arg-type]
+        scope=SCOPE,
+        base_url=BASE,
+        asset_origins=frozenset({"cdn.example.net"}),
+        session_headers=lambda: (("cookie", "session=abc123"),),
+        pacer=lambda _: None,
+    )
+
+    recon.discover(at=NOW)
+
+    sent = transport.headers_for("https://cdn.example.net/app.js")
+    assert sent is not None
+    assert all(name != "cookie" for name, _ in sent)
 
 
 def test_a_server_rendered_page_still_yields_its_surface() -> None:

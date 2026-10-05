@@ -329,6 +329,17 @@ class IdentitySessions:
             raise ProbeError("an empty-body probe is sent as POST only")
         return ((("content-type", _EMPTY_BODY_CONTENT_TYPE),), EMPTY_PROBE_BODY)
 
+    def cookie_header(self, identity: str) -> tuple[tuple[str, str], ...]:
+        """Return the cookie header for an authenticated identity, or nothing.
+
+        Lets reconnaissance look at a target as a logged-in user. The cookie still
+        never leaves this module in any other form: the caller receives a header to
+        pass to the transport, not the session, and has no way to read the value back
+        out of anything it records.
+        """
+        state = self._sessions.get(identity)
+        return state.header() if state is not None else ()
+
     def authenticated_identities(self) -> tuple[str, ...]:
         """Return the identities that currently hold a session."""
         return tuple(sorted(name for name, state in self._sessions.items() if state.authenticated))
