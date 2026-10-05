@@ -20,10 +20,12 @@ from vuln_proof_claw.agent.authsession import (
     ProbeLimits,
     RawResponse,
     SessionState,
+    extract_hidden_field,
     redact_outbound,
 )
 from vuln_proof_claw.agent.endpoints import ProbeStrategy
 from vuln_proof_claw.config.identities import (
+    IdentityDefinitionError,
     parse_identity_bundle,
     resolve_credentials,
 )
@@ -266,6 +268,108 @@ def test_probing_without_authenticating_first_is_refused() -> None:
 
     with pytest.raises(ProbeError, match="no session"):
         sessions.probe("account24", "GET", f"https://{TARGET_HOST}/x", at=NOW)
+
+
+CSRF_BUNDLE_YAML = f"""
+base_url: https://{TARGET_HOST}
+login:
+  method: POST
+  path: /index.php
+  content_type: application/x-www-form-urlencoded
+  body: 'xsrf={{csrf}}&login={{username}}&passwd={{password}}'
+  csrf_field: xsrf
+  success_statuses: [200]
+  session_cookies: ["session"]
+identities:
+  - name: anonymous
+    role: anonymous
+  - name: account24
+    role: user
+    credentials:
+      username: account24
+      password: {PASSWORD}
+"""
+
+LOGIN_PAGE = (
+    b'<form method="POST" action="/index.php">'
+    b'<input type="hidden" name="xsrf" value="tok-abc123">'
+    b'<input type="text" name="login"><input type="password" name="passwd">'
+    b"</form>"
+)
+
+
+@dataclass
+class CsrfTransport(RecordingTransport):
+    """Serves a login page carrying a token and a cookie that validates it."""
+
+    def send(
+        self,
+        method: str,
+        target: str,
+        *,
+        headers: tuple[tuple[str, str], ...],
+        body: str | None,
+        limits: ProbeLimits,
+    ) -> RawResponse:
+        self.sent.append(SentRequest(method, target, headers, body))
+        if method == "GET" and target.endswith("/index.php"):
+            return RawResponse(
+                200, (("set-cookie", "csrftoken=pre-session; Path=/"),), LOGIN_PAGE
+            )
+        return super().send(method, target, headers=headers, body=body, limits=limits)
+
+
+def test_a_hidden_field_is_read_from_the_page() -> None:
+    assert extract_hidden_field(LOGIN_PAGE.decode(), "xsrf") == "tok-abc123"
+    assert extract_hidden_field(LOGIN_PAGE.decode(), "absent") is None
+    assert extract_hidden_field('<input name="e" value="">', "e") == ""
+
+
+def test_the_token_and_its_cookie_travel_into_the_login() -> None:
+    """A server pairs its token with a cookie; sending one without the other fails."""
+    transport = CsrfTransport()
+    bundle = parse_identity_bundle(CSRF_BUNDLE_YAML)
+    credentials, _ = resolve_credentials(bundle)
+    sessions = IdentitySessions(
+        transport=transport,  # type: ignore[arg-type]
+        bundle=bundle,
+        credentials=credentials,
+        scope=SCOPE,
+    )
+
+    sessions.authenticate("account24", at=NOW)
+
+    prepared, posted = transport.sent[0], transport.sent[1]
+    assert prepared.method == "GET"
+    assert posted.body is not None
+    assert "xsrf=tok-abc123" in posted.body
+    assert ("cookie", "csrftoken=pre-session") in posted.headers
+
+
+def test_a_missing_token_field_is_a_clear_failure() -> None:
+    """Posting the literal placeholder would fail in a way nobody could diagnose."""
+    transport = CsrfTransport()
+    transport.probe_body = b"<form></form>"
+    bundle = parse_identity_bundle(CSRF_BUNDLE_YAML)
+    credentials, _ = resolve_credentials(bundle)
+    sessions = IdentitySessions(
+        # Serves no login page, so the hidden field is absent.
+        transport=RecordingTransport(),  # type: ignore[arg-type]
+        bundle=bundle,
+        credentials=credentials,
+        scope=SCOPE,
+    )
+
+    with pytest.raises(AuthenticationError, match="hidden field named 'xsrf'"):
+        sessions.authenticate("account24", at=NOW)
+
+
+def test_a_csrf_field_without_a_placeholder_is_refused() -> None:
+    """The two have to agree, or a token is fetched and silently dropped."""
+    broken = CSRF_BUNDLE_YAML.replace("xsrf={csrf}&", "")
+
+    with pytest.raises(IdentityDefinitionError, match="csrf_field"):
+        parse_identity_bundle(broken)
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])

@@ -27,6 +27,7 @@ caller's say-so.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http.cookies import SimpleCookie
@@ -108,6 +109,26 @@ class AuthenticatedTransport:
         raise NotImplementedError
 
 
+def extract_hidden_field(html: str, name: str) -> str | None:
+    """Return the value of a hidden input, or None when the page has no such field.
+
+    Deliberately narrow: it reads one named field out of the markup and does nothing
+    else with the page. Returning None rather than an empty string keeps "the field was
+    absent" distinguishable from "the field was empty", which are different failures.
+    """
+    pattern = re.compile(
+        r"<input\b[^>]*\bname\s*=\s*[\"']" + re.escape(name) + r"[\"'][^>]*>",
+        re.IGNORECASE,
+    )
+    match = pattern.search(html)
+    if match is None:
+        return None
+    value = re.search(
+        r"\bvalue\s*=\s*[\"']([^\"']*)[\"']", match.group(0), re.IGNORECASE
+    )
+    return value.group(1) if value else ""
+
+
 def redact_outbound(headers: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
     """Mask credential-bearing headers for logging and evidence."""
     return tuple(
@@ -184,6 +205,12 @@ class IdentitySessions:
         target = self._absolute(login.path)
         self._require_in_scope(target, at=at)
 
+        # A form protected by an anti-forgery token rejects every login that does not
+        # carry one, so the token and the cookie set alongside it are fetched first and
+        # travel together into the POST — the same two steps a browser performs.
+        state = SessionState(established_at=at or datetime.now(UTC))
+        csrf = self._collect_token(login, state, at=at) if login.csrf_field else ""
+
         response = self.transport.send(
             login.method,
             target,
@@ -191,16 +218,45 @@ class IdentitySessions:
                 ("content-type", login.content_type),
                 ("user-agent", self.user_agent),
                 ("accept", "*/*"),
+                *state.header(),
             ),
             body=login.render(
                 credential.username.get_secret_value(),
                 credential.password.get_secret_value(),
+                csrf,
             ),
             limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
         )
-        state = self._accept_login(identity, login, response, at=at)
+        self._accept_login(identity, login, response, state=state)
         self._sessions[identity] = state
         return state
+
+    def _collect_token(
+        self, login: LoginFlow, state: SessionState, *, at: datetime | None
+    ) -> str:
+        """Read the anti-forgery token from the login page, keeping its cookies."""
+        target = self._absolute(login.token_path)
+        self._require_in_scope(target, at=at)
+        response = self.transport.send(
+            "GET",
+            target,
+            headers=(("accept", "*/*"), ("user-agent", self.user_agent)),
+            body=None,
+            limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
+        )
+        # Every cookie is kept here, not only the configured session one: the cookie a
+        # server pairs with its token is often a different, short-lived one, and
+        # discarding it invalidates the token we just read.
+        state.absorb(response.headers, keep=())
+        field = login.csrf_field or ""
+        token = extract_hidden_field(
+            response.body.decode("utf-8", errors="replace"), field
+        )
+        if token is None:
+            raise AuthenticationError(
+                f"login page did not contain a hidden field named {field!r}"
+            )
+        return token
 
     def probe(
         self,
@@ -283,8 +339,8 @@ class IdentitySessions:
         login: LoginFlow,
         response: RawResponse,
         *,
-        at: datetime | None,
-    ) -> SessionState:
+        state: SessionState,
+    ) -> None:
         if response.status_code not in login.success_statuses:
             raise AuthenticationError(
                 f"login for {identity} returned {response.status_code}"
@@ -292,7 +348,6 @@ class IdentitySessions:
         if login.failure_marker and login.failure_marker.encode() in response.body:
             raise AuthenticationError(f"login for {identity} matched the failure marker")
 
-        state = SessionState(established_at=at or datetime.now(UTC))
         state.absorb(response.headers, keep=login.session_cookies)
         if not state.authenticated:
             raise AuthenticationError(
@@ -300,7 +355,6 @@ class IdentitySessions:
                 + (f" matching {list(login.session_cookies)}" if login.session_cookies else "")
             )
         _LOGGER.info("identity %s authenticated (%d cookie(s))", identity, len(state.cookies))
-        return state
 
     def _absolute(self, path: str) -> str:
         return f"{self.bundle.base_url.rstrip('/')}{path}"

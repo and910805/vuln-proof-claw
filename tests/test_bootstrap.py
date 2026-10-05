@@ -1,9 +1,12 @@
 """Bootstrap tests for package, CLI, and release-version consistency."""
 
 import json
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from vuln_proof_claw import __version__
@@ -39,3 +42,31 @@ def test_cli_version() -> None:
 
     assert result.exit_code == 0
     assert result.output.strip() == __version__
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "vuln_proof_claw.config.identities",
+        "vuln_proof_claw.config.engagement",
+        "vuln_proof_claw.policy.scope",
+        "vuln_proof_claw.domain.autonomous",
+        "vuln_proof_claw.reporting.bundle",
+    ],
+)
+def test_a_lower_layer_imports_on_its_own(module: str) -> None:
+    """Each of these must import in a fresh interpreter with nothing else loaded.
+
+    A circular import between layers stays invisible while something always happens to
+    load the upper one first. It surfaces the moment a script imports the lower module
+    directly — which is how config.identities was found to pull in the agent package,
+    whose __init__ reaches back into config.
+    """
+    result = subprocess.run(  # noqa: S603 - fixed interpreter, parametrised module name
+        [sys.executable, "-c", f"import {module}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

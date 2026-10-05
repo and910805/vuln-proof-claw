@@ -14,16 +14,25 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from vuln_proof_claw.agent.differential import ANONYMOUS, IdentityRole
+if TYPE_CHECKING:
+    from vuln_proof_claw.agent.differential import IdentityRole
+
+#: The anonymous identity's name, kept here as a literal rather than imported.
+#: agent.differential is the module that defines it, but importing it at module scope
+#: makes config depend on agent — and since agent's package __init__ pulls in the
+#: controller, which reaches back to this module, importing config.identities first
+#: fails with a partially initialised module. Config is the lower layer; it should not
+#: need the upper one loaded to describe a file format.
+ANONYMOUS = "anonymous"
 
 MAXIMUM_DEFINITION_BYTES = 256 * 1024
 _ENV_REFERENCE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
-_PLACEHOLDER = re.compile(r"\{(username|password)\}")
+_PLACEHOLDER = re.compile(r"\{(username|password|csrf)\}")
 
 
 class IdentityDefinitionError(Exception):
@@ -84,6 +93,9 @@ class IdentityDefinition(FrozenModel):
 
     @property
     def identity_role(self) -> IdentityRole:
+        # Imported here, not at module scope: see the note beside ANONYMOUS above.
+        from vuln_proof_claw.agent.differential import IdentityRole  # noqa: PLC0415
+
         return IdentityRole(self.role)
 
 
@@ -105,11 +117,29 @@ class LoginFlow(FrozenModel):
     session_cookies: tuple[str, ...] = ()
     failure_marker: str | None = None
 
+    csrf_field: str | None = Field(default=None, min_length=1, max_length=128)
+    """Name of the hidden input carrying an anti-forgery token, when the form has one.
+
+    Set this and put ``{csrf}`` in the body. The session will fetch the page first,
+    read that field's value, and send it with the credentials — which is what a browser
+    does, and without it a login form protected this way simply rejects every attempt.
+    """
+
+    csrf_path: str | None = None
+    """Page to read the token from, when it is not the login path itself."""
+
     @field_validator("path")
     @classmethod
     def require_absolute_path(cls, value: str) -> str:
         if not value.startswith("/"):
             raise ValueError("login path must be absolute")
+        return value
+
+    @field_validator("csrf_path")
+    @classmethod
+    def require_absolute_csrf_path(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith("/"):
+            raise ValueError("csrf path must be absolute")
         return value
 
     @model_validator(mode="after")
@@ -118,15 +148,31 @@ class LoginFlow(FrozenModel):
         missing = {"username", "password"} - found
         if missing:
             raise ValueError(f"login body is missing placeholder(s): {sorted(missing)}")
+        # The two have to agree. A {csrf} with nowhere to read it from would send the
+        # literal placeholder as the token; a csrf_field with no placeholder would fetch
+        # a page and silently drop what it found.
+        if ("csrf" in found) != (self.csrf_field is not None):
+            raise ValueError(
+                "csrf_field and a {csrf} placeholder in the body must be set together"
+            )
         return self
 
-    def render(self, username: str, password: str) -> str:
+    @property
+    def token_path(self) -> str:
+        """Where to read the anti-forgery token from."""
+        return self.csrf_path or self.path
+
+    def render(self, username: str, password: str, csrf: str = "") -> str:
         """Substitute credentials into the body template.
 
         Returns a plain string because it is handed straight to the transport and never
         retained. Callers must not log or store the result.
         """
-        return self.body.replace("{username}", username).replace("{password}", password)
+        return (
+            self.body.replace("{username}", username)
+            .replace("{password}", password)
+            .replace("{csrf}", csrf)
+        )
 
 
 class IdentityBundle(FrozenModel):
