@@ -138,8 +138,20 @@ class Prober(Protocol):
     observation, and promotion to a finding happens elsewhere.
     """
 
-    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
-        """Send the planned probes and return what the oracles concluded."""
+    def probe(
+        self,
+        endpoints: Sequence[EndpointSpec],
+        *,
+        at: datetime,
+        on_request: Callable[[datetime], None] | None = None,
+    ) -> ProbeOutcome:
+        """Send the planned probes and return what the oracles concluded.
+
+        ``on_request`` is called with the moment of each request as it goes out, so the
+        caller can charge its budget while the sweep is still running. A paced sweep
+        takes over an hour, and without this nothing -- the budget included -- could
+        see the requests until it finished.
+        """
         ...
 
 
@@ -607,15 +619,30 @@ class MissionController:
         if self._prober is None:  # pragma: no cover - _prepare_sweep already refused
             return SweepSummary(skipped="no_prober_configured")
 
+        # Charged as each request goes out, not from the batch the sweep returns at
+        # the end. A paced sweep of two hundred endpoints runs for an hour and a half,
+        # and for all of it the ledger used to say nothing had been spent: the budget
+        # could not see work in flight, and nothing outside could tell a long sweep
+        # from a stuck one. I could not tell either, and said the agent had hung when
+        # it was working.
+        charged: list[datetime] = []
+
+        def charge(moment: datetime) -> None:
+            gate.record_request(host=host, at=moment)
+            charged.append(moment)
+            # Committed per request so the ledger is true if this process dies
+            # mid-sweep, and visible to anything else looking.
+            self._session.commit()
+
         try:
-            outcome = self._prober.probe(plan.endpoints, at=at)
+            outcome = self._prober.probe(plan.endpoints, at=at, on_request=charge)
         except Exception as error:  # noqa: BLE001 - a sweep must not fail the cycle
             _LOGGER.warning("sweep failed: %s", error)
             self._audit("agent.sweep_failed", {"error": str(error)[:200]}, at=at)
             self._session.commit()
             return SweepSummary(skipped="sweep_failed")
 
-        for moment in outcome.sent_at:
+        for moment in outcome.sent_at[len(charged) :]:
             gate.record_request(host=host, at=moment)
         # Timestamped when it finished, not when the cycle began. A paced sweep runs for
         # half an hour; recording it at the cycle's start time tells an auditor that

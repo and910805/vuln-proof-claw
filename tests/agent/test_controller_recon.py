@@ -8,7 +8,7 @@ up on a later cycle — all without a human between the steps.
 from __future__ import annotations
 
 import json
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -93,11 +93,22 @@ class StubProber:
     explode: bool = False
     plans: list[tuple[EndpointSpec, ...]] = field(default_factory=list)
 
-    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
+    def probe(
+        self,
+        endpoints: Sequence[EndpointSpec],
+        *,
+        at: datetime,
+        on_request: Callable[[datetime], None] | None = None,
+    ) -> ProbeOutcome:
         self.plans.append(tuple(endpoints))
         if self.explode:
             raise RuntimeError("target unreachable")
         count = self.requests_sent or len(endpoints)
+        # A real sweep reports each request as it goes out, so the budget is charged
+        # while the sweep is still running rather than all at once at the end.
+        if on_request is not None:
+            for index in range(count):
+                on_request(at + timedelta(seconds=20 * index))
         # A real sweep paces itself, so the times it reports span minutes.
         return ProbeOutcome(
             verdicts=self.verdicts,
@@ -1229,3 +1240,81 @@ def test_a_sweep_recorded_before_this_was_tracked_does_not_block_widening(
         controller.run_cycle(controller.start_run())
 
     assert widened.plans, "an old record blocked the decision it knew nothing about"
+
+
+def test_the_budget_sees_a_sweep_while_it_is_still_running(engine: Engine) -> None:
+    """A paced sweep of two hundred endpoints runs for an hour and a half. The ledger
+    used to be written from the batch the sweep returns at the end, so for all of that
+    time it said nothing had been spent -- the budget could not see work in flight, and
+    nothing outside could tell a long sweep from a stuck one.
+
+    I could not tell either, and told the operator the agent had hung when it was
+    working."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        seen_mid_sweep: list[int] = []
+
+        class Slow(StubProber):
+            def probe(
+                self,
+                endpoints: Sequence[EndpointSpec],
+                *,
+                at: datetime,
+                on_request: Callable[[datetime], None] | None = None,
+            ) -> ProbeOutcome:
+                self.plans.append(tuple(endpoints))
+                assert on_request is not None
+                for index in range(3):
+                    on_request(at + timedelta(seconds=20 * index))
+                    # What the ledger holds part-way through, which used to be nothing.
+                    seen_mid_sweep.append(
+                        session.execute(
+                            text("select coalesce(sum(request_count), 0) "
+                                 "from budget_ledger where window_kind = 'minute'")
+                        ).scalar_one()
+                    )
+                return ProbeOutcome(verdicts=(), sent_at=())
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=Slow(),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert seen_mid_sweep == [1, 2, 3], (
+        f"the ledger did not follow the sweep: {seen_mid_sweep}"
+    )
+
+
+def test_a_request_is_not_charged_twice(engine: Engine) -> None:
+    """The callback charges as it goes and the returned batch is charged afterwards.
+    Double-counting would make the budget refuse work that was never done."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        prober = StubProber(requests_sent=4)
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=prober,
+        )
+        controller.run_cycle(controller.start_run())
+
+        charged = session.execute(
+            text("select coalesce(sum(request_count), 0) from budget_ledger "
+                 "where window_kind = 'minute'")
+        ).scalar_one()
+
+    assert charged == 4

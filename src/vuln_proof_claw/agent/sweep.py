@@ -127,6 +127,17 @@ class DifferentialSweep:
     policy: SweepPolicy = field(default_factory=SweepPolicy)
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
     pacer: Callable[[float], None] | None = None
+    on_request: Callable[[datetime], None] | None = None
+    """Called with the moment of each request, as it is sent.
+
+    The caller charges its budget here rather than from the batch this returns. A
+    paced sweep of two hundred endpoints runs for an hour and a half, and for all of
+    it the ledger said nothing had been spent -- so the budget could not see work in
+    flight, and neither could anyone trying to tell a long sweep from a stuck one.
+
+    I could not tell them apart either, and said the agent had hung when it was
+    working.
+    """
 
     def run(
         self,
@@ -172,6 +183,8 @@ class DifferentialSweep:
                     _LOGGER.warning("probe failed for %s as %s: %s", target, identity, failure)
                 finally:
                     sent.append(moment)
+                    if self.on_request is not None:
+                        self.on_request(moment)
 
                 if consecutive_errors >= self.policy.maximum_consecutive_errors:
                     stopped = "consecutive_probe_errors"
@@ -275,11 +288,21 @@ class SweepProber:
     other: str | None = None
     privileged: str | None = None
     include_anonymous: bool = True
+    on_request: Callable[[datetime], None] | None = None
     _ready: bool = field(default=False, init=False, repr=False)
 
-    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
+    def probe(
+        self,
+        endpoints: Sequence[EndpointSpec],
+        *,
+        at: datetime,
+        on_request: Callable[[datetime], None] | None = None,
+    ) -> ProbeOutcome:
         """Authenticate if needed, sweep the planned endpoints, and judge the results."""
         self._ensure_sessions(at=at)
+        reporter = on_request or self.on_request
+        if reporter is not None:
+            self.sweep.on_request = reporter
         report = self.sweep.run(
             endpoints,
             owner=self.owner,
