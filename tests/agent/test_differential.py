@@ -478,3 +478,60 @@ def test_the_media_type_decides_not_the_file_extension() -> None:
 def test_an_api_answer_still_triggers() -> None:
     """The suppression must not quietly swallow the rule it guards."""
     assert check_missing_authentication(probe(ANONYMOUS, 200)).triggered is True
+
+
+@pytest.mark.parametrize(
+    ("content_type", "suppression"),
+    [
+        ("application/javascript", "static_asset_is_not_business_logic"),
+        ("image/png", "static_asset_is_not_business_logic"),
+        ("text/html", "html_response_is_an_application_shell"),
+    ],
+)
+def test_a_file_served_to_everyone_is_not_improper_access_control(
+    content_type: str, suppression: str
+) -> None:
+    """Identical bodies are the whole signal for this rule, and a file the server hands
+    to everyone is identical to everyone by design. The hour after the missing-auth
+    rule learned this, an anonymous sweep produced eleven candidates on one target:
+    eight webpack chunks, a logo, and the application shell."""
+    verdict = check_unauthenticated_access(
+        (
+            probe(ANONYMOUS, 200, digest=OWNER_BODY, content_type=content_type),
+            probe("account_a", 200, digest=OWNER_BODY, content_type=content_type),
+        ),
+        authenticated="account_a",
+    )
+
+    assert verdict.triggered is False
+    assert verdict.suppressed_by == suppression
+
+
+def test_an_api_body_shared_with_anonymous_still_triggers() -> None:
+    """The suppression must not swallow the rule it guards."""
+    verdict = check_unauthenticated_access(
+        (
+            probe(ANONYMOUS, 200, digest=OWNER_BODY, content_type="application/json"),
+            probe("account_a", 200, digest=OWNER_BODY, content_type="application/json"),
+        ),
+        authenticated="account_a",
+    )
+
+    assert verdict.triggered is True
+
+
+def test_both_rules_suppress_the_same_things() -> None:
+    """Two copies of one judgement is how the second came to be missing it."""
+    for content_type in ("application/javascript", "text/html", "font/woff2"):
+        assert (
+            check_missing_authentication(
+                probe(ANONYMOUS, 200, content_type=content_type)
+            ).suppressed_by
+            == check_unauthenticated_access(
+                (
+                    probe(ANONYMOUS, 200, digest=OWNER_BODY, content_type=content_type),
+                    probe("account_a", 200, digest=OWNER_BODY, content_type=content_type),
+                ),
+                authenticated="account_a",
+            ).suppressed_by
+        )

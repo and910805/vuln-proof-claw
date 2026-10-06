@@ -206,6 +206,31 @@ def _is_static_asset(content_type: str) -> bool:
     return media in _STATIC_TYPES or media.startswith(("image/", "font/", "audio/", "video/"))
 
 
+def _not_business_content(content_type: str) -> tuple[str, str] | None:
+    """Return why a response says nothing about access control, or None.
+
+    Shared by both unauthenticated rules, because the reason is the same in each
+    and keeping two copies is how the second one came to be missing it: the
+    missing-authentication rule learned to ignore static files, and the hour after
+    the fix an anonymous sweep reported eleven improper-access-control candidates
+    on one target -- eight webpack chunks, a logo, and the application shell.
+
+    A file the server hands to everyone is a file. An application shell answered on
+    every unmatched path is a router. Neither is privileged content, and a rule that
+    cannot tell them apart from one fills a review queue with work that has to be
+    read and dismissed before the real findings are reached.
+    """
+    if _is_html(content_type):
+        return ("returned HTML, not an API response", "html_response_is_an_application_shell")
+    if _is_static_asset(content_type):
+        return (
+            f"returned {_media_type(content_type)}, a static file rather than a "
+            "business-layer answer",
+            "static_asset_is_not_business_logic",
+        )
+    return None
+
+
 def _find(probes: Sequence[ProbeResult], identity: str) -> ProbeResult | None:
     for probe in probes:
         if probe.identity == identity:
@@ -213,7 +238,7 @@ def _find(probes: Sequence[ProbeResult], identity: str) -> ProbeResult | None:
     return None
 
 
-def check_unauthenticated_access(
+def check_unauthenticated_access(  # noqa: PLR0911 - one guard clause per suppression
     probes: Sequence[ProbeResult],
     *,
     authenticated: str,
@@ -224,6 +249,10 @@ def check_unauthenticated_access(
     succeed with identical bodies, that is only a finding if the content is actually
     privileged, which this rule cannot know. It therefore reports only the narrower,
     checkable case — anonymous succeeds where the server also serves real content.
+
+    "Real content" excludes what the server hands to everyone by design: scripts,
+    images, fonts, and the application shell. Identical bodies are the entire signal
+    here, and those are identical to everyone on purpose.
     """
     anonymous = _find(probes, ANONYMOUS)
     user = _find(probes, authenticated)
@@ -260,6 +289,19 @@ def check_unauthenticated_access(
             target=target,
             reason="anonymous body too small to be meaningful",
             suppressed_by="empty_or_tiny_body",
+        )
+    benign = _not_business_content(anonymous.content_type)
+    if benign is not None:
+        # Identical bodies are the whole signal here, and a file served to everyone is
+        # identical to everyone by design. Without this the rule reports every script,
+        # image and application shell on the target.
+        reason, suppression = benign
+        return OracleVerdict(
+            OracleRule.UNAUTHENTICATED_ACCESS,
+            triggered=False,
+            target=target,
+            reason=f"anonymous {reason}",
+            suppressed_by=suppression,
         )
     if anonymous.body_digest != user.body_digest:
         return OracleVerdict(
@@ -511,36 +553,19 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
             reason=f"{probe.status_code} proves nothing about authentication",
             suppressed_by="no_handler_reached",
         )
-    if _is_html(probe.content_type):
-        # A single-page application answers every unmatched path with its own
-        # index.html at 200. That is the router's fallback, not a business-layer
-        # answer, and treating it as one reports a finding on any path that does not
-        # exist. An API that genuinely answers without authenticating does so in the
-        # content type it serves its API in.
+
+    # A single-page application answers every unmatched path with its own index.html,
+    # and a web server hands out its scripts and images to anyone. Neither says
+    # anything about whether this endpoint authenticates.
+    benign = _not_business_content(probe.content_type)
+    if benign is not None:
+        reason, suppression = benign
         return OracleVerdict(
             OracleRule.MISSING_AUTHENTICATION,
             triggered=False,
             target=probe.target,
-            reason=f"{probe.status_code} returned HTML, not an API response",
-            suppressed_by="html_response_is_an_application_shell",
-        )
-    if _is_static_asset(probe.content_type):
-        # Found on a live target: an anonymous sweep reported missing authentication on
-        # jquery.min.js. The rule was satisfied exactly as written -- an unauthenticated
-        # request received 200 with a body instead of 401 -- which is the trouble. A
-        # static file is not business logic, so serving it proves nothing, and three
-        # such candidates in a review queue cost more than they are worth: each one has
-        # to be read, understood and dismissed by a person before the real ones are
-        # reached.
-        return OracleVerdict(
-            OracleRule.MISSING_AUTHENTICATION,
-            triggered=False,
-            target=probe.target,
-            reason=(
-                f"{probe.status_code} returned {_media_type(probe.content_type)}, "
-                "a static file rather than a business-layer answer"
-            ),
-            suppressed_by="static_asset_is_not_business_logic",
+            reason=f"{probe.status_code} {reason}",
+            suppressed_by=suppression,
         )
     if probe.status_code >= _SERVER_ERROR_MIN and probe.body_size == 0:
         return OracleVerdict(
