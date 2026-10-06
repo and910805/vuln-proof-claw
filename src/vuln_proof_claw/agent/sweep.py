@@ -21,6 +21,7 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Final
 
 from vuln_proof_claw.agent.authsession import IdentitySessions, ProbeError
 from vuln_proof_claw.agent.differential import (
@@ -319,6 +320,27 @@ class SweepPlan:
         return len(self.endpoints)
 
 
+#: Endpoints that are not destructive and change nothing, but make the target spend
+#: a fixed stretch of time on the request. Go's `/debug/pprof/profile` runs a CPU
+#: profile for thirty seconds by default, and `trace` the same; calling either on a
+#: schedule is a load test of somebody else's system under another name, which the
+#: activity rules forbid outright.
+#:
+#: Deliberately specific. "Expensive" in general is a judgement about a system we
+#: cannot see; these are endpoints whose published contract is "block and measure".
+_TIMED_WORK: Final = (
+    "/debug/pprof/profile",
+    "/debug/pprof/trace",
+    "/debug/pprof/block",
+    "/debug/pprof/mutex",
+)
+
+
+def _runs_for_a_while(path: str) -> bool:
+    """Return whether calling this path makes the target work for a set duration."""
+    return any(path.endswith(suffix) for suffix in _TIMED_WORK)
+
+
 def plan_sweep(
     classifications: Sequence[EndpointClassification],
     *,
@@ -360,6 +382,9 @@ def plan_sweep(
             withheld.append((item.path, "mutating_requires_approval"))
             continue
         probeable_path = item.path.split("?", 1)[0]
+        if _runs_for_a_while(probeable_path):
+            withheld.append((item.path, "asks the target to work for a fixed duration"))
+            continue
         if "{" in probeable_path:
             withheld.append((item.path, "parameterised_path_needs_an_identifier"))
             continue
