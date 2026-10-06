@@ -939,7 +939,18 @@ class MissionController:
         gate: BudgetGate,
         at: datetime,
     ) -> LeadOutcome:
+        # The schedulable list is built once at the top of the cycle and then worked
+        # one lead at a time. A person closing a lead in between -- which is what
+        # triage is -- leaves it in that list, and working it writes the lead back to
+        # waiting. The human verdict is then gone, the lead returns to the queue, and
+        # the next cycle spends budget re-asking a question somebody already answered.
+        #
+        # Re-reading here costs one query per lead and makes the window zero.
+        stored = self._reload_lead(stored.entity.id)
         lead = stored.entity
+        if lead.status.terminal:
+            return LeadOutcome(lead.id, "skipped", f"closed as {lead.status.value}")
+
         eligibility = evaluate_eligibility(
             lead,
             now=at,

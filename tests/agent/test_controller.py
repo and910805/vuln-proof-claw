@@ -33,6 +33,7 @@ from vuln_proof_claw.agent.controller import (
     MissionController,
     MissionControllerError,
 )
+from vuln_proof_claw.agent.leads import record_rejected
 from vuln_proof_claw.agent.planner import (
     DeterministicPlanner,
     ProposedAction,
@@ -542,3 +543,37 @@ def test_each_attempt_uses_a_distinct_idempotency_key(engine: Engine) -> None:
 
     assert len(keys) == len(set(keys)) == 2
     assert all(TARGET_HOST not in key for key in keys)
+
+
+def test_a_lead_closed_mid_cycle_is_not_worked(engine: Engine) -> None:
+    """The schedulable list is built once at the top of a cycle and worked one lead at
+    a time. A person closing a lead in between -- which is what triage is -- used to
+    leave it in that list, and working it wrote the lead back to waiting: the verdict
+    gone, the lead back in the queue, and the next cycle spending budget re-asking a
+    question somebody had already answered."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        lead = seed_lead(session, engagement_id, MissionId(mission.id))
+        session.commit()
+
+        repository = LeadRepository(session)
+        stored = repository.get(LeadId(lead.id))
+        assert stored is not None
+        repository.save(
+            record_rejected(stored.entity, reason="triaged by hand: a served file", now=NOW),
+            expected_version=stored.version,
+        )
+        session.commit()
+
+        executor = RecordingExecutor()
+        controller = build_controller(session, MissionId(mission.id), executor=executor)
+        controller.run_cycle(controller.start_run())
+
+        after = repository.get(LeadId(lead.id))
+
+    assert executor.executed == [], "a closed lead was worked anyway"
+    assert after is not None
+    assert after.entity.status is LeadStatus.REJECTED
+    assert "triaged by hand" in (after.entity.last_reasoning_summary or "")
