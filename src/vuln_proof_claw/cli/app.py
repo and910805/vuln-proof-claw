@@ -13,6 +13,7 @@ from threading import Event
 from typing import Annotated
 
 import typer
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.agent.authsession import (
@@ -66,6 +67,7 @@ from vuln_proof_claw.execution.preflight import run_preflight
 from vuln_proof_claw.observability.logging import configure_logging
 from vuln_proof_claw.persistence.autonomous_repositories import MissionRepository
 from vuln_proof_claw.persistence.repositories import ScopeRepository
+from vuln_proof_claw.persistence.schema_check import inspect_schema, repair_schema
 from vuln_proof_claw.persistence.session import (
     create_engine_from_settings,
     create_session_factory,
@@ -111,6 +113,90 @@ def root(
     if version:
         print_version()
         raise typer.Exit
+
+
+def _announce_transport(*, insecure_tls: bool, origins: frozenset[str]) -> None:
+    """Say out loud what this run has been allowed to relax.
+
+    Both lines describe a weakened guarantee, so they belong in the operator's view of
+    the run rather than only in a flag they typed some time ago.
+    """
+    if insecure_tls:
+        typer.echo(
+            "[warning] TLS certificate verification is disabled; evidence from this "
+            "run is not protected against interception"
+        )
+    if origins:
+        typer.echo(f"[note] reading static code from: {', '.join(sorted(origins))}")
+
+
+def _require_current_schema(engine: Engine) -> None:
+    """Refuse to start against a database older than the code reading it.
+
+    Before the first cycle, not inside the hundredth. A database made by an earlier
+    release is a normal thing for an agent that runs for days across upgrades, and the
+    symptom without this check is every cycle failing with a sentence about SQLite --
+    which says nothing about the file being the cause, or about what to do next.
+    """
+    drift = inspect_schema(engine)
+    if drift.current:
+        return
+    engine.dispose()
+    typer.echo(f"[error] this database is older than the code reading it: {drift.describe()}")
+    typer.echo("        run 'vuln-proof-claw db repair' to bring it up to date")
+    raise typer.Exit(code=1)
+
+
+@app.command("db")
+def db_command(
+    action: Annotated[
+        str,
+        typer.Argument(help="check | repair"),
+    ] = "check",
+) -> None:
+    """Report, or additively repair, a database older than the code reading it.
+
+    An agent that runs for days is upgraded while its databases persist, so a file
+    written by last week's release is read by this week's. ``check`` says what the
+    models expect that the file does not have; ``repair`` adds the missing tables and
+    columns, which is the only shape of change a release makes to this schema.
+
+    Repair is additive and only additive. It never drops a column, never rewrites a
+    row, and never touches data: a database holding evidence is a record of what was
+    sent to someone else's system, and bringing its schema forward must not be able to
+    alter what it says.
+    """
+    if action not in {"check", "repair"}:
+        typer.echo(f"[error] unknown action: {action} (expected 'check' or 'repair')")
+        raise typer.Exit(code=2)
+
+    engine = create_engine_from_settings(load_settings())
+    try:
+        drift = inspect_schema(engine)
+        if drift.current:
+            typer.echo("schema matches the models; nothing to do")
+            return
+        typer.echo(f"out of date: {drift.describe()}")
+        if action == "check":
+            typer.echo("run 'vuln-proof-claw db repair' to bring it up to date")
+            raise typer.Exit(code=1)
+
+        added_tables, added_columns, refused = repair_schema(engine)
+        for name in added_tables:
+            typer.echo(f"  added table  {name}")
+        for table, column in added_columns:
+            typer.echo(f"  added column {table}.{column}")
+        for table, column, reason in refused:
+            typer.echo(f"  [skipped] {table}.{column}: {reason}")
+        if refused:
+            typer.echo(
+                "some columns could not be added in place; the file predates this "
+                "release by more than one additive step"
+            )
+            raise typer.Exit(code=1)
+        typer.echo("schema brought up to date; no row was read or written")
+    finally:
+        engine.dispose()
 
 
 @app.command("doctor")
@@ -675,15 +761,10 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
 
     origins = frozenset(asset_origin or ())
     tls = unverified_tls_context() if insecure_tls else None
-    if insecure_tls:
-        typer.echo(
-            "[warning] TLS certificate verification is disabled; evidence from this "
-            "run is not protected against interception"
-        )
-    if origins:
-        typer.echo(f"[note] reading static code from: {', '.join(sorted(origins))}")
+    _announce_transport(insecure_tls=insecure_tls, origins=origins)
 
     engine = create_engine_from_settings(load_settings())
+    _require_current_schema(engine)
     session_factory = create_session_factory(engine)
 
     @contextmanager
