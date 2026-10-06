@@ -1165,6 +1165,12 @@ class MissionController:
             (LeadStatus.STALE, LeadStatus.REJECTED),
             limit=_LEAD_SELECTION_LIMIT,
         ):
+            # A surface change can invalidate the agent's own answer, because that
+            # answer was about a surface that no longer exists. It cannot invalidate a
+            # person's: "this is jquery.min.js, it is a static file" does not stop
+            # being true because the application was redeployed.
+            if stored.entity.closed_by_researcher:
+                continue
             self._save_lead(
                 reawaken(stored.entity, reason="attack_surface_changed", now=at),
                 stored.version,
