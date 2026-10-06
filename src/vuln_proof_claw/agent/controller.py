@@ -495,6 +495,23 @@ class MissionController:
     ) -> tuple[int, int]:
         """Store one pass's endpoints, correcting inferred paths where evidence allows."""
         if not result.classifications:
+            # A pass that recovered nothing still has to say so, and say why. One
+            # target's certificate was not trusted; both sources refused it and
+            # returned errors rather than raising, so nothing was written and the
+            # knowledge base showed a target with no surface and no explanation. An
+            # operator reading that sees a system with nothing on it, which is the
+            # same thing a safe system looks like.
+            self._audit(
+                "agent.recon_empty",
+                {
+                    "source": result.source,
+                    "base_url": result.base_url,
+                    "requests_sent": result.requests_sent,
+                    "errors": "; ".join(result.errors)[:400] or "no endpoints recovered",
+                },
+                at=self._now(),
+            )
+            self._session.commit()
             return (0, 0)
 
         classifications = result.classifications

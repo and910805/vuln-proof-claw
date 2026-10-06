@@ -61,6 +61,7 @@ class StubRecon:
     calls: int = 0
     requests_sent: int = 0
     source: str = "jsdiscovery"
+    errors: tuple[str, ...] = ()
 
     def discover(self, *, at: datetime) -> ReconResult:
         self.calls += 1
@@ -70,6 +71,7 @@ class StubRecon:
             base_url=f"https://{TARGET_HOST}/",
             classifications=self.classifications,
             source=self.source,
+            errors=self.errors,
             # Spread across minutes, as a paced reconnaissance pass really is.
             sent_at=tuple(
                 at + timedelta(seconds=30 * index) for index in range(self.requests_sent)
@@ -831,3 +833,56 @@ def test_one_source_failing_does_not_lose_the_other(engine: Engine) -> None:
 
     assert report.recon.skipped is None
     assert stored == {"/web/alpha"}
+
+
+def test_a_pass_that_recovered_nothing_records_why(engine: Engine) -> None:
+    """One target's certificate was not trusted. Both sources refused it and returned
+    errors rather than raising, so nothing was written, and the knowledge base showed a
+    target with no surface and no explanation -- which is what a safe target looks
+    like too."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        barren = StubRecon()
+        barren.errors = ("ERR_CERT_AUTHORITY_INVALID at https://target.test/",)
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=barren
+        )
+        controller.run_cycle(controller.start_run())
+
+        recorded = [
+            json.loads(row[0])
+            for row in session.execute(
+                text("select payload from audit_events where event_type = 'agent.recon_empty'")
+            )
+        ]
+
+    assert recorded, "a pass that found nothing left no trace"
+    assert "ERR_CERT_AUTHORITY_INVALID" in recorded[0]["errors"]
+
+
+def test_an_empty_pass_with_no_errors_still_says_so(engine: Engine) -> None:
+    """A target that genuinely has no recoverable surface is a different fact from a
+    target nobody could reach, and both have to be distinguishable afterwards."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=StubRecon()
+        )
+        controller.run_cycle(controller.start_run())
+
+        recorded = [
+            json.loads(row[0])
+            for row in session.execute(
+                text("select payload from audit_events where event_type = 'agent.recon_empty'")
+            )
+        ]
+
+    assert recorded[0]["errors"] == "no endpoints recovered"
