@@ -194,3 +194,54 @@ def test_a_method_only_sets_a_floor() -> None:
     """GET and POST say nothing on their own, so those stay judged by the name."""
     assert classify_endpoint("GET", "/api/resetToken").risk is EndpointRisk.DESTRUCTIVE
     assert classify_endpoint("POST", "/api/getUserMenuList").risk is EndpointRisk.READ
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/js/lib/bootstrap.js",          # "boot", in the list for device boot options
+        "/js/msSetupAdmin.js",           # "set"
+        "/dist/main.abc.chunk.js?v=1",
+        "/assets/reset.css",             # "reset"
+        "/img/delete-icon.png",          # "delete"
+        "/fonts/inter.woff2",
+    ],
+)
+def test_a_file_is_not_classified_by_the_words_in_its_name(path: str) -> None:
+    """Observed on a live target: an authenticated browser loaded bootstrap.js and
+    msSetupAdmin.js, and the inventory listed two destructive endpoints and one
+    mutating one -- all three were scripts the page loaded to render itself. That both
+    alarms an operator reading the inventory and withholds from probing something that
+    was never dangerous."""
+    classification = classify_all((("GET", path),))[0]
+
+    assert classification.risk is EndpointRisk.READ
+    assert "static file" in classification.reason
+
+
+def test_a_destructive_method_still_wins_over_a_file_name() -> None:
+    """The method is a fact about the request; the extension is a reading of a name."""
+    classification = classify_all((("DELETE", "/js/thing.js"),))[0]
+
+    assert classification.risk is EndpointRisk.DESTRUCTIVE
+
+
+@pytest.mark.parametrize(
+    ("path", "risk"),
+    [
+        ("/api/deleteUser", EndpointRisk.DESTRUCTIVE),
+        ("/api/setDeviceSecureWipe", EndpointRisk.DESTRUCTIVE),
+        ("/api/getBootOption", EndpointRisk.DESTRUCTIVE),
+        ("/api/setDeviceMessage", EndpointRisk.MUTATING),
+    ],
+)
+def test_an_endpoint_with_no_extension_is_unaffected(path: str, risk: EndpointRisk) -> None:
+    """The suppression must not reach anything that is not a file."""
+    assert classify_all((("GET", path),))[0].risk is risk
+
+
+def test_a_json_api_path_is_not_a_file() -> None:
+    """`.json` is a response format, not a served file, and an API that ends in one is
+    still an API."""
+    assert classify_all((("GET", "/api/v1.json"),))[0].risk is EndpointRisk.READ
+    assert "static file" not in classify_all((("GET", "/api/v1.json"),))[0].reason
