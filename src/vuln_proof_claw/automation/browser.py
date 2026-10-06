@@ -80,6 +80,11 @@ class LoginInstruction:
                 raise DomainValidationError("login selectors must contain 1-256 characters")
 
 
+#: Generous for a page and nowhere near a crawl: a heavy application loads a few
+#: hundred resources, and anything past that is a loop rather than a visit.
+_DEFAULT_MAXIMUM_REQUESTS: Final = 400
+
+
 @dataclass(frozen=True, slots=True)
 class BrowserRunRequest:
     target: str
@@ -88,6 +93,19 @@ class BrowserRunRequest:
     login: LoginInstruction | None = None
     timeout_ms: int = 15_000
     settle_ms: int = 2_000
+    maximum_requests: int = _DEFAULT_MAXIMUM_REQUESTS
+    """The most in-scope requests one visit may make.
+
+    A browser fetches whatever the page asks for, and a page can ask for a great deal.
+    One storefront visit recorded five and a half thousand requests in a minute against
+    an authorization of three per minute per domain -- most aborted here as out of
+    scope, but with no ceiling there was nothing that would have stopped them had they
+    been in scope.
+
+    The limit the engagement states is for probing, and a page visit is not probing.
+    This is not that limit; it is the bound that keeps one visit from becoming a load
+    test of somebody else's system.
+    """
     """How long to let the application keep calling after the page has loaded.
 
     A single-page application fetches its real data after DOMContentLoaded, so
@@ -212,6 +230,12 @@ class BrowserRunResult:
     screenshot: bytes
     blocked_requests: tuple[str, ...]
     observed_requests: tuple[ObservedRequest, ...] = ()
+    truncated_requests: int = 0
+    """How many in-scope requests the ceiling refused after the budget was spent.
+
+    Non-zero means this visit saw less of the application than it wanted to, which an
+    operator has to know: an inventory cut short looks the same as a small surface.
+    """
 
     @property
     def api_requests(self) -> tuple[ObservedRequest, ...]:
@@ -238,7 +262,9 @@ def inventory(requests: tuple[ObservedRequest, ...]) -> tuple[tuple[str, str], .
 class IsolatedBrowserRunner:
     """Use a fresh Chromium process/context for exactly one bounded run."""
 
-    async def run(self, request: BrowserRunRequest) -> BrowserRunResult:
+    async def run(  # noqa: PLR0915 - one browser visit, start to finish, in order
+        self, request: BrowserRunRequest
+    ) -> BrowserRunResult:
         try:
             async_playwright = import_module("playwright.async_api").async_playwright
         except ImportError as error:  # pragma: no cover - optional dependency
@@ -248,6 +274,7 @@ class IsolatedBrowserRunner:
 
         blocked: list[str] = []
         observed: list[ObservedRequest] = []
+        truncated: list[str] = []
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(
                 headless=True,
@@ -262,9 +289,7 @@ class IsolatedBrowserRunner:
                 )
                 context.set_default_timeout(request.timeout_ms)
 
-                def record(outgoing: Any) -> None:
-                    # Recorded after the route handler has already allowed it, so an
-                    # observation is never of a request that left the scope.
+                def note(outgoing: Any) -> None:
                     observed.append(
                         ObservedRequest(
                             method=outgoing.method,
@@ -275,8 +300,6 @@ class IsolatedBrowserRunner:
                             sent_at=datetime.now(UTC),
                         )
                     )
-
-                context.on("request", record)
 
                 async def enforce_scope(route: Any) -> None:
                     parsed_url = urlsplit(route.request.url)
@@ -292,8 +315,22 @@ class IsolatedBrowserRunner:
                     ):
                         blocked.append(route.request.url)
                         await route.abort("blockedbyclient")
-                    else:
-                        await route.continue_()
+                        return
+                    if len(observed) >= request.maximum_requests:
+                        # The ceiling, not the page's appetite, decides how much of
+                        # somebody else's system one visit may use.
+                        truncated.append(route.request.url)
+                        await route.abort("blockedbyclient")
+                        return
+                    # Recorded here rather than on the context's request event, which
+                    # fires for every request a page *initiates* -- aborted ones
+                    # included. One storefront visit recorded 5,551 requests against
+                    # the target's minute, almost all of them aborted on this machine
+                    # and never sent. A ledger that over-reports is as useless as one
+                    # that under-reports: both leave the question "how hard did you hit
+                    # this host" unanswerable.
+                    note(route.request)
+                    await route.continue_()
 
                 await context.route("**/*", enforce_scope)
                 page = await context.new_page()
@@ -332,6 +369,7 @@ class IsolatedBrowserRunner:
                     status_code=response.status if response is not None else None,
                     screenshot=await page.screenshot(full_page=True),
                     blocked_requests=tuple(blocked),
+                    truncated_requests=len(truncated),
                     observed_requests=tuple(observed),
                 )
             finally:

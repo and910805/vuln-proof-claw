@@ -11,6 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from vuln_proof_claw.automation.browser import (
+    BrowserRunRequest,
     BrowserRunResult,
     LoginInstruction,
     ObservedRequest,
@@ -197,3 +198,33 @@ def test_an_observation_carries_the_names_it_was_given() -> None:
 
     assert request.body_keys == ("account", "password")
     assert "sup3r" not in repr(request)
+
+
+def test_a_result_reports_a_visit_that_was_cut_short() -> None:
+    """An inventory cut short looks exactly like a small surface."""
+    cut = BrowserRunResult(
+        final_url="https://h/",
+        title="shop",
+        status_code=200,
+        screenshot=b"",
+        blocked_requests=(),
+        observed_requests=(observed(),),
+        truncated_requests=180,
+    )
+
+    assert cut.truncated_requests == 180
+
+
+def test_a_complete_visit_reports_nothing_truncated() -> None:
+    assert result(observed()).truncated_requests == 0
+
+
+def test_the_ceiling_has_a_default_a_page_will_not_normally_reach() -> None:
+    """A heavy application loads a few hundred resources. One storefront visit
+    recorded five and a half thousand requests in a minute, which is a loop rather
+    than a visit, and nothing bounded it."""
+    request = BrowserRunRequest(
+        target="https://h/", allowed_hosts=frozenset({"h"}), allowed_ports=frozenset({443})
+    )
+
+    assert 100 <= request.maximum_requests <= 1000
