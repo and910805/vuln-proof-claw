@@ -33,6 +33,7 @@ from vuln_proof_claw.agent.planner import DeterministicPlanner
 from vuln_proof_claw.agent.recon import SpaReconnaissance
 from vuln_proof_claw.agent.runner import MissionRunner, RunnerConfig
 from vuln_proof_claw.agent.sweep import DifferentialSweep, SweepPolicy, SweepProber
+from vuln_proof_claw.automation.browser import LoginInstruction
 from vuln_proof_claw.cli.doctor import diagnose
 from vuln_proof_claw.cli.mission import (
     create_from_definition,
@@ -393,7 +394,14 @@ def _build_prober(
         # Probing reaches only the engagement's own targets, so no asset origins here:
         # reading a CDN's code is reconnaissance, and this is the part that asks
         # questions of a host.
-        transport=PinnedAuthTransport(scope, ssl_context=tls),  # type: ignore[arg-type]
+        transport=PinnedAuthTransport(
+            scope,  # type: ignore[arg-type]
+            ssl_context=tls,
+            # Without this the transport refuses the login itself: a POST carrying a
+            # body is permitted only at the path the bundle nominates, and leaving it
+            # unset meant every configured login was rejected by our own guard.
+            login_path=bundle.login.path if bundle.login else None,
+        ),
         bundle=bundle,
         credentials=credentials,
         scope=scope,  # type: ignore[arg-type]
@@ -424,17 +432,19 @@ def _reconnaissance(  # noqa: PLR0913 - each argument is a separate operator dec
     origins: frozenset[str],
     session_headers: Callable[[], tuple[tuple[str, str], ...]] | None,
     use_browser: bool,
+    browser_login: LoginInstruction | None,
 ) -> Reconnaissance | None:
     """Build the discovery source, or none when no entry point was given."""
     if base_url is None:
         return None
     if use_browser:
-        # The browser path carries its own session: it logs in through the page rather
+        # The browser path carries its own session: it signs in through the page rather
         # than replaying a cookie, so the header supplier does not apply to it.
         return BrowserReconnaissance(
             scope=scope,  # type: ignore[arg-type]
             base_url=base_url,
             ignore_https_errors=tls is not None,
+            login=browser_login,
         )
     return SpaReconnaissance(
         transport=PinnedAuthTransport(
@@ -480,6 +490,34 @@ def _discovery_session(
         return probing.sessions.cookie_header(probing.discovery_identity)
 
     return headers
+
+
+def _browser_login(
+    path: Path, resolution: CredentialResolution, identity: str
+) -> LoginInstruction | None:
+    """Build the page sign-in from the bundle, for the identity discovery will use.
+
+    Returns None when the bundle describes no browser login or that identity has no
+    credential yet — discovery then runs anonymously, which sees whatever the sign-in
+    screen itself fetches and says so, rather than failing.
+    """
+    bundle = load_identity_bundle(path)
+    if bundle.login is None or bundle.login.browser is None:
+        return None
+    credential = resolution.resolved.get(identity)
+    if credential is None:
+        return None
+    page = bundle.login.browser
+    return LoginInstruction(
+        login_url=page.login_url,
+        open_selector=page.open_selector,
+        username_selector=page.username_selector,
+        password_selector=page.password_selector,
+        submit_selector=page.submit_selector,
+        continue_selector=page.continue_selector,
+        username=credential.username,
+        password=credential.password,
+    )
 
 
 @mission_app.command("credentials")
@@ -651,6 +689,7 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                 raise MissionControllerError("engagement_scope_unavailable")
             prober = None
             session_headers: Callable[[], tuple[tuple[str, str], ...]] | None = None
+            browser_login: LoginInstruction | None = None
             if identities is not None:
                 budget = _mission_of(session, mission_id).budget
                 probing = _build_prober(
@@ -673,6 +712,9 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                 # reconnaissance sees what an anonymous caller sees, which on an
                 # application behind a login is the login page and nothing else.
                 session_headers = _discovery_session(probing)
+                browser_login = _browser_login(
+                    identities, resolution, probing.discovery_identity
+                )
             yield MissionController(
                 session,
                 MissionId(mission_id),
@@ -690,6 +732,7 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                     origins=origins,
                     session_headers=session_headers,
                     use_browser=browser,
+                    browser_login=browser_login,
                 ),
                 prober=prober,
                 probe_mutating=probe_mutating,
