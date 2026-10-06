@@ -29,7 +29,14 @@ class AddressResolver(Protocol):
 
 
 class HttpConnection(Protocol):
-    def request(self, method: str, url: str, *, headers: dict[str, str]) -> None: ...
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: bytes | None = None,
+        headers: dict[str, str],
+    ) -> None: ...
 
     def getresponse(self) -> Any: ...
 
@@ -146,7 +153,7 @@ class PinnedHttpTransport:
             with closing(connection):
                 connection.request(
                     request.method,
-                    target.path,
+                    f"{target.path}?{request.query}" if request.query else target.path,
                     headers=dict(request.headers),
                 )
                 response = connection.getresponse()

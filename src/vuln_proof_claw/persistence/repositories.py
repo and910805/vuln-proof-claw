@@ -211,6 +211,8 @@ class ScopeRepository:
                 denied_hostnames=sorted(scope.denied_hostnames),
                 denied_cidrs=[str(network) for network in scope.denied_networks],
                 denied_paths=list(scope.denied_paths),
+                allowed_wildcards=sorted(scope.allowed_wildcards),
+                denied_wildcards=sorted(scope.denied_wildcards),
                 valid_from=scope.valid_from,
                 valid_until=scope.valid_until,
             )
@@ -230,6 +232,8 @@ class ScopeRepository:
             denied_hostnames=tuple(row.denied_hostnames),
             denied_cidrs=tuple(row.denied_cidrs),
             denied_paths=tuple(row.denied_paths),
+            allowed_wildcards=tuple(row.allowed_wildcards or ()),
+            denied_wildcards=tuple(row.denied_wildcards or ()),
             valid_from=_utc(row.valid_from) if row.valid_from else None,
             valid_until=_utc(row.valid_until) if row.valid_until else None,
         )
@@ -517,6 +521,7 @@ class ActionRepository:
             parameter_digest=action.parameter_digest,
             risk_level=action.risk_level.value,
             idempotency_key=action.idempotency_key,
+            query=action.query,
             state=action.state.value,
             approval_id=action.approval_id,
             created_at=action.created_at,
@@ -535,6 +540,7 @@ class ActionRepository:
             parameter_digest=row.parameter_digest,
             risk_level=RiskLevel(row.risk_level),
             idempotency_key=row.idempotency_key,
+            query=row.query or "",
             state=ActionState(row.state),
             approval_id=ApprovalId(row.approval_id) if row.approval_id else None,
             created_at=_utc(row.created_at),
@@ -940,6 +946,26 @@ class AuditEventRepository:
             )
         )
         self._session.flush()
+
+    def last_occurrence(
+        self, engagement_id: EngagementId, event_type: str
+    ) -> datetime | None:
+        """Return when an event of this type was last recorded, if ever.
+
+        The audit log is the only record of a periodic task that produced nothing, so it
+        is also the cadence marker: a sweep that found no issue still happened, and a
+        restarted controller must not treat it as never having run.
+        """
+        row = self._session.scalars(
+            select(AuditEventRecord)
+            .where(
+                AuditEventRecord.engagement_id == engagement_id,
+                AuditEventRecord.event_type == event_type,
+            )
+            .order_by(AuditEventRecord.created_at.desc(), AuditEventRecord.id.desc())
+            .limit(1)
+        ).first()
+        return _utc(row.created_at) if row is not None else None
 
     def list_for_engagement(
         self,

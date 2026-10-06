@@ -54,7 +54,12 @@ _MAX_CWE_DIGITS = 5
 
 # At these severities the basis of the claim has to be stated. A silent default
 # is how a HIGH finding gets minted without ever saying what it rests on.
-_SEVERITY_REQUIRES_STATED_METHOD = frozenset({FindingSeverity.HIGH, FindingSeverity.CRITICAL})
+#: Severities at which a finding must say how it was established. Public because it is
+#: a domain rule other layers legitimately enforce early — a verifier should refuse to
+#: produce an outcome that could never become a finding, rather than let it fail later.
+SEVERITY_REQUIRES_STATED_METHOD = frozenset(
+    {FindingSeverity.HIGH, FindingSeverity.CRITICAL}
+)
 
 
 def utc_now() -> datetime:
@@ -175,6 +180,7 @@ class Action:
     parameter_digest: str
     risk_level: RiskLevel
     idempotency_key: str
+    query: str = ""
     id: ActionId = field(default_factory=new_action_id)
     state: ActionState = ActionState.PROPOSED
     approval_id: ApprovalId | None = None
@@ -188,6 +194,10 @@ class Action:
         _require_text(self.idempotency_key, "idempotency_key")
         _require_sha256(self.parameter_digest, "parameter_digest")
         _require_aware(self.created_at, "created_at")
+        if any(character in self.query for character in "?#\r\n"):
+            raise DomainValidationError(
+                "query must not contain a delimiter or line break"
+            )
         if self.started_at is not None:
             _require_aware(self.started_at, "started_at")
         if self.completed_at is not None:
@@ -371,7 +381,7 @@ class Finding:
             raise DomainValidationError("one evidence record cannot be both payload and control")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")
-        if self.severity in _SEVERITY_REQUIRES_STATED_METHOD and self.verification_method is None:
+        if self.severity in SEVERITY_REQUIRES_STATED_METHOD and self.verification_method is None:
             raise DomainValidationError(
                 "high and critical findings must state a verification method"
             )

@@ -60,7 +60,6 @@ from vuln_proof_claw.persistence.repositories import (
     ScopeRepository,
 )
 from vuln_proof_claw.policy.scope import EngagementScope
-from vuln_proof_claw.reporting.bundle import build_disclosure_bundle
 
 router = APIRouter(tags=["reports"])
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -76,6 +75,8 @@ def _scope_definition(scope: EngagementScope) -> ScopeDefinition:
         allowed_ports=tuple(sorted(scope.allowed_ports)),
         allowed_schemes=tuple(sorted(scope.allowed_schemes)),
         allowed_paths=scope.allowed_paths,
+        allowed_wildcards=tuple(sorted(scope.allowed_wildcards)),
+        denied_wildcards=tuple(sorted(scope.denied_wildcards)),
         denied_hostnames=tuple(sorted(scope.denied_hostnames)),
         denied_cidrs=tuple(str(item) for item in scope.denied_networks),
         denied_paths=scope.denied_paths,
@@ -670,6 +671,10 @@ def engagement_report_sarif(engagement_id: str, session: SessionDependency) -> R
     summary="Download a self-verifiable metadata-only disclosure bundle",
 )
 def engagement_report_bundle(engagement_id: str, session: SessionDependency) -> Response:
+    # Imported lazily to avoid a circular import: reporting.bundle pulls in
+    # api.schemas.reports, which triggers api.__init__ -> api.app -> this module.
+    from vuln_proof_claw.reporting.bundle import build_disclosure_bundle  # noqa: PLC0415
+
     report = build_engagement_report(session, engagement_id)
     try:
         content = build_disclosure_bundle(

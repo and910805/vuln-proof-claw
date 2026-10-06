@@ -58,6 +58,17 @@ ApprovalId = NewType("ApprovalId", str)
 FindingId = NewType("FindingId", str)
 AuditEventId = NewType("AuditEventId", str)
 WorkerId = NewType("WorkerId", str)
+MissionId = NewType("MissionId", str)
+MissionRunId = NewType("MissionRunId", str)
+AgentCycleId = NewType("AgentCycleId", str)
+AgentTaskId = NewType("AgentTaskId", str)
+LeadId = NewType("LeadId", str)
+AssetId = NewType("AssetId", str)
+EndpointId = NewType("EndpointId", str)
+ObservationId = NewType("ObservationId", str)
+CandidateId = NewType("CandidateId", str)
+ChangeEventId = NewType("ChangeEventId", str)
+SurfaceSnapshotId = NewType("SurfaceSnapshotId", str)
 UsageSampleId = NewType("UsageSampleId", str)
 
 
@@ -136,6 +147,50 @@ def new_audit_event_id() -> AuditEventId:
 
 def new_worker_id() -> WorkerId:
     return WorkerId(new_identifier())
+
+
+def new_mission_id() -> MissionId:
+    return MissionId(new_identifier())
+
+
+def new_mission_run_id() -> MissionRunId:
+    return MissionRunId(new_identifier())
+
+
+def new_agent_cycle_id() -> AgentCycleId:
+    return AgentCycleId(new_identifier())
+
+
+def new_agent_task_id() -> AgentTaskId:
+    return AgentTaskId(new_identifier())
+
+
+def new_lead_id() -> LeadId:
+    return LeadId(new_identifier())
+
+
+def new_asset_id() -> AssetId:
+    return AssetId(new_identifier())
+
+
+def new_endpoint_id() -> EndpointId:
+    return EndpointId(new_identifier())
+
+
+def new_observation_id() -> ObservationId:
+    return ObservationId(new_identifier())
+
+
+def new_candidate_id() -> CandidateId:
+    return CandidateId(new_identifier())
+
+
+def new_change_event_id() -> ChangeEventId:
+    return ChangeEventId(new_identifier())
+
+
+def new_surface_snapshot_id() -> SurfaceSnapshotId:
+    return SurfaceSnapshotId(new_identifier())
 
 
 @dataclass(frozen=True, slots=True)

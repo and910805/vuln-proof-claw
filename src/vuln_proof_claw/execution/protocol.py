@@ -29,6 +29,7 @@ from vuln_proof_claw.policy.scope import (
     normalize_port,
     normalize_scheme,
     normalize_target,
+    normalize_wildcard,
 )
 
 PROTOCOL_VERSION: Literal["v1"] = "v1"
@@ -69,11 +70,18 @@ class WorkerScope(ProtocolModel):
     denied_hostnames: tuple[str, ...] = ()
     denied_cidrs: tuple[str, ...] = ()
     denied_paths: tuple[str, ...] = ()
+    allowed_wildcards: tuple[str, ...] = ()
+    denied_wildcards: tuple[str, ...] = ()
 
     @field_validator("allowed_hostnames", "denied_hostnames")
     @classmethod
     def normalize_hostnames(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(sorted({normalize_hostname(value) for value in values}))
+
+    @field_validator("allowed_wildcards", "denied_wildcards")
+    @classmethod
+    def normalize_wildcards(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(sorted({normalize_wildcard(value) for value in values}))
 
     @field_validator("allowed_cidrs", "denied_cidrs")
     @classmethod
@@ -101,8 +109,8 @@ class WorkerScope(ProtocolModel):
 
     @model_validator(mode="after")
     def require_target_boundary(self) -> WorkerScope:
-        if not self.allowed_hostnames and not self.allowed_cidrs:
-            raise ValueError("worker scope requires an allowed hostname or CIDR")
+        if not self.allowed_hostnames and not self.allowed_cidrs and not self.allowed_wildcards:
+            raise ValueError("worker scope requires an allowed hostname, CIDR, or wildcard")
         if not self.allowed_ports or not self.allowed_schemes:
             raise ValueError("worker scope requires allowed ports and schemes")
         return self
@@ -118,6 +126,8 @@ class WorkerScope(ProtocolModel):
             denied_hostnames=self.denied_hostnames,
             denied_cidrs=self.denied_cidrs,
             denied_paths=self.denied_paths,
+            allowed_wildcards=self.allowed_wildcards,
+            denied_wildcards=self.denied_wildcards,
         )
 
 

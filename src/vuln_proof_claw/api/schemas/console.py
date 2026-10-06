@@ -65,13 +65,15 @@ class ScopeDefinition(BaseModel):
     denied_hostnames: tuple[str, ...] = ()
     denied_cidrs: tuple[str, ...] = ()
     denied_paths: tuple[str, ...] = ()
+    allowed_wildcards: tuple[str, ...] = ()
+    denied_wildcards: tuple[str, ...] = ()
     valid_from: datetime | None = None
     valid_until: datetime | None = None
 
     @model_validator(mode="after")
     def require_allow_boundary(self) -> ScopeDefinition:
-        if not self.allowed_hostnames and not self.allowed_cidrs:
-            raise ValueError("scope requires at least one allowed hostname or CIDR")
+        if not self.allowed_hostnames and not self.allowed_cidrs and not self.allowed_wildcards:
+            raise ValueError("scope requires at least one allowed hostname, CIDR, or wildcard")
         return self
 
 

@@ -42,9 +42,16 @@ dependencies = [
   "httpx>=0.28,<1",
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.10,<3",
+  # Engagement definitions are authored as YAML and parsed with safe_load only.
+  "pyyaml>=6.0,<7",
   "sqlalchemy>=2.0,<3",
   "structlog>=25.4,<27",
   "typer>=0.16,<1",
+  # Not imported directly; pinned because it arrives transitively and 2.7.0 carries
+  # two HIGH advisories the image scan refuses — traffic interception through an
+  # HTTPS proxy, and unbounded memory on a malformed response. A tool that opens
+  # connections to targets is exactly the wrong place to carry either.
+  "urllib3>=2.8",
   "uvicorn[standard]>=0.35,<1",
 ]
 
@@ -132,3 +139,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["PLR2004"]
+# This module renders a Traditional Chinese disclosure draft. Full-width punctuation is
+# correct for that output, so the ambiguous-character rules do not apply.
+"src/vuln_proof_claw/reporting/disclosure_draft.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/reporting/test_disclosure_draft.py" = ["PLR2004", "RUF001", "RUF002", "RUF003"]
+# Candidate titles and hypotheses are written in Traditional Chinese for the operator,
+# so full-width punctuation is correct there too.
+"src/vuln_proof_claw/agent/candidates.py" = ["RUF001", "RUF002", "RUF003"]

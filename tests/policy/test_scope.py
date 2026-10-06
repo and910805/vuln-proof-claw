@@ -14,6 +14,7 @@ from vuln_proof_claw.policy.scope import (
     normalize_network,
     normalize_path,
     normalize_target,
+    normalize_wildcard,
 )
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
@@ -105,3 +106,112 @@ def test_scope_defaults_to_denial_without_allowed_hosts_or_networks() -> None:
 
     assert not decision.allowed
     assert decision.reason == "host_not_allowed"
+
+
+def test_wildcard_normalization_is_canonical_and_idempotent() -> None:
+    assert normalize_wildcard("*.Example.COM.") == "*.example.com"
+    assert normalize_wildcard(normalize_wildcard("*.example.com")) == "*.example.com"
+    assert normalize_wildcard("*.bücher.example") == "*.xn--bcher-kva.example"
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "example.com",
+        "*",
+        "*.",
+        "*.com",
+        "*.co.uk",
+        "*.org.tw",
+        "*.192.0.2.1",
+        "*.*.example.com",
+    ],
+)
+def test_wildcard_rejects_unsafe_or_malformed_rules(rule: str) -> None:
+    with pytest.raises(DomainValidationError):
+        normalize_wildcard(rule)
+
+
+def test_wildcard_matches_strict_subdomains_only() -> None:
+    scope = EngagementScope.create(allowed_wildcards=("*.example.com",))
+
+    nested = evaluate_scope("https://a.b.example.com/", scope, at=NOW)
+    direct = evaluate_scope("https://api.example.com/", scope, at=NOW)
+
+    assert nested.allowed
+    assert direct.allowed
+
+
+def test_wildcard_does_not_grant_the_apex_domain() -> None:
+    scope = EngagementScope.create(allowed_wildcards=("*.example.com",))
+
+    decision = evaluate_scope("https://example.com/", scope, at=NOW)
+
+    assert not decision.allowed
+    assert decision.reason == "host_not_allowed"
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["notexample.com", "evil-example.com", "example.com.attacker.test", "exampleXcom"],
+)
+def test_wildcard_does_not_match_lookalike_hosts(host: str) -> None:
+    scope = EngagementScope.create(allowed_wildcards=("*.example.com",))
+
+    decision = evaluate_scope(f"https://{host}/", scope, at=NOW)
+
+    assert not decision.allowed
+
+
+def test_denied_wildcard_takes_precedence_over_allowed_wildcard() -> None:
+    scope = EngagementScope.create(
+        allowed_wildcards=("*.example.com",),
+        denied_wildcards=("*.internal.example.com",),
+    )
+
+    allowed = evaluate_scope("https://api.example.com/", scope, at=NOW)
+    denied = evaluate_scope("https://db.internal.example.com/", scope, at=NOW)
+
+    assert allowed.allowed
+    assert not denied.allowed
+    assert denied.reason == "wildcard_denied"
+
+
+def test_denied_wildcard_overrides_an_explicitly_allowed_hostname() -> None:
+    scope = EngagementScope.create(
+        allowed_hostnames=("status.example.com",),
+        denied_wildcards=("*.example.com",),
+    )
+
+    decision = evaluate_scope("https://status.example.com/", scope, at=NOW)
+
+    assert not decision.allowed
+    assert decision.reason == "wildcard_denied"
+
+
+def test_wildcard_allowance_never_applies_to_ip_literals() -> None:
+    scope = EngagementScope.create(
+        allowed_wildcards=("*.example.com",),
+        allowed_ports=(443,),
+    )
+
+    decision = evaluate_scope("https://192.0.2.10/", scope, at=NOW)
+
+    assert not decision.allowed
+    assert decision.reason == "host_not_allowed"
+
+
+def test_wildcard_scope_still_enforces_port_scheme_and_path_rules() -> None:
+    scope = EngagementScope.create(
+        allowed_wildcards=("*.example.com",),
+        allowed_ports=(443,),
+        allowed_paths=("/api",),
+    )
+
+    wrong_port = evaluate_scope("https://api.example.com:8443/api", scope, at=NOW)
+    wrong_path = evaluate_scope("https://api.example.com/admin", scope, at=NOW)
+    allowed = evaluate_scope("https://api.example.com/api/v1", scope, at=NOW)
+
+    assert wrong_port.reason == "port_not_allowed"
+    assert wrong_path.reason == "path_not_allowed"
+    assert allowed.allowed

@@ -12,13 +12,22 @@ def http_parameter_digest(
     method: str,
     target: str,
     headers: tuple[tuple[str, str], ...],
+    query: str = "",
 ) -> str:
-    """Bind one canonical target to the exact passive HTTP request parameters."""
-    protected = canonical_json(
-        {
-            "headers": [list(item) for item in headers],
-            "method": method,
-            "target": target,
-        }
-    )
-    return hashlib.sha256(protected).hexdigest()
+    """Bind one canonical target to the exact passive HTTP request parameters.
+
+    ``query`` is omitted from the protected document when empty, so a request without
+    one produces exactly the digest it produced before queries were carried. That keeps
+    every previously issued approval and stored action valid.
+
+    When a query is present it is part of the binding: approving one query does not
+    approve another against the same path.
+    """
+    protected: dict[str, object] = {
+        "headers": [list(item) for item in headers],
+        "method": method,
+        "target": target,
+    }
+    if query:
+        protected["query"] = query
+    return hashlib.sha256(canonical_json(protected)).hexdigest()

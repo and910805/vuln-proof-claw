@@ -7,6 +7,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, Protocol
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
@@ -24,7 +25,7 @@ from vuln_proof_claw.execution.authorization import (
 )
 from vuln_proof_claw.execution.http_contract import http_parameter_digest
 from vuln_proof_claw.persistence.repositories import ActionRepository
-from vuln_proof_claw.policy.scope import normalize_target
+from vuln_proof_claw.policy.scope import normalize_query, normalize_target
 
 _ALLOWED_METHODS = frozenset({"GET", "HEAD"})
 _ALLOWED_REQUEST_HEADERS = frozenset({"accept", "user-agent"})
@@ -56,16 +57,28 @@ class HttpCaptureRequest:
     method: Literal["GET", "HEAD"]
     target: str
     headers: tuple[tuple[str, str], ...] = ()
+    query: str = ""
 
     def __post_init__(self) -> None:
+        """Split the query from the target.
+
+        ``target`` stays query-free because that is what scope evaluates and what an
+        approval binds a host and path to. The query travels alongside it and is folded
+        into the parameter digest, so it cannot widen authorization but also cannot be
+        swapped silently. A query given inline in ``target`` is accepted and moved.
+        """
         method = self.method.upper()
         if method not in _ALLOWED_METHODS:
             raise DomainValidationError("HTTP capture only supports GET and HEAD")
+        inline = urlsplit(self.target).query
+        if inline and self.query:
+            raise DomainValidationError("query supplied both inline and explicitly")
         normalized_target = str(normalize_target(self.target))
         normalized_headers = _normalize_headers(self.headers, request=True)
         object.__setattr__(self, "method", method)
         object.__setattr__(self, "target", normalized_target)
         object.__setattr__(self, "headers", normalized_headers)
+        object.__setattr__(self, "query", normalize_query(inline or self.query))
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,11 +178,12 @@ def _normalize_headers(
 
 
 def capture_parameter_digest(request: HttpCaptureRequest) -> str:
-    """Bind an Action to the exact method, canonical target, and safe request headers."""
+    """Bind an Action to the exact method, target, query, and safe request headers."""
     return http_parameter_digest(
         method=request.method,
         target=request.target,
         headers=request.headers,
+        query=request.query,
     )
 
 
@@ -177,14 +191,23 @@ def http_capture_evidence_bytes(
     request: HttpCaptureRequest,
     response: HttpCaptureResponse,
 ) -> bytes:
+    """Build the canonical document that is hashed into the evidence chain.
+
+    The query is recorded whenever one was sent, because a reviewer must be able to
+    reproduce the exact request from the evidence alone. It is omitted when empty so
+    that a capture without a query hashes to the same document it always did.
+    """
+    recorded_request: dict[str, object] = {
+        "headers": [list(item) for item in request.headers],
+        "method": request.method,
+        "target": request.target,
+    }
+    if request.query:
+        recorded_request["query"] = request.query
     return canonical_json(
         {
             "capture_schema": "http-v1",
-            "request": {
-                "headers": [list(item) for item in request.headers],
-                "method": request.method,
-                "target": request.target,
-            },
+            "request": recorded_request,
             "response": {
                 "body_base64": base64.b64encode(response.body).decode("ascii"),
                 "body_sha256": hashlib.sha256(response.body).hexdigest(),

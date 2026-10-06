@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit
 
 from vuln_proof_claw.domain.errors import DomainValidationError
 
@@ -21,6 +21,58 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 _MAX_HOSTNAME_LENGTH = 253
 _MAX_LABEL_LENGTH = 63
 _MAX_PORT = 65_535
+_MAX_QUERY_LENGTH = 4_096
+_WILDCARD_PREFIX = "*."
+_MINIMUM_WILDCARD_LABELS = 2
+
+# Registrable-suffix guard. A wildcard whose base is itself a public suffix would
+# delegate the entire suffix to the engagement, so those bases are rejected. This is a
+# deliberately conservative subset rather than a full Public Suffix List: unknown
+# multi-label suffixes still require the operator to name a registrable domain.
+_PUBLIC_SUFFIXES = frozenset(
+    {
+        "ac.uk",
+        "co.at",
+        "co.il",
+        "co.in",
+        "co.jp",
+        "co.kr",
+        "co.nz",
+        "co.uk",
+        "co.za",
+        "com.ar",
+        "com.au",
+        "com.br",
+        "com.cn",
+        "com.hk",
+        "com.mx",
+        "com.my",
+        "com.ph",
+        "com.pl",
+        "com.sg",
+        "com.tr",
+        "com.tw",
+        "com.ua",
+        "com.vn",
+        "edu.au",
+        "edu.cn",
+        "edu.tw",
+        "gov.au",
+        "gov.br",
+        "gov.cn",
+        "gov.tw",
+        "gov.uk",
+        "ne.jp",
+        "net.au",
+        "net.cn",
+        "net.tw",
+        "or.jp",
+        "org.au",
+        "org.cn",
+        "org.tw",
+        "org.uk",
+    }
+)
 
 
 def normalize_hostname(value: str) -> str:
@@ -49,6 +101,38 @@ def normalize_hostname(value: str) -> str:
     ):
         raise DomainValidationError("hostname contains an invalid label")
     return normalized
+
+
+def normalize_wildcard(value: str) -> str:
+    """Normalize a ``*.example.com`` wildcard rule to its canonical form.
+
+    The wildcard matches strict subdomains only. The apex must be listed separately as
+    an explicit hostname, so that ``*.example.com`` cannot silently widen scope to
+    ``example.com`` itself. Normalization is idempotent so that a stored rule can be
+    rebuilt across the control-plane, database, and worker boundaries without drift.
+    """
+    candidate = value.strip().lower()
+    if not candidate.startswith(_WILDCARD_PREFIX):
+        raise DomainValidationError("wildcard rule must start with '*.'")
+    base = normalize_hostname(candidate[len(_WILDCARD_PREFIX) :])
+    if "*" in base:
+        raise DomainValidationError("wildcard rule supports exactly one leading label")
+    try:
+        ipaddress.ip_address(base)
+    except ValueError:
+        pass
+    else:
+        raise DomainValidationError("wildcard rule must not use an IP literal")
+    if len(base.split(".")) < _MINIMUM_WILDCARD_LABELS:
+        raise DomainValidationError("wildcard base must be a registrable domain")
+    if base in _PUBLIC_SUFFIXES:
+        raise DomainValidationError("wildcard base must not be a public suffix")
+    return f"{_WILDCARD_PREFIX}{base}"
+
+
+def _wildcard_matches(host: str, rule: str) -> bool:
+    """Return whether a normalized host is a strict subdomain of a wildcard rule."""
+    return host.endswith(f".{rule[len(_WILDCARD_PREFIX) :]}")
 
 
 def normalize_network(value: str) -> IPNetwork:
@@ -144,6 +228,32 @@ def normalize_target(value: str) -> NormalizedTarget:
     )
 
 
+def normalize_query(value: str) -> str:
+    """Normalize a URL query string for safe, comparable transmission.
+
+    The query is kept separate from the normalized target on purpose. Scope decides
+    authorization from scheme, host, port, and path; a query must not be able to widen
+    that boundary. But a query *does* change what a request asks for, so it is carried
+    explicitly and folded into the parameter digest, which means an approval binds to
+    the exact query that was approved.
+
+    Pairs are re-encoded rather than passed through, so a crafted value cannot smuggle
+    a control character or a second request line into the wire format.
+    """
+    if not value:
+        return ""
+    if _CONTROL_CHARACTER.search(value):
+        raise DomainValidationError("query contains a control character")
+    if len(value) > _MAX_QUERY_LENGTH:
+        raise DomainValidationError("query exceeds the maximum length")
+    if _INVALID_PERCENT.search(value):
+        raise DomainValidationError("query contains invalid percent encoding")
+    pairs = parse_qsl(value, keep_blank_values=True)
+    if not pairs:
+        raise DomainValidationError("query must contain at least one parameter")
+    return urlencode(pairs)
+
+
 def _path_matches(path: str, prefix: str) -> bool:
     return prefix in ("/", path) or path.startswith(f"{prefix}/")
 
@@ -160,6 +270,8 @@ class EngagementScope:
     denied_hostnames: frozenset[str] = frozenset()
     denied_networks: tuple[IPNetwork, ...] = ()
     denied_paths: tuple[str, ...] = ()
+    allowed_wildcards: frozenset[str] = frozenset()
+    denied_wildcards: frozenset[str] = frozenset()
     valid_from: datetime | None = None
     valid_until: datetime | None = None
 
@@ -175,6 +287,8 @@ class EngagementScope:
         denied_hostnames: tuple[str, ...] = (),
         denied_cidrs: tuple[str, ...] = (),
         denied_paths: tuple[str, ...] = (),
+        allowed_wildcards: tuple[str, ...] = (),
+        denied_wildcards: tuple[str, ...] = (),
         valid_from: datetime | None = None,
         valid_until: datetime | None = None,
     ) -> EngagementScope:
@@ -196,6 +310,8 @@ class EngagementScope:
             denied_hostnames=frozenset(normalize_hostname(item) for item in denied_hostnames),
             denied_networks=tuple(normalize_network(item) for item in denied_cidrs),
             denied_paths=tuple(normalize_path(item) for item in denied_paths),
+            allowed_wildcards=frozenset(normalize_wildcard(item) for item in allowed_wildcards),
+            denied_wildcards=frozenset(normalize_wildcard(item) for item in denied_wildcards),
             valid_from=valid_from.astimezone(UTC) if valid_from else None,
             valid_until=valid_until.astimezone(UTC) if valid_until else None,
         )
@@ -211,7 +327,7 @@ class ScopeDecision:
     requires_dns_recheck: bool
 
 
-def evaluate_scope(
+def evaluate_scope(  # noqa: PLR0912 - a flat chain keeps deny-before-allow precedence auditable
     target: str | NormalizedTarget,
     scope: EngagementScope,
     *,
@@ -228,7 +344,10 @@ def evaluate_scope(
         address = ipaddress.ip_address(normalized.host)
     except ValueError:
         address = None
-    host_allowed = normalized.host in scope.allowed_hostnames
+    host_allowed = normalized.host in scope.allowed_hostnames or (
+        address is None
+        and any(_wildcard_matches(normalized.host, base) for base in scope.allowed_wildcards)
+    )
     network_allowed = address is not None and any(
         address in network for network in scope.allowed_networks
     )
@@ -243,6 +362,8 @@ def evaluate_scope(
         reason = "port_not_allowed"
     elif normalized.host in scope.denied_hostnames:
         reason = "hostname_denied"
+    elif any(_wildcard_matches(normalized.host, base) for base in scope.denied_wildcards):
+        reason = "wildcard_denied"
     elif address is not None and any(address in network for network in scope.denied_networks):
         reason = "network_denied"
     elif any(_path_matches(normalized.path, prefix) for prefix in scope.denied_paths):

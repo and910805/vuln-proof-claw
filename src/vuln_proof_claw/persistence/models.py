@@ -11,6 +11,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -70,6 +71,8 @@ class EngagementScopeRecord(Base):
     denied_hostnames: Mapped[list[str]] = mapped_column(JSON)
     denied_cidrs: Mapped[list[str]] = mapped_column(JSON)
     denied_paths: Mapped[list[str]] = mapped_column(JSON)
+    allowed_wildcards: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    denied_wildcards: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -164,6 +167,7 @@ class ActionRecord(Base):
     parameter_digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH))
     risk_level: Mapped[str] = mapped_column(String(2))
     idempotency_key: Mapped[str] = mapped_column(String(255))
+    query: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     state: Mapped[str] = mapped_column(String(32), index=True)
     approval_id: Mapped[str | None] = mapped_column(
         ForeignKey("approvals.id", ondelete="RESTRICT"),
@@ -342,6 +346,322 @@ class FindingRecord(Base):
         server_default="Review the evidence and apply the relevant security control.",
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class MissionRecord(Base):
+    """A persistent autonomous research campaign bound to one engagement."""
+
+    __tablename__ = "missions"
+    __table_args__ = (
+        UniqueConstraint("engagement_id", "name"),
+        Index("ix_missions_state_updated", "state", "updated_at"),
+        CheckConstraint(
+            "maximum_autonomous_risk IN ('L0', 'L1')",
+            name="autonomous_risk_ceiling",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    maximum_autonomous_risk: Mapped[str] = mapped_column(String(2))
+    kill_switch_engaged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cadence: Mapped[dict[str, int]] = mapped_column(JSON)
+    budget: Mapped[dict[str, int]] = mapped_column(JSON)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class MissionRunRecord(Base):
+    """One continuous, crash-recoverable execution span of a mission."""
+
+    __tablename__ = "mission_runs"
+    __table_args__ = (
+        Index("ix_mission_runs_mission_started", "mission_id", "started_at"),
+        Index("ix_mission_runs_state_heartbeat", "state", "heartbeat_at"),
+        CheckConstraint(
+            "state IN ('running', 'interrupted', 'completed', 'failed')",
+            name="state",
+        ),
+        CheckConstraint("cycle_index >= 0", name="cycle_index"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    mission_id: Mapped[str] = mapped_column(
+        ForeignKey("missions.id", ondelete="CASCADE"), index=True
+    )
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    cycle_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    worker_identity: Mapped[str] = mapped_column(String(255))
+    error_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class AgentCycleRecord(Base):
+    """One observe, plan, act, and verify iteration."""
+
+    __tablename__ = "agent_cycles"
+    __table_args__ = (
+        UniqueConstraint("mission_run_id", "index"),
+        Index("ix_agent_cycles_run_started", "mission_run_id", "started_at"),
+        CheckConstraint("actions_executed <= actions_proposed", name="execution_bound"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    mission_run_id: Mapped[str] = mapped_column(
+        ForeignKey("mission_runs.id", ondelete="CASCADE"), index=True
+    )
+    index: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    leads_considered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    actions_proposed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    actions_executed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    candidates_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    findings_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class AssetRecord(Base):
+    """A discovered host, address, service, or application."""
+
+    __tablename__ = "assets"
+    __table_args__ = (
+        UniqueConstraint("engagement_id", "kind", "identifier"),
+        Index("ix_assets_engagement_last_seen", "engagement_id", "last_seen_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    identifier: Mapped[str] = mapped_column(String(500))
+    technologies: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    in_scope: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class EndpointRecord(Base):
+    """A discovered request surface belonging to an asset."""
+
+    __tablename__ = "endpoints"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "method", "path"),
+        Index("ix_endpoints_engagement_last_seen", "engagement_id", "last_seen_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    asset_id: Mapped[str] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), index=True)
+    method: Mapped[str] = mapped_column(String(16))
+    path: Mapped[str] = mapped_column(Text)
+    parameters: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    requires_authentication: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False, server_default="discovery")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class ObservationRecord(Base):
+    """An immutable recorded phenomenon, optionally backed by stored evidence."""
+
+    __tablename__ = "observations"
+    __table_args__ = (
+        Index("ix_observations_engagement_observed", "engagement_id", "observed_at"),
+        Index("ix_observations_subject_kind", "subject", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    subject: Mapped[str] = mapped_column(Text)
+    digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
+    summary: Mapped[str] = mapped_column(Text)
+    evidence_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence.id", ondelete="SET NULL"), nullable=True
+    )
+    asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LeadRecord(Base):
+    """A testable research hypothesis under autonomous investigation."""
+
+    __tablename__ = "leads"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "dedupe_key"),
+        Index("ix_leads_engagement_status", "engagement_id", "status"),
+        Index("ix_leads_mission_priority", "mission_id", "status", "priority"),
+        Index("ix_leads_next_attempt", "mission_id", "next_attempt_at"),
+        CheckConstraint("confidence >= 0.0 AND confidence <= 1.0", name="confidence_range"),
+        CheckConstraint("priority >= 0 AND priority <= 100", name="priority_range"),
+        CheckConstraint("failure_count <= attempt_count", name="failure_bound"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    mission_id: Mapped[str] = mapped_column(
+        ForeignKey("missions.id", ondelete="CASCADE"), index=True
+    )
+    asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    endpoint_id: Mapped[str | None] = mapped_column(
+        ForeignKey("endpoints.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(500))
+    hypothesis: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(255))
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    origin: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    related_findings: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_reasoning_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    blocked_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
+
+
+class CandidateRecord(Base):
+    """A scanner or heuristic signal awaiting Planner triage."""
+
+    __tablename__ = "candidates"
+    __table_args__ = (
+        UniqueConstraint("engagement_id", "raw_digest"),
+        Index("ix_candidates_engagement_created", "engagement_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(32), index=True)
+    tool_name: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(500))
+    category: Mapped[str] = mapped_column(String(255))
+    target: Mapped[str] = mapped_column(Text)
+    raw_digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
+    severity_hint: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lead_id: Mapped[str | None] = mapped_column(
+        ForeignKey("leads.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SurfaceSnapshotRecord(Base):
+    """A content digest of the known attack surface at one point in time."""
+
+    __tablename__ = "surface_snapshots"
+    __table_args__ = (
+        Index("ix_surface_snapshots_engagement_captured", "engagement_id", "captured_at"),
+        CheckConstraint("asset_count >= 0 AND endpoint_count >= 0", name="counts"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    digest: Mapped[str] = mapped_column(String(DIGEST_LENGTH), index=True)
+    asset_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    endpoint_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ChangeEventRecord(Base):
+    """A typed difference between two attack-surface snapshots."""
+
+    __tablename__ = "change_events"
+    __table_args__ = (
+        Index("ix_change_events_engagement_detected", "engagement_id", "detected_at"),
+        Index("ix_change_events_subject_kind", "subject", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    engagement_id: Mapped[str] = mapped_column(
+        ForeignKey("engagements.id", ondelete="CASCADE"), index=True
+    )
+    snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("surface_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    subject: Mapped[str] = mapped_column(Text)
+    previous_digest: Mapped[str | None] = mapped_column(String(DIGEST_LENGTH), nullable=True)
+    current_digest: Mapped[str | None] = mapped_column(String(DIGEST_LENGTH), nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BudgetLedgerRecord(Base):
+    """Deterministic request and token counters for one mission window."""
+
+    __tablename__ = "budget_ledger"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "window_kind", "scope_key", "window_start"),
+        Index("ix_budget_ledger_mission_window", "mission_id", "window_kind", "window_start"),
+        CheckConstraint(
+            "window_kind IN ('minute', 'hour', 'day', 'total')",
+            name="window_kind",
+        ),
+        CheckConstraint("request_count >= 0 AND token_count >= 0", name="counters"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    mission_id: Mapped[str] = mapped_column(
+        ForeignKey("missions.id", ondelete="CASCADE"), index=True
+    )
+    window_kind: Mapped[str] = mapped_column(String(16))
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
 

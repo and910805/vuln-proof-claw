@@ -19,6 +19,10 @@ def run_cli(*arguments: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, "-m", "vuln_proof_claw", *arguments],
         capture_output=True,
         text=True,
+        # Explicit, because the help frame is drawn with box characters: decoding it
+        # with the machine's locale fails on any non-UTF-8 default, and the failure
+        # arrives as stdout being None rather than as anything that names the cause.
+        encoding="utf-8",
         timeout=TIMEOUT_SECONDS,
         check=False,
     )
@@ -57,6 +61,7 @@ def test_importing_a_schema_module_does_not_build_the_app() -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=TIMEOUT_SECONDS,
         check=False,
     )

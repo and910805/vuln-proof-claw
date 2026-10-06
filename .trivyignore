@@ -15,3 +15,19 @@ GHSA-6v7p-g79w-8964
 # by the Playwright browser install layer. The vulnerable code path (using
 # setuptools' PackageIndex to download packages) is never invoked at run time.
 CVE-2025-47273
+
+# urllib3 HTTPS-proxy traffic interception, and denial of service through
+# unbounded memory. The dependency itself is fixed: pyproject pins urllib3>=2.8
+# and the image carries 2.8.0 in site-packages, which Trivy reports clean. What
+# remains is pip's own vendored copy (pip/_vendor/urllib3), still at 2.7.0 and
+# not upgradable without a pip release that bundles the fix.
+#
+# It is not reachable: the application never imports pip, and the entrypoints
+# install nothing at run time. Both advisories require making requests through
+# that copy, which only pip itself does.
+#
+# Remove these once a pip release vendors urllib3 >= 2.8.0. The stronger fix is
+# to drop pip from the runtime image entirely, which would retire this whole
+# class of finding rather than annotating it one advisory at a time.
+CVE-2026-97687
+CVE-2026-97689

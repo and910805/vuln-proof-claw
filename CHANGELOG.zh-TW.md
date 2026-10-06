@@ -6,6 +6,40 @@
 
 ## Unreleased
 
+### 新增
+
+- 新增持續性自主研究代理（`docs/AUTONOMOUS_AGENT_ARCHITECTURE.md` 的階段 1）：
+  `Mission`、`MissionRun`、`AgentCycle`、`Lead` 領域模型，以及可從當機恢復的
+  `MissionController` 循環，負責觀察、偵測攻擊面變化、排序 Lead、規劃，
+  並將每個提出的行動送交既有的政策引擎裁決。
+- 新增研究知識庫（`Asset`、`Endpoint`、`Observation`、`Candidate`、
+  `SurfaceSnapshot`、`ChangeEvent`）與 `ResearchMemory` 回想層，用以回答
+  「已經試過什麼」、「哪些失敗了」、「是否有新證據足以支持重試」。
+- 新增決定性的每網域速率限制，以及每小時、每日、總請求數與 LLM token 預算，
+  由 `budget_ledger` 資料表支撐。
+- 新增由節奏設定驅動的排程，以及有上限的指數退避 Lead 冷卻；
+  控制器中不寫死任何間隔。
+- 新增萬用字元委託範圍（`*.example.com`），同時支援允許與拒絕規則，
+  僅比對嚴格子網域，並拒絕以公開後綴作為基底。
+- 新增由操作者撰寫的 `engagement.yaml` 定義、位於 `examples/engagement.yaml` 的範例，
+  以及 `vuln-proof-claw mission` 指令（`validate`、`create`、`status`、`pause`、`resume`、`stop`）。
+- 新增 `HttpCaptureExecutor`，將自主循環接上既有的證據擷取路徑，
+  使一次循環能產生雜湊鏈證據與一筆觀察紀錄。
+- 新增 Alembic 修訂版本 `0010_autonomous_missions`。
+
+### 安全性
+
+- 無人值守執行由 `Mission` 領域模型硬性限制在 L1；此上限無法由設定提高，
+  且宣告 L2 以上的委託定義會被拒絕。
+- 計畫在抵達政策引擎前會先被重新推導：風險等級不符、永久拒絕的行動類型，
+  或未正規化的目標都會被拒絕而非自動修正，使不誠實的 Planner 明確失敗。
+- 已失敗的 Lead 在出現新證據前不會重試；「新證據」指已儲存的觀察或變更事件，
+  而非代理自己的主張。
+- Lead 的嘗試次數在調查「開始」時即計入，而非完成時計入，
+  因此當機迴圈無法對目標造成無限制重試。
+- 只有帶有證據的 `VerificationOutcome` 才能將 Lead 晉升為 Finding；
+  需要破壞性測試才能證明的結果會改標記為 `requires_manual_review`。
+
 ## [0.7.1] - 2026-08-17
 
 ### 新增
