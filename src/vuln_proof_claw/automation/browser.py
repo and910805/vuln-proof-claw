@@ -14,6 +14,7 @@ discovery source, and the classifier decides what may be called.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -84,6 +85,19 @@ class LoginInstruction:
 #: hundred resources, and anything past that is a loop rather than a visit.
 _DEFAULT_MAXIMUM_REQUESTS: Final = 400
 
+#: Settles a sign-in can perform: after opening the form, after submitting, after the
+#: continue step, after navigating, and once at the end.
+_SETTLE_STEPS: Final = 5
+
+#: Starting Playwright and launching Chromium, neither of which any per-operation
+#: timeout covers because both happen before there is a context to set one on.
+_LAUNCH_ALLOWANCE_SECONDS: Final = 90.0
+
+
+def request_settle_steps() -> int:
+    """Return how many settle waits one visit may perform."""
+    return _SETTLE_STEPS
+
 
 @dataclass(frozen=True, slots=True)
 class BrowserRunRequest:
@@ -105,6 +119,18 @@ class BrowserRunRequest:
     """
 
     maximum_requests: int = _DEFAULT_MAXIMUM_REQUESTS
+
+    @property
+    def deadline_seconds(self) -> float:
+        """How long the whole visit may take, including starting a browser.
+
+        Derived from the timeouts already configured rather than set separately, so
+        raising one of those cannot leave the deadline underneath it. The allowance is
+        for launching Playwright and Chromium, which happens before any per-operation
+        timeout can apply.
+        """
+        steps = request_settle_steps()
+        return (self.timeout_ms + steps * self.settle_ms) / 1000 + _LAUNCH_ALLOWANCE_SECONDS
     """The most in-scope requests one visit may make.
 
     A browser fetches whatever the page asks for, and a page can ask for a great deal.
@@ -286,10 +312,37 @@ def inventory(requests: tuple[ObservedRequest, ...]) -> tuple[tuple[str, str], .
     return tuple(seen)
 
 
+class BrowserVisitTimeoutError(RuntimeError):
+    """A visit ran past its deadline and was abandoned."""
+
+
 class IsolatedBrowserRunner:
     """Use a fresh Chromium process/context for exactly one bounded run."""
 
-    async def run(  # noqa: PLR0915 - one browser visit, start to finish, in order
+    async def run(self, request: BrowserRunRequest) -> BrowserRunResult:
+        """Make the visit, or give up on it. Never neither.
+
+        The per-operation timeout is set on the context, which exists only after the
+        browser has launched -- so launching it was unbounded, and so was starting
+        Playwright itself. An agent spent an hour and seven minutes inside this call,
+        having authenticated and sent nothing, while its scheduled task reported
+        Running and its log's last line said the login had succeeded.
+
+        One deadline over the whole visit covers every step including the ones before
+        a context exists. Timing out is reported as a failed visit, which the caller
+        already knows how to treat as a lost pass rather than a lost cycle.
+        """
+        try:
+            visited: BrowserRunResult = await asyncio.wait_for(
+                self._visit(request), timeout=request.deadline_seconds
+            )
+            return visited
+        except TimeoutError as expired:
+            raise BrowserVisitTimeoutError(
+                f"browser visit exceeded {request.deadline_seconds:.0f}s"
+            ) from expired
+
+    async def _visit(  # noqa: PLR0915 - one browser visit, start to finish, in order
         self, request: BrowserRunRequest
     ) -> BrowserRunResult:
         try:

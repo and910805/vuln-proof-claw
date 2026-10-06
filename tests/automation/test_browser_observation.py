@@ -7,6 +7,9 @@ recording is faithful, bounded, and safe to put in evidence.
 
 from __future__ import annotations
 
+import asyncio
+from unittest import mock
+
 import pytest
 from pydantic import SecretStr
 
@@ -15,6 +18,8 @@ from vuln_proof_claw.automation.browser import (
     _NOT_API,
     BrowserRunRequest,
     BrowserRunResult,
+    BrowserVisitTimeoutError,
+    IsolatedBrowserRunner,
     LoginInstruction,
     ObservedRequest,
     body_field_names,
@@ -268,3 +273,66 @@ def test_a_declined_request_is_not_reported_as_blocked() -> None:
 
     assert outcome.blocked_requests == ()
     assert outcome.declined_requests == 312
+
+
+def test_a_visit_has_a_deadline_covering_the_launch() -> None:
+    """The per-operation timeout is set on the context, which exists only after the
+    browser has launched -- so launching it was unbounded, and so was starting
+    Playwright. An agent spent an hour and seven minutes inside one call, having
+    authenticated and sent nothing, while its scheduled task reported Running."""
+    request = BrowserRunRequest(
+        target="https://h/", allowed_hosts=frozenset({"h"}), allowed_ports=frozenset({443})
+    )
+
+    assert request.deadline_seconds > (request.timeout_ms + request.settle_ms) / 1000
+
+
+def test_the_deadline_follows_the_timeouts_it_covers() -> None:
+    """Derived rather than configured separately, so raising a timeout cannot leave
+    the deadline underneath it."""
+    patient = BrowserRunRequest(
+        target="https://h/",
+        allowed_hosts=frozenset({"h"}),
+        allowed_ports=frozenset({443}),
+        timeout_ms=45_000,
+        settle_ms=8_000,
+    )
+    brisk = BrowserRunRequest(
+        target="https://h/",
+        allowed_hosts=frozenset({"h"}),
+        allowed_ports=frozenset({443}),
+        timeout_ms=5_000,
+        settle_ms=1_000,
+    )
+
+    assert patient.deadline_seconds > brisk.deadline_seconds
+
+
+async def test_a_visit_that_never_finishes_is_abandoned() -> None:
+    """Timing out is reported as a failed visit, which the caller already treats as a
+    lost pass rather than a lost cycle."""
+
+    class Forever(IsolatedBrowserRunner):
+        async def _visit(self, request: BrowserRunRequest) -> BrowserRunResult:
+            await asyncio.sleep(3600)
+            raise AssertionError("unreachable")
+
+    class Impatient(Forever):
+        pass
+
+    request = BrowserRunRequest(
+        target="https://h/",
+        allowed_hosts=frozenset({"h"}),
+        allowed_ports=frozenset({443}),
+        timeout_ms=1_000,
+        settle_ms=1_000,
+    )
+    # The allowance for launching a browser dominates the derived deadline, which is
+    # right in production and far too patient for a test, so it is overridden here.
+    with (
+        mock.patch.object(
+            type(request), "deadline_seconds", property(lambda _self: 0.05)
+        ),
+        pytest.raises(BrowserVisitTimeoutError, match="exceeded"),
+    ):
+        await Impatient().run(request)
