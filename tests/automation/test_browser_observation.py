@@ -14,6 +14,7 @@ from vuln_proof_claw.automation.browser import (
     BrowserRunResult,
     LoginInstruction,
     ObservedRequest,
+    body_field_names,
     inventory,
 )
 from vuln_proof_claw.domain.errors import DomainValidationError
@@ -152,3 +153,47 @@ def test_a_login_instruction_never_prints_its_credentials() -> None:
 
     assert "sup3r-s3cret-value" not in rendered
 
+
+def test_json_body_field_names_are_recorded() -> None:
+    assert body_field_names('{"account": "a", "password": "p"}') == ("account", "password")
+
+
+def test_form_body_field_names_are_recorded() -> None:
+    assert body_field_names("login=a&passwd=p&xsrf=t") == ("login", "passwd", "xsrf")
+
+
+def test_no_value_is_reachable_from_what_is_recorded() -> None:
+    """The promise is not that values are redacted; it is that none is returned."""
+    names = body_field_names('{"account": "account199", "password": "sup3r-s3cret"}')
+
+    assert names == ("account", "password")
+    assert all("sup3r-s3cret" not in name for name in names)
+    assert all("account199" not in name for name in names)
+
+
+def test_a_body_that_cannot_be_parsed_yields_nothing() -> None:
+    """Nothing rather than a guess: an invented field name is worse than none."""
+    assert body_field_names("<xml><a/></xml>") == ()
+    assert body_field_names("") == ()
+    assert body_field_names(None) == ()
+
+
+def test_a_json_array_has_no_field_names() -> None:
+    assert body_field_names('["a", "b"]') == ()
+
+
+def test_a_repeated_field_is_named_once() -> None:
+    assert body_field_names("id=1&id=2&name=x") == ("id", "name")
+
+
+def test_an_observation_carries_the_names_it_was_given() -> None:
+    request = ObservedRequest(
+        method="POST",
+        url="https://h/api/web/login",
+        resource_type="xhr",
+        carried_body=True,
+        body_keys=("account", "password"),
+    )
+
+    assert request.body_keys == ("account", "password")
+    assert "sup3r" not in repr(request)

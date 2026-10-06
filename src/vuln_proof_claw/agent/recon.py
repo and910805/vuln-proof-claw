@@ -102,6 +102,14 @@ class ReconResult:
     """What one reconnaissance pass recovered."""
 
     base_url: str
+    source: str = "jsdiscovery"
+    """How these paths were learned.
+
+    A path read from source is an inference; a path seen on the wire is a fact. They
+    are stored differently so that a later pass can tell one from the other — without
+    that distinction nothing can check an inference against an observation.
+    """
+
     assets: tuple[FetchedAsset, ...] = ()
     calls: tuple[DiscoveredCall, ...] = ()
     classifications: tuple[EndpointClassification, ...] = ()

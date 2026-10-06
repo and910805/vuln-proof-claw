@@ -14,11 +14,12 @@ discovery source, and the classifier decides what may be called.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import import_module
 from typing import Any, Final
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import SecretStr
 
@@ -139,19 +140,49 @@ class BrowserRunRequest:
         object.__setattr__(self, "allowed_hosts", normalized_hosts)
 
 
+def body_field_names(body: str | None) -> tuple[str, ...]:
+    """Return the field names a request body carried, and nothing else.
+
+    Understands JSON objects and form encoding, which is what a browser sends. A value
+    is never read: it is not needed to describe an endpoint and a login's is a
+    credential, so the only way to keep that promise is for no value to be reachable
+    from what this returns.
+
+    A body it cannot parse yields nothing rather than a guess.
+    """
+    if not body:
+        return ()
+    try:
+        document = json.loads(body)
+    except ValueError:
+        document = None
+    if isinstance(document, dict):
+        return tuple(str(key) for key in document)
+    if document is not None:
+        return ()
+    try:
+        return tuple(dict.fromkeys(name for name, _ in parse_qsl(body, strict_parsing=True)))
+    except ValueError:
+        return ()
+
+
 @dataclass(frozen=True, slots=True)
 class ObservedRequest:
     """One request the application made of its own accord.
 
-    ``carried_body`` rather than the body itself: what a request *was* is enough to
-    classify an endpoint, and a login's body is a credential. Recording the shape and
-    not the contents keeps this safe to write into evidence.
+    ``carried_body`` rather than the body itself, and ``body_keys`` rather than the
+    values under them. A login's body is a credential; the names of its fields are not,
+    and they are what parameter testing needs to know. Nothing here can carry a value,
+    which is what keeps an observation safe to write into evidence.
     """
 
     method: str
     url: str
     resource_type: str
     carried_body: bool
+    body_keys: tuple[str, ...] = ()
+    """The field names a body carried, never the values under them."""
+
     sent_at: datetime | None = None
     """When the browser issued it, taken as it was issued.
 
@@ -240,6 +271,7 @@ class IsolatedBrowserRunner:
                             url=outgoing.url,
                             resource_type=outgoing.resource_type,
                             carried_body=outgoing.post_data is not None,
+                            body_keys=body_field_names(outgoing.post_data),
                             sent_at=datetime.now(UTC),
                         )
                     )

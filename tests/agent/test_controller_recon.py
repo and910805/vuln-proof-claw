@@ -43,6 +43,8 @@ from vuln_proof_claw.persistence.autonomous_repositories import (
 )
 
 TARGET = f"https://{TARGET_HOST}:443/api/getCompanyDisplay"
+# Past the default http_inventory cadence, so a second pass is due.
+LATER = NOW + timedelta(hours=1)
 
 
 @pytest.fixture
@@ -58,6 +60,7 @@ class StubRecon:
     explode: bool = False
     calls: int = 0
     requests_sent: int = 0
+    source: str = "jsdiscovery"
 
     def discover(self, *, at: datetime) -> ReconResult:
         self.calls += 1
@@ -66,6 +69,7 @@ class StubRecon:
         return ReconResult(
             base_url=f"https://{TARGET_HOST}/",
             classifications=self.classifications,
+            source=self.source,
             # Spread across minutes, as a paced reconnaissance pass really is.
             sent_at=tuple(
                 at + timedelta(seconds=30 * index) for index in range(self.requests_sent)
@@ -106,13 +110,14 @@ def controller_with(  # noqa: PLR0913 - explicit collaborators keep the setup re
     recon: StubRecon | None = None,
     prober: StubProber | None = None,
     probe_mutating: bool = False,
+    now: datetime = NOW,
 ) -> MissionController:
     return MissionController(
         session,  # type: ignore[arg-type]
         mission_id,
         planner=DeterministicPlanner(),
         executor=executor,
-        clock=frozen_clock(),  # type: ignore[arg-type]
+        clock=frozen_clock(now),  # type: ignore[arg-type]
         reconnaissance=recon,
         prober=prober,
         probe_mutating=probe_mutating,
@@ -642,3 +647,119 @@ def test_a_clear_verdict_creates_nothing(engine: Engine) -> None:
 
     assert summary.candidates_created == 0
     assert summary.leads_created == 0
+
+
+def observed_recon(*paths: tuple[str, str]) -> StubRecon:
+    """Reconnaissance that saw these leave, rather than reading them from source."""
+    stub = StubRecon(classifications=classify_all(paths))
+    stub.source = "observed"
+    return stub
+
+
+def test_paths_read_from_source_are_corrected_by_what_was_observed(
+    engine: Engine,
+) -> None:
+    """A client written against /web/x calls /api/web/x. Every inferred path is wrong
+    the same way, and probing them yields a tidy page of "no handler reached"."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        # First the browser sees three calls go out.
+        seen = observed_recon(
+            ("GET", "/api/web/alpha"),
+            ("GET", "/api/web/beta"),
+            ("GET", "/api/web/gamma"),
+        )
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=seen
+        )
+        controller.run_cycle(controller.start_run())
+
+        # Then, a cadence later, the bundle is read and describes them without it.
+        inferred = recon_for(
+            ("GET", "/web/alpha"),
+            ("GET", "/web/beta"),
+            ("GET", "/web/gamma"),
+            ("GET", "/web/delta"),
+        )
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=inferred,
+            now=LATER,
+        )
+        controller.run_cycle(controller.start_run())
+
+        stored = {
+            item.entity.path
+            for item in EndpointRepository(session).list_for_engagement(engagement_id)
+        }
+
+    # The one the browser never saw is corrected too, on the strength of the three it did.
+    assert "/api/web/delta" in stored
+    assert "/web/delta" not in stored
+
+
+def test_without_enough_observations_nothing_is_rewritten(engine: Engine) -> None:
+    """One agreement can be coincidence, and a prefix applied on that basis turns one
+    set of wrong paths into another while making them look confirmed."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=observed_recon(("GET", "/api/web/alpha")),
+        )
+        controller.run_cycle(controller.start_run())
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/web/alpha"), ("GET", "/web/delta")),
+            now=LATER,
+        )
+        controller.run_cycle(controller.start_run())
+
+        stored = {
+            item.entity.path
+            for item in EndpointRepository(session).list_for_engagement(engagement_id)
+        }
+
+    assert "/web/delta" in stored
+    assert "/api/web/delta" not in stored
+
+
+def test_an_observation_is_recorded_as_observed(engine: Engine) -> None:
+    """Reconciliation needs to tell an inference from a fact, so the store must say."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=observed_recon(("GET", "/api/web/alpha")),
+        )
+        controller.run_cycle(controller.start_run())
+
+        sources = {
+            item.entity.source
+            for item in EndpointRepository(session).list_for_engagement(engagement_id)
+        }
+
+    # The label carries the discovery source and what the classifier made of it;
+    # reconciliation reads the source half.
+    assert sources == {"observed:read"}

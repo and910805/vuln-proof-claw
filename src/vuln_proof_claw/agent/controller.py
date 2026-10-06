@@ -23,7 +23,7 @@ from vuln_proof_claw.agent.candidates import (
     record_verdicts,
 )
 from vuln_proof_claw.agent.differential import OracleVerdict
-from vuln_proof_claw.agent.endpoints import classify_endpoint
+from vuln_proof_claw.agent.endpoints import classify_all, classify_endpoint
 from vuln_proof_claw.agent.leads import (
     begin_attempt,
     evaluate_eligibility,
@@ -37,6 +37,7 @@ from vuln_proof_claw.agent.leads import (
 from vuln_proof_claw.agent.memory import ResearchMemory
 from vuln_proof_claw.agent.planner import Planner, ResearchPlan, validate_plan
 from vuln_proof_claw.agent.recon import ReconResult
+from vuln_proof_claw.agent.reconcile import apply_prefix, find_prefix
 from vuln_proof_claw.agent.scheduler import (
     RecurringTask,
     evaluate_task,
@@ -95,6 +96,9 @@ _LEAD_SELECTION_LIMIT = 50
 _SCHEDULABLE_STATUSES = (LeadStatus.NEW, LeadStatus.QUEUED, LeadStatus.WAITING)
 _ENDPOINT_SELECTION_LIMIT = 500
 _SWEEP_COMPLETED_EVENT = "agent.sweep_completed"
+#: How a path learned by watching the application is labelled, as opposed to one
+#: read from its source. The distinction is what makes reconciliation possible.
+_OBSERVED_SOURCE = "observed"
 
 
 class MissionControllerError(Exception):
@@ -447,11 +451,33 @@ class MissionController:
                 requests_sent=result.requests_sent, skipped="no_endpoints_recovered"
             )
 
+        classifications = result.classifications
+        reconciled = ""
+        if result.source != _OBSERVED_SOURCE:
+            # Paths read from source are relative to whatever base the client prepends
+            # at run time. Checking them against what was actually seen on the wire is
+            # the only way to find that out, and the finding is only applied when the
+            # evidence establishes it — see agent.reconcile.
+            finding = find_prefix(
+                tuple(item.path for item in classifications),
+                self._observed_paths(mission.engagement_id),
+            )
+            if finding.established:
+                classifications = classify_all(
+                    apply_prefix(
+                        tuple((item.method, item.path) for item in classifications),
+                        finding.prefix,
+                    )
+                )
+                reconciled = finding.describe()
+                _LOGGER.info("reconciled inferred paths: %s", reconciled)
+
         stored, held = record_endpoints(
             self._session,
             mission.engagement_id,
             result.base_url,
-            result.classifications,
+            classifications,
+            source=result.source,
             at=at,
         )
         self._audit(
@@ -460,6 +486,8 @@ class MissionController:
                 "endpoints": stored,
                 "held_back": held,
                 "requests_sent": result.requests_sent,
+                "source": result.source,
+                "reconciled": reconciled,
                 "first_request_at": _moment_text(result.sent_at[:1]),
                 "last_request_at": _moment_text(result.sent_at[-1:]),
                 "surface_digest": result.surface_digest,
@@ -650,6 +678,16 @@ class MissionController:
                 leads += 1
         self._session.commit()
         return ReconSummary(candidates_created=recorded.total, leads_created=leads)
+
+    def _observed_paths(self, engagement_id: EngagementId) -> tuple[str, ...]:
+        """Return the paths this engagement has actually seen leave for the target."""
+        return tuple(
+            stored.entity.path
+            for stored in EndpointRepository(self._session).list_for_engagement(
+                engagement_id, limit=_ENDPOINT_SELECTION_LIMIT
+            )
+            if stored.entity.source.startswith(_OBSERVED_SOURCE)
+        )
 
     def _last_recon_at(self, engagement_id: EngagementId) -> datetime | None:
         """Return when reconnaissance last stored an endpoint, if ever."""

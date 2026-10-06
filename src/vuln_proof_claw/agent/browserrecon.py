@@ -95,6 +95,7 @@ class BrowserReconnaissance:
 
         return ReconResult(
             base_url=result.final_url or self.base_url,
+            source="observed",
             classifications=classify_all(inventory(observed)),
             errors=tuple(errors),
             sent_at=tuple(
