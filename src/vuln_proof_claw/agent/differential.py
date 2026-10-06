@@ -337,7 +337,7 @@ def check_unauthenticated_access(  # noqa: PLR0911 - one guard clause per suppre
     )
 
 
-def check_horizontal_privilege(
+def check_horizontal_privilege(  # noqa: PLR0911 - one guard clause per suppression
     probes: Sequence[ProbeResult],
     *,
     owner: str,
@@ -376,6 +376,18 @@ def check_horizontal_privilege(
             triggered=False,
             target=target,
             reason=f"{other} correctly received {other_probe.status_code}",
+        )
+    benign = _not_business_content(owner_probe.content_type)
+    if benign is not None:
+        # Identical bodies are the whole signal for a comparison rule, and a file the
+        # server hands to everyone is identical to everyone by design.
+        reason, suppression = benign
+        return OracleVerdict(
+            OracleRule.HORIZONTAL_PRIVILEGE,
+            triggered=False,
+            target=target,
+            reason=f"{owner} {reason}",
+            suppressed_by=suppression,
         )
     if other_probe.body_digest != owner_probe.body_digest:
         return OracleVerdict(
@@ -441,6 +453,18 @@ def check_vertical_privilege(
             triggered=False,
             target=target,
             reason=f"{lower} correctly received {low.status_code}",
+        )
+    benign = _not_business_content(low.content_type)
+    if benign is not None:
+        # Identical bodies are the whole signal for a comparison rule, and a file the
+        # server hands to everyone is identical to everyone by design.
+        reason, suppression = benign
+        return OracleVerdict(
+            OracleRule.VERTICAL_PRIVILEGE,
+            triggered=False,
+            target=target,
+            reason=f"{lower} {reason}",
+            suppressed_by=suppression,
         )
     if low.body_digest != high.body_digest:
         return OracleVerdict(

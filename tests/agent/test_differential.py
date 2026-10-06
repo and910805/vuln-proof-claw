@@ -8,8 +8,11 @@ rules a bad report costs one of only two 補正 chances.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+from vuln_proof_claw.agent import differential
 from vuln_proof_claw.agent.differential import (
     ANONYMOUS,
     Identity,
@@ -559,3 +562,52 @@ def test_an_endpoint_that_answers_normally_still_triggers() -> None:
     )
 
     assert verdict.triggered is True
+
+
+# Every rule that can fire on a response, and how to call it with one body. A new rule
+# added to the module without an entry here fails the test below rather than silently
+# shipping without the judgement the other four share.
+ORACLES = {
+    "missing_authentication": lambda p: check_missing_authentication(p(ANONYMOUS)),
+    "unauthenticated_access": lambda p: check_unauthenticated_access(
+        (p(ANONYMOUS), p("account_a")), authenticated="account_a"
+    ),
+    "horizontal_privilege": lambda p: check_horizontal_privilege(
+        (p("account_a"), p("account_b")), owner="account_a", other="account_b"
+    ),
+    "vertical_privilege": lambda p: check_vertical_privilege(
+        (p("account_a"), p("admin")), lower="account_a", higher="admin"
+    ),
+    "denial_inconsistency": lambda p: check_denial_inconsistency(
+        (p(ANONYMOUS), p("account_a"))
+    ),
+}
+
+
+@pytest.mark.parametrize("rule", sorted(ORACLES))
+@pytest.mark.parametrize("content_type", ["application/javascript", "text/html", "image/png"])
+def test_no_rule_reports_a_served_file(rule: str, content_type: str) -> None:
+    """Three rules learned this one at a time, each after a live sweep produced the
+    same false positives under a different name: eleven webpack chunks as improper
+    access control, then seven of them again as privilege escalation. Fixing the rule
+    in front of you is how the fourth one keeps happening."""
+    verdict = ORACLES[rule](
+        lambda identity: probe(identity, 200, digest=OWNER_BODY, content_type=content_type)
+    )
+
+    assert verdict.triggered is False, f"{rule} reported a {content_type} file"
+
+
+def test_every_rule_in_the_module_is_covered_here() -> None:
+    """The guard on the guard. A rule added without an entry above would pass the test
+    that checks each rule, by not being one of them."""
+    defined = {
+        name.removeprefix("check_")
+        for name, value in vars(differential).items()
+        if name.startswith("check_") and inspect.isfunction(value)
+    }
+
+    assert defined == set(ORACLES), (
+        f"rules with no entry in ORACLES: {sorted(defined - set(ORACLES))}; "
+        f"entries naming no rule: {sorted(set(ORACLES) - defined)}"
+    )
