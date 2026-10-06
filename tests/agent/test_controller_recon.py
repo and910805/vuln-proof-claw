@@ -1391,3 +1391,48 @@ def test_a_sweep_that_finished_its_plan_still_waits(engine: Engine) -> None:
         controller.run_cycle(controller.start_run())
 
     assert later.plans == []
+
+
+def test_a_sweep_recorded_before_the_budget_count_existed_is_not_assumed_finished(
+    engine: Engine,
+) -> None:
+    """Every record predating a change predates it. Reading a missing field as "that
+    sweep finished its plan" makes this rule unreachable for exactly the targets whose
+    sweeps were cut short before the field existed -- which is all of them.
+
+    Third time today. The other two were the entry-URL rule and the widened-plan rule,
+    and both failed the same way for the same reason."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=StubProber(),
+        )
+        controller.run_cycle(controller.start_run())
+
+        # A sweep record as an older release wrote it: counts, nothing about budget.
+        session.execute(
+            text("update audit_events set payload = :body where event_type = :kind"),
+            {"body": b'{"probed": 63, "withheld": 395}', "kind": "agent.sweep_completed"},
+        )
+        session.commit()
+
+        later = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=later,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert later.plans, "an old record was read as a finished plan"

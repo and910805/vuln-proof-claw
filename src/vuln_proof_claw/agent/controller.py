@@ -704,7 +704,17 @@ class MissionController:
                 return False
             if not isinstance(payload, dict):
                 return False
-            return int(payload.get("withheld_for_budget", 0)) > 0
+            if "withheld_for_budget" not in payload:
+                # Written before this was recorded, which says nothing about whether
+                # that sweep finished its plan -- and "nothing" is not "it did".
+                #
+                # Third time today I have defaulted a missing field the other way and
+                # made a rule unreachable for exactly the records that needed it. The
+                # cost of being wrong here is one extra sweep of endpoints that may
+                # already have been asked; the cost of the other default was 334
+                # endpoints never asked at all.
+                return True
+            return int(payload["withheld_for_budget"]) > 0
         return False
 
     def _plan_widened(self, engagement_id: EngagementId) -> bool:
