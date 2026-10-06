@@ -72,6 +72,15 @@ class RunnerConfig:
 
     watchdog_seconds: int = DEFAULT_WATCHDOG_SECONDS
     maximum_consecutive_failures: int = 10
+    maximum_cycles: int = 0
+    """Stop after this many completed cycles. Zero means never.
+
+    An engagement with several targets and one concurrency budget has to work them in
+    turn, and a loop that never ends cannot be taken in turns. A bounded run lets a
+    scheduler give each target a share and move on, instead of the operator stopping
+    one by hand to start the next -- which is how four of them ended up running at
+    once.
+    """
     initial_backoff_seconds: int = 5
     maximum_backoff_seconds: int = 900
     paused_poll_seconds: int = 60
@@ -85,6 +94,8 @@ class RunnerConfig:
             raise DomainValidationError("maximum_backoff_seconds must not be below the initial")
         if self.paused_poll_seconds < 1:
             raise DomainValidationError("paused_poll_seconds must be at least one")
+        if self.maximum_cycles < 0:
+            raise DomainValidationError("maximum_cycles must not be negative")
 
     def backoff_for(self, consecutive_failures: int) -> int:
         """Return the capped exponential delay after N consecutive failures."""
@@ -153,6 +164,8 @@ class MissionRunner:
 
             completed += 1
             consecutive = 0
+            if self.config.maximum_cycles and completed >= self.config.maximum_cycles:
+                return RunnerReport(completed, failed, "cycle_limit", last_error)
             if self._wait(stop, self._seconds_until(report.next_cycle_at)):
                 break
 
