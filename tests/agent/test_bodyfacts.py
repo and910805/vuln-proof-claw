@@ -86,62 +86,38 @@ def test_the_content_type_may_be_absent() -> None:
     assert declares_failure('{"success": false}') is True
 
 
-def test_an_error_envelope_in_another_vocabulary() -> None:
-    """A mail platform's POST /auth/token with an empty body: HTTP 200 and
-    {"ERROR_CODE": "ERR_01", "ERROR_MESSAGE": "Authentication failed"}. The
-    application refused; it simply does not use the words the other checks know."""
-    body = '{"ERROR_CODE":"ERR_01","ERROR_MESSAGE":"Authentication failed"}'
+def test_a_refusal_in_a_vocabulary_this_does_not_know_is_not_claimed() -> None:
+    """A mail platform answers an unauthenticated POST /auth/token with HTTP 200 and
+    {"ERROR_CODE": "ERR_01", "ERROR_MESSAGE": "Authentication failed"}. That is a
+    refusal, and this returns False for it.
 
-    assert declares_failure(body, content_type=JSON) is True
+    A rule to catch it existed for under an hour. It also read
+    {"Status": "Error", "ErrorMessage": "Request data is not complete."} as a refusal,
+    and that one is a finding: the endpoint reached its own parameter validation
+    without authenticating anyone. Telling the two apart means reading which failure
+    the message describes, which is the one thing this module exists not to do.
 
+    One candidate per such product, triaged by hand, is the price. The alternative was
+    retracting a submitted finding silently."""
+    refusal = '{"ERROR_CODE":"ERR_01","ERROR_MESSAGE":"Authentication failed"}'
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        '{"errorCode": "E42"}',
-        '{"errcode": "x", "errmsg": "nope"}',
-        '{"error": "forbidden", "code": 403}',
-    ],
-)
-def test_the_same_envelope_however_it_is_spelled(body: str) -> None:
-    assert declares_failure(body, content_type=JSON) is True
-
-
-def test_an_error_alongside_data_is_not_an_envelope() -> None:
-    """Suppressing this would hide a real finding to avoid a false one, which is the
-    wrong trade in a tool whose suppressions nobody reads."""
-    body = '{"error": "partial", "users": [{"id": 1}]}'
-
-    assert declares_failure(body, content_type=JSON) is False
-
-
-@pytest.mark.parametrize(
-    "body",
-    ['{"errors": []}', '{"error": ""}', '{"error": null}', '{"error_count": 0}'],
-)
-def test_an_application_saying_there_was_no_error(body: str) -> None:
-    assert declares_failure(body, content_type=JSON) is False
-
-
-def test_an_envelope_with_no_error_field_declares_nothing() -> None:
-    """{"status": "ok", "code": 200} is an outcome, and the outcome is success."""
-    assert declares_failure('{"status": "ok", "code": 200}', content_type=JSON) is False
+    assert declares_failure(refusal, content_type=JSON) is False
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        # The nine exchanges behind a submitted IT-08 report. Every one of them must
-        # keep triggering: a change that widens what counts as "the application
-        # refused" can retract a finding already sent to a vendor, and nothing in the
-        # pipeline would say so.
+        # Three of the nine exchanges behind a written IT-08 report. Two say
+        # Status: Error, and that is the finding -- the endpoint reached its own
+        # validation layer unauthenticated, and complaining about the parameters
+        # afterwards is the proof. Trimmed to the fields that carry the meaning,
+        # because the full bodies would pass this for the wrong reason.
         '{"Data":[],"Status":"Success","ErrorMessage":""}',
         '{"Status":"Error","ErrorMessage":"adminUuid is not existing"}',
         '{"Status":"Error","ErrorMessage":"Request data is not complete."}',
     ],
 )
 def test_a_submitted_finding_is_not_retracted_by_this(body: str) -> None:
-    """Two of these say Status: Error -- and they are the finding. The endpoint reached
-    its own validation layer without being authenticated, which is the defect; it
-    complaining about the parameters afterwards is the proof, not a refusal."""
+    """A change widening what counts as "the application refused" can retract a
+    finding already sent to a vendor, and nothing else in the pipeline would notice."""
     assert declares_failure(body, content_type=JSON) is False
