@@ -164,6 +164,24 @@ class LeadOutcome:
     reason: str
 
 
+def _as_sources(
+    reconnaissance: Reconnaissance | Sequence[Reconnaissance] | None,
+) -> tuple[Reconnaissance, ...]:
+    """Accept one source or several.
+
+    Reading a bundle and watching a browser answer different questions, and the
+    second is what makes the first trustworthy: only an observed request can show
+    that every inferred path is missing the prefix the client prepends at run time.
+    An agent asked to run unattended should not have to be launched twice, in the
+    right order, to get both.
+    """
+    if reconnaissance is None:
+        return ()
+    if isinstance(reconnaissance, Sequence):
+        return tuple(reconnaissance)
+    return (reconnaissance,)
+
+
 @dataclass(frozen=True, slots=True)
 class ReconSummary:
     """What reconnaissance contributed to a cycle."""
@@ -228,7 +246,7 @@ class MissionController:
         executor: ActionExecutor,
         actor: str = "agent:controller",
         clock: Callable[[], datetime] = _utc_now,
-        reconnaissance: Reconnaissance | None = None,
+        reconnaissance: Reconnaissance | Sequence[Reconnaissance] | None = None,
         prober: Prober | None = None,
         probe_mutating: bool = False,
     ) -> None:
@@ -236,7 +254,7 @@ class MissionController:
         self._mission_id = mission_id
         self._planner = planner
         self._executor = executor
-        self._reconnaissance = reconnaissance
+        self._reconnaissance = _as_sources(reconnaissance)
         self._prober = prober
         self._probe_mutating = probe_mutating
         self._actor = actor
@@ -421,7 +439,7 @@ class MissionController:
         A reconnaissance failure never fails the cycle. Losing one pass costs a delay;
         aborting the cycle would also abandon the leads already waiting to be worked.
         """
-        if self._reconnaissance is None:
+        if not self._reconnaissance:
             return ReconSummary(skipped="no_reconnaissance_configured")
 
         decision = evaluate_task(
@@ -433,23 +451,51 @@ class MissionController:
         if not decision.due:
             return ReconSummary(skipped=decision.reason)
 
-        try:
-            result = self._reconnaissance.discover(at=at)
-        except Exception as error:  # noqa: BLE001 - recon must not fail the cycle
-            _LOGGER.warning("reconnaissance failed: %s", error)
-            self._audit("agent.recon_failed", {"error": str(error)[:200]}, at=at)
-            self._session.commit()
+        results: list[ReconResult] = []
+        for source in self._reconnaissance:
+            try:
+                results.append(source.discover(at=at))
+            except Exception as error:  # noqa: BLE001 - recon must not fail the cycle
+                _LOGGER.warning("reconnaissance failed: %s", error)
+                self._audit("agent.recon_failed", {"error": str(error)[:200]}, at=at)
+                self._session.commit()
+
+        if not results:
             return ReconSummary(skipped="reconnaissance_failed")
 
-        # Reconnaissance is bounded and paced, but every request it sent still has to
-        # appear in the ledger. A mission that under-reports what it put on the wire
-        # cannot answer the only question the rate limit exists to answer.
-        self._charge(mission, result.base_url, result.sent_at)
+        # Observation before inference, whatever order the sources were configured in.
+        # A prefix is reconciled against facts already in the store, so what was seen
+        # on the wire has to be recorded before what was read from a bundle — getting
+        # this backwards costs nothing visible and silently skips the correction.
+        results.sort(key=lambda result: result.source != _OBSERVED_SOURCE)
 
-        if not result.classifications:
+        recorded = held_back = requests_sent = 0
+        for result in results:
+            # Reconnaissance is bounded and paced, but every request it sent still has
+            # to appear in the ledger. A mission that under-reports what it put on the
+            # wire cannot answer the only question the rate limit exists to answer.
+            self._charge(mission, result.base_url, result.sent_at)
+            requests_sent += result.requests_sent
+            stored, held = self._record_recon(mission, result, at=at)
+            recorded += stored
+            held_back += held
+
+        if not recorded and not held_back:
             return ReconSummary(
-                requests_sent=result.requests_sent, skipped="no_endpoints_recovered"
+                requests_sent=requests_sent, skipped="no_endpoints_recovered"
             )
+        return ReconSummary(
+            endpoints_recorded=recorded,
+            endpoints_held_back=held_back,
+            requests_sent=requests_sent,
+        )
+
+    def _record_recon(
+        self, mission: Mission, result: ReconResult, *, at: datetime
+    ) -> tuple[int, int]:
+        """Store one pass's endpoints, correcting inferred paths where evidence allows."""
+        if not result.classifications:
+            return (0, 0)
 
         classifications = result.classifications
         reconciled = ""
@@ -495,11 +541,7 @@ class MissionController:
             at=self._now(),
         )
         self._session.commit()
-        return ReconSummary(
-            endpoints_recorded=stored,
-            endpoints_held_back=held,
-            requests_sent=result.requests_sent,
-        )
+        return (stored, held)
 
     def _charge(
         self, mission: Mission, base_url: str, sent_at: Sequence[datetime]

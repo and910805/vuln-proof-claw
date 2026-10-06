@@ -111,6 +111,7 @@ def controller_with(  # noqa: PLR0913 - explicit collaborators keep the setup re
     prober: StubProber | None = None,
     probe_mutating: bool = False,
     now: datetime = NOW,
+    recon_sources: Sequence[StubRecon] | None = None,
 ) -> MissionController:
     return MissionController(
         session,  # type: ignore[arg-type]
@@ -118,7 +119,7 @@ def controller_with(  # noqa: PLR0913 - explicit collaborators keep the setup re
         planner=DeterministicPlanner(),
         executor=executor,
         clock=frozen_clock(now),  # type: ignore[arg-type]
-        reconnaissance=recon,
+        reconnaissance=recon_sources if recon_sources is not None else recon,
         prober=prober,
         probe_mutating=probe_mutating,
     )
@@ -763,3 +764,70 @@ def test_an_observation_is_recorded_as_observed(engine: Engine) -> None:
     # The label carries the discovery source and what the classifier made of it;
     # reconciliation reads the source half.
     assert sources == {"observed:read"}
+
+
+def test_one_cycle_uses_every_configured_source(engine: Engine) -> None:
+    """Both sources in a single pass, so nobody has to launch the agent twice in the
+    right order to get a surface that is both complete and correctly addressed."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        # Configured inference-first, which is the order that would not work if the
+        # controller simply ran them as given.
+        inferred = recon_for(
+            ("GET", "/web/alpha"),
+            ("GET", "/web/beta"),
+            ("GET", "/web/gamma"),
+            ("GET", "/web/delta"),
+        )
+        seen = observed_recon(
+            ("GET", "/api/web/alpha"),
+            ("GET", "/api/web/beta"),
+            ("GET", "/api/web/gamma"),
+        )
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon_sources=(inferred, seen),
+        )
+        controller.run_cycle(controller.start_run())
+
+        stored = {
+            item.entity.path
+            for item in EndpointRepository(session).list_for_engagement(engagement_id)
+        }
+
+    assert inferred.calls == 1
+    assert seen.calls == 1
+    assert "/api/web/delta" in stored
+    assert "/web/delta" not in stored
+
+
+def test_one_source_failing_does_not_lose_the_other(engine: Engine) -> None:
+    """A browser that is not installed should cost the browser's contribution, not the
+    cycle's."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon_sources=(StubRecon(explode=True), recon_for(("GET", "/web/alpha"))),
+        )
+        report = controller.run_cycle(controller.start_run())
+
+        stored = {
+            item.entity.path
+            for item in EndpointRepository(session).list_for_engagement(engagement_id)
+        }
+
+    assert report.recon.skipped is None
+    assert stored == {"/web/alpha"}

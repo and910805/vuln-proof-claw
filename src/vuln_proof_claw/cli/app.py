@@ -433,30 +433,35 @@ def _reconnaissance(  # noqa: PLR0913 - each argument is a separate operator dec
     session_headers: Callable[[], tuple[tuple[str, str], ...]] | None,
     use_browser: bool,
     browser_login: LoginInstruction | None,
-) -> Reconnaissance | None:
-    """Build the discovery source, or none when no entry point was given."""
+) -> tuple[Reconnaissance, ...]:
+    """Build the discovery sources, or none when no entry point was given."""
     if base_url is None:
-        return None
+        return ()
+    sources: list[Reconnaissance] = [
+        SpaReconnaissance(
+            transport=PinnedAuthTransport(
+                scope,  # type: ignore[arg-type]
+                ssl_context=tls,
+                read_only_origins=origins,
+            ),
+            scope=scope,  # type: ignore[arg-type]
+            base_url=base_url,
+            asset_origins=origins,
+            session_headers=session_headers,
+        )
+    ]
     if use_browser:
         # The browser path carries its own session: it signs in through the page rather
         # than replaying a cookie, so the header supplier does not apply to it.
-        return BrowserReconnaissance(
-            scope=scope,  # type: ignore[arg-type]
-            base_url=base_url,
-            ignore_https_errors=tls is not None,
-            login=browser_login,
+        sources.append(
+            BrowserReconnaissance(
+                scope=scope,  # type: ignore[arg-type]
+                base_url=base_url,
+                ignore_https_errors=tls is not None,
+                login=browser_login,
+            )
         )
-    return SpaReconnaissance(
-        transport=PinnedAuthTransport(
-            scope,  # type: ignore[arg-type]
-            ssl_context=tls,
-            read_only_origins=origins,
-        ),
-        scope=scope,  # type: ignore[arg-type]
-        base_url=base_url,
-        asset_origins=origins,
-        session_headers=session_headers,
-    )
+    return tuple(sources)
 
 
 def _discovery_session(
@@ -633,9 +638,10 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
         bool,
         typer.Option(
             "--browser",
-            help="Recover the surface by watching a browser use the target, instead "
-            "of reading its JavaScript. Finds the paths the application actually "
-            "sends, which are not always the ones its source contains. Needs "
+            help="Also watch a browser use the target, alongside reading its "
+            "JavaScript. The paths an application sends are not always the ones its "
+            "source contains, and only an observed request can show the difference: "
+            "what is seen corrects what is inferred, in the same pass. Needs "
             "vuln-proof-claw[browser].",
         ),
     ] = False,
