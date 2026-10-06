@@ -1318,3 +1318,76 @@ def test_a_request_is_not_charged_twice(engine: Engine) -> None:
         ).scalar_one()
 
     assert charged == 4
+
+
+def test_a_sweep_the_budget_cut_short_continues_next_cycle(engine: Engine) -> None:
+    """The largest target holds 397 probeable endpoints and its last completed sweep
+    reached 63. The other 334 were withheld for budget -- not asked, and not new, so
+    neither of the other two rules reaches them -- and the cadence then held them for
+    twenty-four hours, to be refused again."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        # The sweep's headroom comes from the hour, day and total windows; the
+        # per-minute rate governs how fast it sends, not how much it may plan.
+        mission = seed_mission(
+            session, engagement_id, budget=MissionBudget(requests_per_hour=2)
+        )
+        session.commit()
+
+        surface = tuple(("GET", f"/api/thing{index}") for index in range(6))
+        first = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=first,
+        )
+        controller.run_cycle(controller.start_run())
+        assert first.plans, "the first sweep did not run"
+        assert len(first.plans[0]) < len(surface), "the budget did not cut the plan short"
+
+        later = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=later,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert later.plans, "the endpoints the budget refused waited a day to be refused again"
+
+
+def test_a_sweep_that_finished_its_plan_still_waits(engine: Engine) -> None:
+    """The restraint being relaxed is about re-asking, and that stays."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=StubProber(),
+        )
+        controller.run_cycle(controller.start_run())
+
+        later = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=later,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert later.plans == []

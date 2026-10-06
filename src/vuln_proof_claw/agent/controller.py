@@ -656,6 +656,12 @@ class MissionController:
                 # What the plan was allowed to include, not only how big it was. A
                 # later run that intends to ask more needs to know this one did not.
                 "probed_mutating": self._probe_mutating,
+                # Endpoints the plan wanted and the budget would not pay for. A sweep
+                # that ends with any of these has not finished its plan, and waiting a
+                # day to continue leaves them unasked rather than re-asked.
+                "withheld_for_budget": sum(
+                    1 for _, reason in plan.withheld if reason == "request_budget"
+                ),
                 "requests_sent": outcome.requests_sent,
                 "first_request_at": _moment_text(outcome.sent_at[:1]),
                 "last_request_at": _moment_text(outcome.sent_at[-1:]),
@@ -675,6 +681,31 @@ class MissionController:
             leads_created=recorded.leads_created,
             skipped=outcome.stopped_early,
         )
+
+    def _sweep_left_unfinished(self, engagement_id: EngagementId) -> bool:
+        """Return whether the last sweep stopped with endpoints it could not pay for.
+
+        The interval governs how often the same questions are re-asked. An endpoint the
+        budget refused was not asked at all, and it is not new either -- so neither of
+        the other two rules reaches it, and it waits a day to be refused again.
+
+        Observed: the largest target holds 397 probeable endpoints and its last
+        completed sweep reached 63 of them. The remaining 334 were withheld for budget,
+        and the cadence then held them for twenty-four hours.
+        """
+        for event in AuditEventRepository(self._session).list_for_engagement(
+            engagement_id, limit=60
+        ):
+            if event.event_type != _SWEEP_COMPLETED_EVENT:
+                continue
+            try:
+                payload = json.loads(event.payload)
+            except (ValueError, TypeError):
+                return False
+            if not isinstance(payload, dict):
+                return False
+            return int(payload.get("withheld_for_budget", 0)) > 0
+        return False
 
     def _plan_widened(self, engagement_id: EngagementId) -> bool:
         """Return whether this run intends to ask more than the last sweep did.
@@ -782,6 +813,7 @@ class MissionController:
             not decision.due
             and not self._has_unasked_endpoints(mission.engagement_id, since=swept_at)
             and not self._plan_widened(mission.engagement_id)
+            and not self._sweep_left_unfinished(mission.engagement_id)
         ):
             return decision.reason
 
