@@ -161,10 +161,49 @@ def _target_of(*candidates: ProbeResult | None) -> str:
 
 def _is_html(content_type: str) -> bool:
     """Return whether a response is a web page rather than an API answer."""
-    return content_type.split(";", 1)[0].strip().lower() in {
+    return _media_type(content_type) in {
         "text/html",
         "application/xhtml+xml",
     }
+
+
+def _media_type(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+#: Media types a web server hands out as files, not as answers. Serving one without
+#: authentication is how the web works, so it cannot be evidence that authentication
+#: is missing. Kept as types rather than file extensions because the type is what the
+#: server actually said; a path ending in .js proves nothing on its own.
+_STATIC_TYPES: Final = frozenset(
+    {
+        "application/javascript",
+        "text/javascript",
+        "application/x-javascript",
+        "text/css",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/svg+xml",
+        "image/x-icon",
+        "image/vnd.microsoft.icon",
+        "font/woff",
+        "font/woff2",
+        "font/ttf",
+        "font/otf",
+        "application/font-woff",
+        "application/font-woff2",
+        "application/vnd.ms-fontobject",
+        "text/plain",
+    }
+)
+
+
+def _is_static_asset(content_type: str) -> bool:
+    """Return whether the server answered with a file rather than with business logic."""
+    media = _media_type(content_type)
+    return media in _STATIC_TYPES or media.startswith(("image/", "font/", "audio/", "video/"))
 
 
 def _find(probes: Sequence[ProbeResult], identity: str) -> ProbeResult | None:
@@ -438,7 +477,9 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
     * ``5xx`` with an empty body — an unhandled crash, not a business answer;
     * any redirect — commonly a login redirect, which *is* an auth check;
     * an HTML body — a single-page application serves its own shell on every path it
-      does not recognise, so this says nothing about the endpoint.
+      does not recognise, so this says nothing about the endpoint;
+    * a static asset — a script, stylesheet, font or image is a file the server hands
+      out, and handing one out unauthenticated is how the web works.
     """
     if probe.identity != ANONYMOUS:
         return OracleVerdict(
@@ -482,6 +523,24 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
             target=probe.target,
             reason=f"{probe.status_code} returned HTML, not an API response",
             suppressed_by="html_response_is_an_application_shell",
+        )
+    if _is_static_asset(probe.content_type):
+        # Found on a live target: an anonymous sweep reported missing authentication on
+        # jquery.min.js. The rule was satisfied exactly as written -- an unauthenticated
+        # request received 200 with a body instead of 401 -- which is the trouble. A
+        # static file is not business logic, so serving it proves nothing, and three
+        # such candidates in a review queue cost more than they are worth: each one has
+        # to be read, understood and dismissed by a person before the real ones are
+        # reached.
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=(
+                f"{probe.status_code} returned {_media_type(probe.content_type)}, "
+                "a static file rather than a business-layer answer"
+            ),
+            suppressed_by="static_asset_is_not_business_logic",
         )
     if probe.status_code >= _SERVER_ERROR_MIN and probe.body_size == 0:
         return OracleVerdict(

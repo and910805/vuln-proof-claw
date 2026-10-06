@@ -436,3 +436,45 @@ def test_evaluate_all_omits_the_rule_without_an_anonymous_probe() -> None:
     )
 
     assert all(v.rule is not OracleRule.MISSING_AUTHENTICATION for v in verdicts)
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/javascript",
+        "text/javascript; charset=UTF-8",
+        "text/css",
+        "image/png",
+        "font/woff2",
+        "image/svg+xml",
+    ],
+)
+def test_a_static_file_is_not_evidence_that_authentication_is_missing(
+    content_type: str,
+) -> None:
+    """Found on a live target: an anonymous sweep reported missing authentication on
+    jquery.min.js, cookie.js and comm.js. The rule was satisfied exactly as written --
+    200 with a body instead of 401 -- which is the trouble. Serving a file without a
+    credential is how the web works, and three such candidates in a review queue have
+    to be read and dismissed by a person before the real ones are reached."""
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, content_type=content_type)
+    )
+
+    assert verdict.triggered is False
+    assert verdict.suppressed_by == "static_asset_is_not_business_logic"
+
+
+def test_the_media_type_decides_not_the_file_extension() -> None:
+    """A path ending in .js proves nothing: an API that routes /api/report.js is an
+    API. What the server said it was sending is the fact; the path is a guess."""
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, target=f"{TARGET}/report.js", content_type="application/json")
+    )
+
+    assert verdict.triggered is True
+
+
+def test_an_api_answer_still_triggers() -> None:
+    """The suppression must not quietly swallow the rule it guards."""
+    assert check_missing_authentication(probe(ANONYMOUS, 200)).triggered is True

@@ -325,13 +325,24 @@ class IdentitySessions:
         )
         self._require_permitted(headers)
         started = at or datetime.now(UTC)
-        response = self.transport.send(
-            normalized_method,
-            target,
-            headers=headers,
-            body=body,
-            limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
-        )
+        try:
+            response = self.transport.send(
+                normalized_method,
+                target,
+                headers=headers,
+                body=body,
+                limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
+            )
+        except ProbeError:
+            raise
+        except Exception as failure:
+            # A transport refusal is one probe that did not happen, not a mission that
+            # cannot continue. Everything above this call already knows how to handle a
+            # ProbeError -- record it, count it against the consecutive-error cap, move
+            # to the next endpoint -- and knows nothing about the transport's own
+            # exception type, so one oversized response on one path used to end the
+            # sweep for every other path behind it.
+            raise ProbeError(f"{type(failure).__name__}: {failure}") from failure
         header_map = {name.lower(): value for name, value in response.headers}
         return ProbeResult(
             identity=identity,
