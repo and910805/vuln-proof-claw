@@ -1116,3 +1116,72 @@ def test_no_record_of_looking_anywhere_counts_as_somewhere_new(engine: Engine) -
         controller.run_cycle(controller.start_run())
 
     assert corrected.calls == 1, "the corrected entry URL was still not visited"
+
+
+def test_turning_on_empty_body_probing_makes_the_sweep_due(engine: Engine) -> None:
+    """The inventory has not changed, so no endpoint is new -- but every mutating one
+    has never been asked anything, and making that decision wait a day is the same
+    restraint costing more than it saves as the cadence rules above."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        surface = (("GET", "/api/alpha"), ("POST", "/api/setThing"))
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=StubProber(),
+        )
+        controller.run_cycle(controller.start_run())
+
+        widened = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=widened,
+            probe_mutating=True,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert widened.plans, "the mutating endpoints were deferred for a day"
+    assert any(spec.path == "/api/setThing" for plan in widened.plans for spec in plan)
+
+
+def test_narrowing_the_plan_does_not_make_the_sweep_due(engine: Engine) -> None:
+    """Going back to read-only asks nothing that has not been asked, so it waits."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        surface = (("GET", "/api/alpha"), ("POST", "/api/setThing"))
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=StubProber(),
+            probe_mutating=True,
+        )
+        controller.run_cycle(controller.start_run())
+
+        narrowed = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=narrowed,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert narrowed.plans == []

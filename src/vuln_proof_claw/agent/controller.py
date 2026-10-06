@@ -626,6 +626,9 @@ class MissionController:
             {
                 "probed": len(plan.endpoints),
                 "withheld": len(plan.withheld),
+                # What the plan was allowed to include, not only how big it was. A
+                # later run that intends to ask more needs to know this one did not.
+                "probed_mutating": self._probe_mutating,
                 "requests_sent": outcome.requests_sent,
                 "first_request_at": _moment_text(outcome.sent_at[:1]),
                 "last_request_at": _moment_text(outcome.sent_at[-1:]),
@@ -645,6 +648,34 @@ class MissionController:
             leads_created=recorded.leads_created,
             skipped=outcome.stopped_early,
         )
+
+    def _plan_widened(self, engagement_id: EngagementId) -> bool:
+        """Return whether this run intends to ask more than the last sweep did.
+
+        Turning on empty-body probing adds every mutating endpoint to the plan. The
+        inventory has not changed, so no endpoint is new -- but sixty-one of them have
+        never been asked anything, and making that decision wait a day is the same
+        restraint costing more than it saves as the two cadence rules above.
+
+        A sweep that asks questions never asked before is not a repetition, which is
+        the only thing the interval exists to prevent.
+        """
+        for event in AuditEventRepository(self._session).list_for_engagement(
+            engagement_id, limit=60
+        ):
+            if event.event_type != _SWEEP_COMPLETED_EVENT:
+                continue
+            try:
+                payload = json.loads(event.payload)
+            except (ValueError, TypeError):
+                return False
+            if not isinstance(payload, dict) or "probed_mutating" not in payload:
+                # Written before this was recorded. Saying "widened" here would re-sweep
+                # every target once after an upgrade for no reason; the endpoint rule
+                # above already covers anything genuinely new.
+                return False
+            return bool(self._probe_mutating) and not bool(payload["probed_mutating"])
+        return False
 
     def _has_unasked_endpoints(
         self, engagement_id: EngagementId, *, since: datetime | None
@@ -711,8 +742,10 @@ class MissionController:
             last_run_at=swept_at,
             now=at,
         )
-        if not decision.due and not self._has_unasked_endpoints(
-            mission.engagement_id, since=swept_at
+        if (
+            not decision.due
+            and not self._has_unasked_endpoints(mission.engagement_id, since=swept_at)
+            and not self._plan_widened(mission.engagement_id)
         ):
             return decision.reason
 
