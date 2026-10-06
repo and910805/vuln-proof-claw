@@ -48,7 +48,12 @@ _LOGGER = logging.getLogger(__name__)
 
 #: Headers this module may add to an outgoing request. Narrow on purpose: everything
 #: here is either required to speak to the target or supplied by the login flow.
-_PERMITTED_OUTBOUND = frozenset(
+#: Every header an authenticated request may carry. Public because the transport
+#: enforces the same list: two copies of one rule drift, and this one drifted --
+#: ``authorization`` was permitted here and refused there, so the first target that
+#: issued a bearer token instead of a cookie had every authenticated request rejected
+#: by our own transport, with a message that reads like the target refusing it.
+PERMITTED_OUTBOUND: Final = frozenset(
     {"accept", "user-agent", "content-type", "cookie", "authorization"}
 )
 
@@ -421,7 +426,7 @@ class IdentitySessions:
     @staticmethod
     def _require_permitted(headers: tuple[tuple[str, str], ...]) -> None:
         for name, _ in headers:
-            if name.lower() not in _PERMITTED_OUTBOUND:
+            if name.lower() not in PERMITTED_OUTBOUND:
                 raise ProbeError(f"header not permitted on an authenticated probe: {name}")
 
 
@@ -432,6 +437,7 @@ def is_redirect(status: int) -> bool:
 
 __all__ = [
     "EMPTY_PROBE_BODY",
+    "PERMITTED_OUTBOUND",
     "AuthenticatedTransport",
     "AuthenticationError",
     "IdentitySessions",

@@ -9,8 +9,9 @@ logic duplicated is security logic that drifts.
 It differs from the capture transport in exactly two ways, both required for
 authenticated differential testing and both kept as narrow as possible:
 
-* a ``cookie`` and ``content-type`` header may be sent, because a session cannot be
-  carried otherwise;
+* a ``cookie``, ``authorization`` and ``content-type`` header may be sent, because a
+  session cannot be carried otherwise -- some targets issue a cookie, some a bearer
+  token, and both are redacted wherever a request is recorded;
 * the single configured login path may receive a ``POST``, and any other path may
   receive one only when the body is *exactly* empty — checked here, byte for byte,
   so that "this request changes nothing" is a property of what goes on the wire
@@ -32,6 +33,7 @@ from typing import Final
 
 from vuln_proof_claw.agent.authsession import (
     EMPTY_PROBE_BODY,
+    PERMITTED_OUTBOUND,
     AuthenticatedTransport,
     ProbeLimits,
     RawResponse,
@@ -52,7 +54,9 @@ from vuln_proof_claw.policy.scope import (
 
 _LOGGER: Final = logging.getLogger(__name__)
 _ALLOWED_METHODS: Final = frozenset({"GET", "HEAD", "POST"})
-_ALLOWED_OUTBOUND: Final = frozenset({"accept", "user-agent", "content-type", "cookie"})
+# One list, shared with the session layer that builds these headers. Both are
+# credential-bearing and both are redacted wherever a request is recorded.
+_ALLOWED_OUTBOUND: Final = PERMITTED_OUTBOUND
 _MAX_HEADER_BYTES: Final = 16 * 1024
 _MILLISECONDS: Final = 1000
 
