@@ -11,6 +11,8 @@ import pytest
 from pydantic import SecretStr
 
 from vuln_proof_claw.automation.browser import (
+    _NEVER_FETCHED,
+    _NOT_API,
     BrowserRunRequest,
     BrowserRunResult,
     LoginInstruction,
@@ -228,3 +230,41 @@ def test_the_ceiling_has_a_default_a_page_will_not_normally_reach() -> None:
     )
 
     assert 100 <= request.maximum_requests <= 1000
+
+
+def test_page_furniture_is_declined_by_default() -> None:
+    """Images and fonts are already dropped from the inventory. Fetching them spends
+    the target's rate budget on bytes nothing reads, and on one storefront they were
+    almost the whole visit -- leaving reconnaissance no allowance for the probing it
+    exists to inform."""
+    request = BrowserRunRequest(
+        target="https://h/", allowed_hosts=frozenset({"h"}), allowed_ports=frozenset({443})
+    )
+
+    assert request.skip_page_furniture is True
+
+
+def test_scripts_are_never_declined() -> None:
+    """The application needs them to run, and reading them is a discovery source."""
+    assert "script" not in _NEVER_FETCHED
+    assert "xhr" not in _NEVER_FETCHED
+    assert "fetch" not in _NEVER_FETCHED
+    # Everything declined is already something the inventory discards.
+    assert _NEVER_FETCHED <= _NOT_API
+
+
+def test_a_declined_request_is_not_reported_as_blocked() -> None:
+    """Blocked means the page reached outside the engagement, which an operator should
+    look at. Declined means we had no use for it, which they should not."""
+    outcome = BrowserRunResult(
+        final_url="https://h/",
+        title="shop",
+        status_code=200,
+        screenshot=b"",
+        blocked_requests=(),
+        observed_requests=(observed(),),
+        declined_requests=312,
+    )
+
+    assert outcome.blocked_requests == ()
+    assert outcome.declined_requests == 312

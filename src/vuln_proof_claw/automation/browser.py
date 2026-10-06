@@ -93,6 +93,17 @@ class BrowserRunRequest:
     login: LoginInstruction | None = None
     timeout_ms: int = 15_000
     settle_ms: int = 2_000
+    skip_page_furniture: bool = True
+    """Do not fetch images, fonts or media.
+
+    They are already excluded from the inventory, so fetching them spends the target's
+    rate budget on bytes nothing reads. On one storefront they were almost the whole
+    visit, and reconnaissance left no allowance for the probing it exists to inform.
+
+    Off only when a page genuinely will not work without them, which is rare and
+    should be a deliberate choice rather than the default.
+    """
+
     maximum_requests: int = _DEFAULT_MAXIMUM_REQUESTS
     """The most in-scope requests one visit may make.
 
@@ -221,6 +232,14 @@ _NOT_API: Final = frozenset(
     {"stylesheet", "image", "font", "media", "manifest", "other"}
 )
 
+#: Resource types this never needs and therefore never asks for. They are already
+#: excluded from the inventory, so fetching them only spends the target's rate budget
+#: on bytes nothing reads -- and on a storefront they are almost all of it.
+#:
+#: Scripts are not here: the application needs them to run, and reading them is itself
+#: a discovery source.
+_NEVER_FETCHED: Final = frozenset({"image", "font", "media"})
+
 
 @dataclass(frozen=True, slots=True)
 class BrowserRunResult:
@@ -230,6 +249,14 @@ class BrowserRunResult:
     screenshot: bytes
     blocked_requests: tuple[str, ...]
     observed_requests: tuple[ObservedRequest, ...] = ()
+    declined_requests: int = 0
+    """How many images, fonts and media this chose not to fetch.
+
+    Not blocked and not truncated: in scope, allowed, and of no use to an inventory of
+    an application's API. Reported so the ledger's numbers can be read next to what
+    they would have been.
+    """
+
     truncated_requests: int = 0
     """How many in-scope requests the ceiling refused after the budget was spent.
 
@@ -275,6 +302,7 @@ class IsolatedBrowserRunner:
         blocked: list[str] = []
         observed: list[ObservedRequest] = []
         truncated: list[str] = []
+        declined: list[str] = []
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(
                 headless=True,
@@ -314,6 +342,16 @@ class IsolatedBrowserRunner:
                         or port not in request.allowed_ports
                     ):
                         blocked.append(route.request.url)
+                        await route.abort("blockedbyclient")
+                        return
+                    if (
+                        request.skip_page_furniture
+                        and route.request.resource_type in _NEVER_FETCHED
+                    ):
+                        # Declined, not blocked: the scope allows it and we simply have
+                        # no use for it. Counting it as blocked would read as the target
+                        # reaching somewhere it should not.
+                        declined.append(route.request.url)
                         await route.abort("blockedbyclient")
                         return
                     if len(observed) >= request.maximum_requests:
@@ -370,6 +408,7 @@ class IsolatedBrowserRunner:
                     screenshot=await page.screenshot(full_page=True),
                     blocked_requests=tuple(blocked),
                     truncated_requests=len(truncated),
+                    declined_requests=len(declined),
                     observed_requests=tuple(observed),
                 )
             finally:
