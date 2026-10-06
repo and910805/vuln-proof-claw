@@ -594,11 +594,11 @@ class MissionController:
         """
         prepared = self._prepare_sweep(mission, at=at)
         if isinstance(prepared, str):
-            return SweepSummary(skipped=prepared)
+            return self._sweep_skipped(prepared, at=at)
         plan, host, gate = prepared
         if not plan.endpoints:
-            return SweepSummary(
-                endpoints_withheld=len(plan.withheld), skipped="nothing_safe_to_probe"
+            return self._sweep_skipped(
+                "nothing_safe_to_probe", withheld=len(plan.withheld), at=at
             )
         if self._prober is None:  # pragma: no cover - _prepare_sweep already refused
             return SweepSummary(skipped="no_prober_configured")
@@ -641,6 +641,28 @@ class MissionController:
             leads_created=recorded.leads_created,
             skipped=outcome.stopped_early,
         )
+
+    def _sweep_skipped(
+        self, reason: str, *, withheld: int = 0, at: datetime
+    ) -> SweepSummary:
+        """Record that no probing happened this cycle, and why.
+
+        Two targets recovered 251 and 53 endpoints and then probed none of them, with
+        nothing in the database between the reconnaissance and the end of the run.
+        Reconnaissance had spent the request budget, so the sweep was refused -- which
+        is the budget working, and which looked from the outside exactly like a target
+        with nothing worth asking about.
+
+        A skipped step that leaves no record is indistinguishable from a step that had
+        nothing to do.
+        """
+        self._audit(
+            "agent.sweep_skipped",
+            {"reason": reason, "endpoints_withheld": withheld},
+            at=self._now(),
+        )
+        self._session.commit()
+        return SweepSummary(endpoints_withheld=withheld, skipped=reason)
 
     def _prepare_sweep(
         self, mission: Mission, *, at: datetime

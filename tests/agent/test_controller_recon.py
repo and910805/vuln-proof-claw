@@ -946,3 +946,63 @@ def test_the_same_entry_url_still_waits_for_the_cadence(engine: Engine) -> None:
 
     assert again.calls == 0
     assert report.recon.skipped is not None
+
+
+def test_a_skipped_sweep_says_why(engine: Engine) -> None:
+    """Two targets recovered 251 and 53 endpoints and probed none of them, with nothing
+    in the database between the reconnaissance and the end of the run. Reconnaissance
+    had spent the request budget -- the budget working as intended -- and from the
+    outside that is indistinguishable from a target with nothing worth asking."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(
+            session, engagement_id, budget=MissionBudget(requests_per_hour=2)
+        )
+        session.commit()
+
+        # Reconnaissance spends the hour's whole allowance, exactly as it did live.
+        spent = recon_for(("GET", "/api/alpha"), ("GET", "/api/beta"))
+        spent.requests_sent = 2
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=spent,
+            prober=StubProber(),
+        )
+        report = controller.run_cycle(controller.start_run())
+
+        recorded = [
+            json.loads(row[0])
+            for row in session.execute(
+                text("select payload from audit_events where event_type='agent.sweep_skipped'")
+            )
+        ]
+
+    assert report.sweep.skipped is not None
+    assert recorded, "a sweep that did not happen left no trace"
+    assert recorded[0]["reason"] == report.sweep.skipped
+
+
+def test_a_sweep_that_ran_records_no_skip(engine: Engine) -> None:
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/api/alpha")),
+            prober=StubProber(),
+        )
+        controller.run_cycle(controller.start_run())
+
+        skipped = session.execute(
+            text("select count(*) from audit_events where event_type='agent.sweep_skipped'")
+        ).scalar_one()
+
+    assert skipped == 0
