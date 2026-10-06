@@ -1082,3 +1082,37 @@ def test_an_unchanged_inventory_still_waits(engine: Engine) -> None:
 
     assert later.plans == []
     assert report.sweep.skipped is not None
+
+
+def test_no_record_of_looking_anywhere_counts_as_somewhere_new(engine: Engine) -> None:
+    """An earlier version required a record to exist before a change could be noticed,
+    meaning to be careful about databases written before the field did. That is exactly
+    the state of every target whose entry URL needs correcting, so the correction could
+    fire for none of them: four stayed at one endpoint each through two passes."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/")),
+        )
+        controller.run_cycle(controller.start_run())
+
+        # A record as an older release wrote it: no base_url at all.
+        session.execute(
+            text("update audit_events set payload = :body where event_type = :kind"),
+            {"body": b'{"endpoints":1}', "kind": "agent.recon_completed"},
+        )
+        session.commit()
+
+        corrected = recon_for(("GET", "/portal/login.aspx"))
+        corrected.base_url = f"https://{TARGET_HOST}/portal/"
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=corrected
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert corrected.calls == 1, "the corrected entry URL was still not visited"

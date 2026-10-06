@@ -842,7 +842,17 @@ class MissionController:
             recorded = payload.get("base_url") if isinstance(payload, dict) else None
             if isinstance(recorded, str) and recorded:
                 looked.add(recorded.rstrip("/"))
-        return bool(looked) and bool(wanted - looked)
+        # No record of looking here is exactly what "somewhere it has not looked
+        # before" means. An earlier version of this required `looked` to be non-empty,
+        # meaning to be cautious about records written before the field existed -- and
+        # that is precisely the state of every target whose entry URL needed
+        # correcting, so the correction could not fire for any of them. Four targets
+        # stayed at one endpoint each through two passes because of it.
+        #
+        # Costing one extra reconnaissance pass per target after an upgrade is the
+        # whole price: once a pass records where it looked, an unchanged entry is
+        # recognised and waits again.
+        return bool(wanted - looked)
 
     def _last_recon_at(self, engagement_id: EngagementId) -> datetime | None:
         """Return when reconnaissance last stored an endpoint, if ever."""
