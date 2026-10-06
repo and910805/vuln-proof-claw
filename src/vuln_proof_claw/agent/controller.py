@@ -450,6 +450,10 @@ class MissionController:
             now=at,
         )
         if not decision.due and not self._entry_changed(mission.engagement_id):
+            self._audit(
+                "agent.recon_skipped", {"reason": decision.reason}, at=self._now()
+            )
+            self._session.commit()
             return ReconSummary(skipped=decision.reason)
 
         results: list[ReconResult] = []
@@ -642,6 +646,29 @@ class MissionController:
             skipped=outcome.stopped_early,
         )
 
+    def _has_unasked_endpoints(
+        self, engagement_id: EngagementId, *, since: datetime | None
+    ) -> bool:
+        """Return whether the inventory holds endpoints no sweep has ever reached.
+
+        The cadence governs how often the same questions are re-asked. An endpoint
+        discovered since the last sweep has not been asked anything, so waiting is not
+        restraint -- it is a day of not knowing.
+
+        Observed: reconciliation corrected 195 inferred paths onto the prefix the
+        client actually prepends, which was the entire point of building it, and the
+        sweep then declined them for twenty-four hours because it had run that morning
+        against the uncorrected ones.
+        """
+        if since is None:
+            return True
+        return any(
+            stored.entity.first_seen_at > since
+            for stored in EndpointRepository(self._session).list_for_engagement(
+                engagement_id, limit=_ENDPOINT_SELECTION_LIMIT
+            )
+        )
+
     def _sweep_skipped(
         self, reason: str, *, withheld: int = 0, at: datetime
     ) -> SweepSummary:
@@ -675,15 +702,18 @@ class MissionController:
         if self._prober is None:
             return "no_prober_configured"
 
+        swept_at = AuditEventRepository(self._session).last_occurrence(
+            mission.engagement_id, _SWEEP_COMPLETED_EVENT
+        )
         decision = evaluate_task(
             RecurringTask.DEEP_RECON,
             mission.cadence,
-            last_run_at=AuditEventRepository(self._session).last_occurrence(
-                mission.engagement_id, _SWEEP_COMPLETED_EVENT
-            ),
+            last_run_at=swept_at,
             now=at,
         )
-        if not decision.due:
+        if not decision.due and not self._has_unasked_endpoints(
+            mission.engagement_id, since=swept_at
+        ):
             return decision.reason
 
         endpoints = EndpointRepository(self._session).list_for_engagement(

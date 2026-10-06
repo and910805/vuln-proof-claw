@@ -1006,3 +1006,79 @@ def test_a_sweep_that_ran_records_no_skip(engine: Engine) -> None:
         ).scalar_one()
 
     assert skipped == 0
+
+
+def test_endpoints_nobody_has_asked_anything_do_not_wait_for_the_cadence(
+    engine: Engine,
+) -> None:
+    """Reconciliation corrected 195 inferred paths onto the prefix the client actually
+    prepends -- the entire point of building it -- and the sweep then declined them for
+    twenty-four hours because it had run that morning against the uncorrected ones.
+
+    The cadence governs how often the same questions are re-asked. An endpoint nothing
+    has ever asked is not the same question."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        first = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/web/alpha")),
+            prober=first,
+        )
+        controller.run_cycle(controller.start_run())
+        assert first.plans, "the first sweep did not run"
+
+        # A later cycle, within the sweep interval, after discovery found more.
+        second = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/web/alpha"), ("GET", "/web/beta")),
+            prober=second,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert second.plans, "endpoints discovered since the last sweep went unprobed"
+    assert any(
+        spec.path == "/web/beta" for plan in second.plans for spec in plan
+    )
+
+
+def test_an_unchanged_inventory_still_waits(engine: Engine) -> None:
+    """The restraint being relaxed is about re-asking, and that stays."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/web/alpha")),
+            prober=StubProber(),
+        )
+        controller.run_cycle(controller.start_run())
+
+        later = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(("GET", "/web/alpha")),
+            prober=later,
+            now=NOW + timedelta(hours=2),
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert later.plans == []
+    assert report.sweep.skipped is not None
