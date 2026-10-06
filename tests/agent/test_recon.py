@@ -67,7 +67,7 @@ class StubTransport:
 
 
 def build(
-    transport: StubTransport, *, maximum_assets: int = 8
+    transport: StubTransport, *, maximum_assets: int = 8, maximum_pages: int = 0
 ) -> tuple[SpaReconnaissance, list[float]]:
     naps: list[float] = []
     recon = SpaReconnaissance(
@@ -75,6 +75,7 @@ def build(
         scope=SCOPE,
         base_url=BASE,
         maximum_assets=maximum_assets,
+        maximum_pages=maximum_pages,
         pacer=naps.append,
     )
     return (recon, naps)
@@ -489,3 +490,101 @@ def test_the_surface_digest_is_stable_across_identical_passes() -> None:
     recon_b, _ = build(default_transport())
 
     assert recon_a.discover(at=NOW).surface_digest == recon_b.discover(at=NOW).surface_digest
+
+
+SERVER_RENDERED = """
+<html><body>
+  <a href="/admin/users">Users</a>
+  <a href="/admin/policy">Policy</a>
+  <a href="https://elsewhere.test/docs">Docs</a>
+  <a href="/admin/users?page=2">Page 2</a>
+  <form method="post" action="/admin/login"><input name="u"></form>
+</body></html>
+"""
+
+USERS_PAGE = """
+<html><body>
+  <a href="/admin/users/export">Export</a>
+  <form method="post" action="/admin/users/create"><input name="n"></form>
+</body></html>
+"""
+
+POLICY_PAGE = '<html><body><a href="/admin/policy/rules">Rules</a></body></html>'
+
+
+def server_rendered_transport() -> StubTransport:
+    return StubTransport(
+        responses={
+            BASE: (200, SERVER_RENDERED.encode()),
+            f"{BASE}admin/users": (200, USERS_PAGE.encode()),
+            f"{BASE}admin/policy": (200, POLICY_PAGE.encode()),
+        }
+    )
+
+
+def test_only_the_entry_page_is_read_when_no_pages_are_allowed() -> None:
+    """The previous behaviour, kept reachable: zero means read one page."""
+    recon, _ = build(server_rendered_transport(), maximum_pages=0)
+
+    paths = {item.path for item in recon.discover().classifications}
+
+    assert "/admin/users" in paths
+    assert "/admin/users/export" not in paths
+
+
+def test_a_linked_page_contributes_its_own_surface() -> None:
+    """One management interface's entry page offered five requests; the pages one
+    click behind it offered the rest. Reading only the first reports an application
+    as having almost no surface, and a sweep then confirms it."""
+    recon, _ = build(server_rendered_transport(), maximum_pages=5)
+
+    paths = {item.path for item in recon.discover().classifications}
+
+    assert {"/admin/users/export", "/admin/users/create", "/admin/policy/rules"} <= paths
+
+
+def test_the_page_budget_is_a_ceiling() -> None:
+    transport = server_rendered_transport()
+    recon, _ = build(transport, maximum_pages=1)
+
+    recon.discover()
+
+    followed = [url for url in transport.requested if url.startswith(f"{BASE}admin/")]
+    assert len(followed) == 1
+
+
+def test_another_site_is_never_followed() -> None:
+    """An anchor to somebody else's host is somebody else's surface, and testing it
+    is the one thing the engagement forbids outright."""
+    transport = server_rendered_transport()
+    recon, _ = build(transport, maximum_pages=5)
+
+    recon.discover()
+
+    assert all("elsewhere.test" not in url for url in transport.requested)
+
+
+def test_a_form_target_is_not_followed() -> None:
+    """A form's action is a state change until something proves otherwise, and this
+    is reconnaissance."""
+    transport = server_rendered_transport()
+    recon, _ = build(transport, maximum_pages=5)
+
+    recon.discover()
+
+    assert f"{BASE}admin/login" not in transport.requested
+
+
+def test_a_linked_page_that_cannot_be_read_costs_only_that_page() -> None:
+    transport = StubTransport(
+        responses={
+            BASE: (200, SERVER_RENDERED.encode()),
+            f"{BASE}admin/policy": (200, POLICY_PAGE.encode()),
+        }
+    )
+    recon, _ = build(transport, maximum_pages=5)
+
+    result = recon.discover()
+
+    assert any("linked page not retrieved" in error for error in result.errors)
+    assert "/admin/policy/rules" in {item.path for item in result.classifications}
