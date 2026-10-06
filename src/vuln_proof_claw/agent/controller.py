@@ -669,12 +669,21 @@ class MissionController:
                 payload = json.loads(event.payload)
             except (ValueError, TypeError):
                 return False
-            if not isinstance(payload, dict) or "probed_mutating" not in payload:
-                # Written before this was recorded. Saying "widened" here would re-sweep
-                # every target once after an upgrade for no reason; the endpoint rule
-                # above already covers anything genuinely new.
+            if not isinstance(payload, dict):
                 return False
-            return bool(self._probe_mutating) and not bool(payload["probed_mutating"])
+            # A record written before this was tracked says nothing about what that
+            # sweep included, and "nothing" is not "it already asked these". The only
+            # way this widens is if the operator has turned empty-body probing on,
+            # which is a decision to ask more -- exactly the case the rule is for.
+            #
+            # An earlier version treated the missing field as "do not widen", to avoid
+            # one extra sweep per target after an upgrade. That is the second time in a
+            # day a caution has been written that makes its own rule unreachable for
+            # precisely the targets that need it: every record predating a change
+            # predates it.
+            return bool(self._probe_mutating) and not bool(
+                payload.get("probed_mutating", False)
+            )
         return False
 
     def _has_unasked_endpoints(

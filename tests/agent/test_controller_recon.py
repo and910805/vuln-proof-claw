@@ -1185,3 +1185,47 @@ def test_narrowing_the_plan_does_not_make_the_sweep_due(engine: Engine) -> None:
         controller.run_cycle(controller.start_run())
 
     assert narrowed.plans == []
+
+
+def test_a_sweep_recorded_before_this_was_tracked_does_not_block_widening(
+    engine: Engine,
+) -> None:
+    """Every record predating a change predates it. A caution that reads a missing
+    field as "already asked" makes the rule unreachable for exactly the targets it
+    exists for -- which is the second time in a day that shape of mistake appeared."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        surface = (("GET", "/api/alpha"), ("POST", "/api/setThing"))
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=StubProber(),
+        )
+        controller.run_cycle(controller.start_run())
+
+        # A sweep record as an older release wrote it: counts, and nothing about scope.
+        session.execute(
+            text("update audit_events set payload = :body where event_type = :kind"),
+            {"body": b'{"probed": 1, "withheld": 1}', "kind": "agent.sweep_completed"},
+        )
+        session.commit()
+
+        widened = StubProber()
+        controller = controller_with(
+            session,
+            MissionId(mission.id),
+            executor=RecordingExecutor(),
+            recon=recon_for(*surface),
+            prober=widened,
+            probe_mutating=True,
+            now=NOW + timedelta(hours=2),
+        )
+        controller.run_cycle(controller.start_run())
+
+    assert widened.plans, "an old record blocked the decision it knew nothing about"
