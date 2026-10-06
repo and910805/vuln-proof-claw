@@ -40,6 +40,7 @@ from vuln_proof_claw.agent.planner import (
     ResearchPlan,
 )
 from vuln_proof_claw.domain.autonomous import (
+    ChangeEvent,
     Lead,
     Mission,
     MissionBudget,
@@ -48,13 +49,19 @@ from vuln_proof_claw.domain.autonomous import (
 )
 from vuln_proof_claw.domain.enums import (
     ActionState,
+    ChangeKind,
     LeadStatus,
     MissionRunState,
     MissionState,
     RiskLevel,
 )
 from vuln_proof_claw.domain.errors import DomainValidationError
-from vuln_proof_claw.domain.identifiers import EngagementId, LeadId, MissionId
+from vuln_proof_claw.domain.identifiers import (
+    EngagementId,
+    LeadId,
+    MissionId,
+    SurfaceSnapshotId,
+)
 from vuln_proof_claw.domain.models import Action
 from vuln_proof_claw.persistence.autonomous_repositories import (
     LeadRepository,
@@ -616,8 +623,15 @@ def test_a_surface_change_does_not_overturn_a_person(engine: Engine) -> None:
         controller = build_controller(
             session, MissionId(mission.id), executor=RecordingExecutor()
         )
+        surface_changed = ChangeEvent(
+            engagement_id=engagement_id,
+            kind=ChangeKind.ENDPOINT_ADDED,
+            subject="/api/anything",
+            snapshot_id=SurfaceSnapshotId("01a10000-0000-7000-8000-000000000000"),
+            current_digest="a" * 64,
+        )
         controller._reawaken_changed_leads(
-            [object()], at=NOW
+            [surface_changed], at=NOW
         )
 
         after_hand = repository.get(LeadId(by_hand.id))
