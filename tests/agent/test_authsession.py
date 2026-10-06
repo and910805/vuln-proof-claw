@@ -33,6 +33,7 @@ from vuln_proof_claw.config.identities import (
     resolve_credentials,
 )
 from vuln_proof_claw.config.redaction import REDACTED
+from vuln_proof_claw.execution.http_capture import CaptureTransportError
 from vuln_proof_claw.policy.scope import EngagementScope
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
@@ -579,3 +580,48 @@ def test_session_state_does_not_leak_through_repr() -> None:
     state = SessionState(cookies={"session": SESSION_TOKEN})
 
     assert SESSION_TOKEN not in repr(state)
+
+
+class _RefusingTransport:
+    """A transport that fails the way the real ones do: with their own exception."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def send(self, *_args: object, **_kwargs: object) -> object:
+        raise self._error
+
+
+def refusing(error: Exception) -> IdentitySessions:
+    sessions = build(_RefusingTransport(error))  # type: ignore[arg-type]
+    sessions.authenticate("anonymous", at=NOW)
+    return sessions
+
+
+def test_a_transport_refusal_is_a_failed_probe_not_a_failed_sweep() -> None:
+    """Observed live: one endpoint answered with a body over the cap, the transport
+    raised its own error, and the sweep -- which catches ProbeError -- never saw it.
+    The cycle died and every endpoint behind that one went unprobed."""
+    sessions = refusing(CaptureTransportError("response_body_too_large"))
+
+    with pytest.raises(ProbeError, match="response_body_too_large"):
+        sessions.probe("anonymous", "GET", f"https://{TARGET_HOST}/big")
+
+
+def test_the_reason_survives_the_wrapping() -> None:
+    """The operator has to be able to tell an oversized body from a refused header."""
+    sessions = refusing(CaptureTransportError("request_header_not_allowed"))
+
+    with pytest.raises(ProbeError) as raised:
+        sessions.probe("anonymous", "GET", f"https://{TARGET_HOST}/x")
+
+    assert "request_header_not_allowed" in str(raised.value)
+    assert isinstance(raised.value.__cause__, CaptureTransportError)
+
+
+def test_a_probe_error_is_not_rewrapped() -> None:
+    """Wrapping a ProbeError in a ProbeError would bury the message it already had."""
+    sessions = refusing(ProbeError("a reason of its own"))
+
+    with pytest.raises(ProbeError, match="a reason of its own"):
+        sessions.probe("anonymous", "GET", f"https://{TARGET_HOST}/x")

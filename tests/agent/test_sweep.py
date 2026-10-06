@@ -15,6 +15,7 @@ from vuln_proof_claw.agent.endpoints import (
     EndpointRisk,
     ProbeStrategy,
     classify_all,
+    classify_endpoint,
 )
 from vuln_proof_claw.agent.sweep import (
     DifferentialSweep,
@@ -467,3 +468,44 @@ def test_a_summary_names_each_triggered_rule() -> None:
 
     assert any("horizontal_privilege" in line for line in lines)
     assert all(line.startswith("[TRIGGERED]") for line in lines)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/debug/pprof/profile",
+        "/api/web/debug/pprof/profile",
+        "/debug/pprof/trace",
+    ],
+)
+def test_an_endpoint_that_blocks_and_measures_is_withheld(path: str) -> None:
+    """Found in a live inventory: the plan included /api/web/debug/pprof/profile. It
+    is not destructive and changes nothing, so every existing rule let it through --
+    and calling it makes the target run a CPU profile for thirty seconds. On a
+    schedule that is a load test of somebody else's system under another name, which
+    the activity rules forbid outright."""
+    plan = plan_sweep([classify_endpoint("GET", path)], limit=10)
+
+    assert plan.endpoints == ()
+    assert plan.withheld == ((path, "asks the target to work for a fixed duration"),)
+
+
+def test_a_timed_endpoint_the_name_rules_already_refuse_is_still_refused() -> None:
+    """`/debug/pprof/block` reaches the destructive rule first, because "lock" is in
+    its vocabulary. Withheld either way, which is the direction that matters; this
+    pins that the two rules do not cancel."""
+    plan = plan_sweep([classify_endpoint("GET", "/api/v1/debug/pprof/block")], limit=10)
+
+    assert plan.endpoints == ()
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/debug/pprof/", "/debug/pprof/cmdline", "/api/debug/status", "/api/profile"],
+)
+def test_the_cheap_debug_surface_is_still_probed(path: str) -> None:
+    """Whether a profiling surface is exposed at all is answered by its index, which
+    costs nothing. Withholding that too would hide the finding to avoid the load."""
+    plan = plan_sweep([classify_endpoint("GET", path)], limit=10)
+
+    assert [spec.path for spec in plan.endpoints] == [path]

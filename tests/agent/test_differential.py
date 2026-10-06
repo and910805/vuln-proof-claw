@@ -8,8 +8,11 @@ rules a bad report costs one of only two 補正 chances.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+from vuln_proof_claw.agent import differential
 from vuln_proof_claw.agent.differential import (
     ANONYMOUS,
     Identity,
@@ -40,6 +43,7 @@ def probe(  # noqa: PLR0913 - each field is one observable fact about one respon
     size: int = BIG,
     target: str = TARGET,
     content_type: str = "application/json",
+    declares_failure: bool = False,
 ) -> ProbeResult:
     return ProbeResult(
         identity=identity,
@@ -49,6 +53,7 @@ def probe(  # noqa: PLR0913 - each field is one observable fact about one respon
         body_digest=digest,
         body_size=size,
         content_type=content_type,
+        declares_failure=declares_failure,
     )
 
 
@@ -436,3 +441,173 @@ def test_evaluate_all_omits_the_rule_without_an_anonymous_probe() -> None:
     )
 
     assert all(v.rule is not OracleRule.MISSING_AUTHENTICATION for v in verdicts)
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/javascript",
+        "text/javascript; charset=UTF-8",
+        "text/css",
+        "image/png",
+        "font/woff2",
+        "image/svg+xml",
+    ],
+)
+def test_a_static_file_is_not_evidence_that_authentication_is_missing(
+    content_type: str,
+) -> None:
+    """Found on a live target: an anonymous sweep reported missing authentication on
+    jquery.min.js, cookie.js and comm.js. The rule was satisfied exactly as written --
+    200 with a body instead of 401 -- which is the trouble. Serving a file without a
+    credential is how the web works, and three such candidates in a review queue have
+    to be read and dismissed by a person before the real ones are reached."""
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, content_type=content_type)
+    )
+
+    assert verdict.triggered is False
+    assert verdict.suppressed_by == "static_asset_is_not_business_logic"
+
+
+def test_the_media_type_decides_not_the_file_extension() -> None:
+    """A path ending in .js proves nothing: an API that routes /api/report.js is an
+    API. What the server said it was sending is the fact; the path is a guess."""
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, target=f"{TARGET}/report.js", content_type="application/json")
+    )
+
+    assert verdict.triggered is True
+
+
+def test_an_api_answer_still_triggers() -> None:
+    """The suppression must not quietly swallow the rule it guards."""
+    assert check_missing_authentication(probe(ANONYMOUS, 200)).triggered is True
+
+
+@pytest.mark.parametrize(
+    ("content_type", "suppression"),
+    [
+        ("application/javascript", "static_asset_is_not_business_logic"),
+        ("image/png", "static_asset_is_not_business_logic"),
+        ("text/html", "html_response_is_an_application_shell"),
+    ],
+)
+def test_a_file_served_to_everyone_is_not_improper_access_control(
+    content_type: str, suppression: str
+) -> None:
+    """Identical bodies are the whole signal for this rule, and a file the server hands
+    to everyone is identical to everyone by design. The hour after the missing-auth
+    rule learned this, an anonymous sweep produced eleven candidates on one target:
+    eight webpack chunks, a logo, and the application shell."""
+    verdict = check_unauthenticated_access(
+        (
+            probe(ANONYMOUS, 200, digest=OWNER_BODY, content_type=content_type),
+            probe("account_a", 200, digest=OWNER_BODY, content_type=content_type),
+        ),
+        authenticated="account_a",
+    )
+
+    assert verdict.triggered is False
+    assert verdict.suppressed_by == suppression
+
+
+def test_an_api_body_shared_with_anonymous_still_triggers() -> None:
+    """The suppression must not swallow the rule it guards."""
+    verdict = check_unauthenticated_access(
+        (
+            probe(ANONYMOUS, 200, digest=OWNER_BODY, content_type="application/json"),
+            probe("account_a", 200, digest=OWNER_BODY, content_type="application/json"),
+        ),
+        authenticated="account_a",
+    )
+
+    assert verdict.triggered is True
+
+
+def test_both_rules_suppress_the_same_things() -> None:
+    """Two copies of one judgement is how the second came to be missing it."""
+    for content_type in ("application/javascript", "text/html", "font/woff2"):
+        assert (
+            check_missing_authentication(
+                probe(ANONYMOUS, 200, content_type=content_type)
+            ).suppressed_by
+            == check_unauthenticated_access(
+                (
+                    probe(ANONYMOUS, 200, digest=OWNER_BODY, content_type=content_type),
+                    probe("account_a", 200, digest=OWNER_BODY, content_type=content_type),
+                ),
+                authenticated="account_a",
+            ).suppressed_by
+        )
+
+
+def test_an_application_that_refuses_in_the_body_is_not_missing_authentication() -> None:
+    """Observed on a zero-trust platform under test: /api/me answers an anonymous
+    caller with 200 and a body saying it refused, every identity field null. The rule's
+    premise -- that an API which authenticates rejects with 401 or 403 -- is not true
+    of it, and without this the tool reports an endpoint for enforcing exactly the
+    control the rule exists to find missing."""
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, content_type="application/json", declares_failure=True)
+    )
+
+    assert verdict.triggered is False
+    assert verdict.suppressed_by == "body_declares_failure"
+
+
+def test_an_endpoint_that_answers_normally_still_triggers() -> None:
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, content_type="application/json", declares_failure=False)
+    )
+
+    assert verdict.triggered is True
+
+
+# Every rule that can fire on a response, and how to call it with one body. A new rule
+# added to the module without an entry here fails the test below rather than silently
+# shipping without the judgement the other four share.
+ORACLES = {
+    "missing_authentication": lambda p: check_missing_authentication(p(ANONYMOUS)),
+    "unauthenticated_access": lambda p: check_unauthenticated_access(
+        (p(ANONYMOUS), p("account_a")), authenticated="account_a"
+    ),
+    "horizontal_privilege": lambda p: check_horizontal_privilege(
+        (p("account_a"), p("account_b")), owner="account_a", other="account_b"
+    ),
+    "vertical_privilege": lambda p: check_vertical_privilege(
+        (p("account_a"), p("admin")), lower="account_a", higher="admin"
+    ),
+    "denial_inconsistency": lambda p: check_denial_inconsistency(
+        (p(ANONYMOUS), p("account_a"))
+    ),
+}
+
+
+@pytest.mark.parametrize("rule", sorted(ORACLES))
+@pytest.mark.parametrize("content_type", ["application/javascript", "text/html", "image/png"])
+def test_no_rule_reports_a_served_file(rule: str, content_type: str) -> None:
+    """Three rules learned this one at a time, each after a live sweep produced the
+    same false positives under a different name: eleven webpack chunks as improper
+    access control, then seven of them again as privilege escalation. Fixing the rule
+    in front of you is how the fourth one keeps happening."""
+    verdict = ORACLES[rule](
+        lambda identity: probe(identity, 200, digest=OWNER_BODY, content_type=content_type)
+    )
+
+    assert verdict.triggered is False, f"{rule} reported a {content_type} file"
+
+
+def test_every_rule_in_the_module_is_covered_here() -> None:
+    """The guard on the guard. A rule added without an entry above would pass the test
+    that checks each rule, by not being one of them."""
+    defined = {
+        name.removeprefix("check_")
+        for name, value in vars(differential).items()
+        if name.startswith("check_") and inspect.isfunction(value)
+    }
+
+    assert defined == set(ORACLES), (
+        f"rules with no entry in ORACLES: {sorted(defined - set(ORACLES))}; "
+        f"entries naming no rule: {sorted(set(ORACLES) - defined)}"
+    )

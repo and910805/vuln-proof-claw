@@ -164,12 +164,13 @@ def promote_candidate(
     return lead
 
 
-def record_endpoints(
+def record_endpoints(  # noqa: PLR0913 - each argument names a distinct fact
     session: Session,
     engagement_id: EngagementId,
     base_url: str,
     classifications: Sequence[EndpointClassification],
     *,
+    source: str = "jsdiscovery",
     at: datetime,
 ) -> tuple[int, int]:
     """Persist recovered endpoints against their asset.
@@ -198,7 +199,7 @@ def record_endpoints(
                 asset_id=AssetId(asset.entity.id),
                 method=item.method,
                 path=item.path,
-                source=f"jsdiscovery:{item.risk.value}",
+                source=f"{source}:{item.risk.value}",
                 first_seen_at=at,
                 last_seen_at=at,
             )

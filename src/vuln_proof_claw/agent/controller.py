@@ -8,6 +8,7 @@ in memory: a crashed or rebooted process resumes from PostgreSQL alone.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
@@ -23,7 +24,7 @@ from vuln_proof_claw.agent.candidates import (
     record_verdicts,
 )
 from vuln_proof_claw.agent.differential import OracleVerdict
-from vuln_proof_claw.agent.endpoints import classify_endpoint
+from vuln_proof_claw.agent.endpoints import classify_all, classify_endpoint
 from vuln_proof_claw.agent.leads import (
     begin_attempt,
     evaluate_eligibility,
@@ -37,6 +38,7 @@ from vuln_proof_claw.agent.leads import (
 from vuln_proof_claw.agent.memory import ResearchMemory
 from vuln_proof_claw.agent.planner import Planner, ResearchPlan, validate_plan
 from vuln_proof_claw.agent.recon import ReconResult
+from vuln_proof_claw.agent.reconcile import apply_prefix, find_prefix
 from vuln_proof_claw.agent.scheduler import (
     RecurringTask,
     evaluate_task,
@@ -95,6 +97,9 @@ _LEAD_SELECTION_LIMIT = 50
 _SCHEDULABLE_STATUSES = (LeadStatus.NEW, LeadStatus.QUEUED, LeadStatus.WAITING)
 _ENDPOINT_SELECTION_LIMIT = 500
 _SWEEP_COMPLETED_EVENT = "agent.sweep_completed"
+#: How a path learned by watching the application is labelled, as opposed to one
+#: read from its source. The distinction is what makes reconciliation possible.
+_OBSERVED_SOURCE = "observed"
 
 
 class MissionControllerError(Exception):
@@ -133,8 +138,20 @@ class Prober(Protocol):
     observation, and promotion to a finding happens elsewhere.
     """
 
-    def probe(self, endpoints: Sequence[EndpointSpec], *, at: datetime) -> ProbeOutcome:
-        """Send the planned probes and return what the oracles concluded."""
+    def probe(
+        self,
+        endpoints: Sequence[EndpointSpec],
+        *,
+        at: datetime,
+        on_request: Callable[[datetime], None] | None = None,
+    ) -> ProbeOutcome:
+        """Send the planned probes and return what the oracles concluded.
+
+        ``on_request`` is called with the moment of each request as it goes out, so the
+        caller can charge its budget while the sweep is still running. A paced sweep
+        takes over an hour, and without this nothing -- the budget included -- could
+        see the requests until it finished.
+        """
         ...
 
 
@@ -158,6 +175,24 @@ class LeadOutcome:
     lead_id: str
     disposition: str
     reason: str
+
+
+def _as_sources(
+    reconnaissance: Reconnaissance | Sequence[Reconnaissance] | None,
+) -> tuple[Reconnaissance, ...]:
+    """Accept one source or several.
+
+    Reading a bundle and watching a browser answer different questions, and the
+    second is what makes the first trustworthy: only an observed request can show
+    that every inferred path is missing the prefix the client prepends at run time.
+    An agent asked to run unattended should not have to be launched twice, in the
+    right order, to get both.
+    """
+    if reconnaissance is None:
+        return ()
+    if isinstance(reconnaissance, Sequence):
+        return tuple(reconnaissance)
+    return (reconnaissance,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,7 +259,7 @@ class MissionController:
         executor: ActionExecutor,
         actor: str = "agent:controller",
         clock: Callable[[], datetime] = _utc_now,
-        reconnaissance: Reconnaissance | None = None,
+        reconnaissance: Reconnaissance | Sequence[Reconnaissance] | None = None,
         prober: Prober | None = None,
         probe_mutating: bool = False,
     ) -> None:
@@ -232,7 +267,7 @@ class MissionController:
         self._mission_id = mission_id
         self._planner = planner
         self._executor = executor
-        self._reconnaissance = reconnaissance
+        self._reconnaissance = _as_sources(reconnaissance)
         self._prober = prober
         self._probe_mutating = probe_mutating
         self._actor = actor
@@ -417,7 +452,7 @@ class MissionController:
         A reconnaissance failure never fails the cycle. Losing one pass costs a delay;
         aborting the cycle would also abandon the leads already waiting to be worked.
         """
-        if self._reconnaissance is None:
+        if not self._reconnaissance:
             return ReconSummary(skipped="no_reconnaissance_configured")
 
         decision = evaluate_task(
@@ -426,32 +461,103 @@ class MissionController:
             last_run_at=self._last_recon_at(mission.engagement_id),
             now=at,
         )
-        if not decision.due:
+        if not decision.due and not self._entry_changed(mission.engagement_id):
+            self._audit(
+                "agent.recon_skipped", {"reason": decision.reason}, at=self._now()
+            )
+            self._session.commit()
             return ReconSummary(skipped=decision.reason)
 
-        try:
-            result = self._reconnaissance.discover(at=at)
-        except Exception as error:  # noqa: BLE001 - recon must not fail the cycle
-            _LOGGER.warning("reconnaissance failed: %s", error)
-            self._audit("agent.recon_failed", {"error": str(error)[:200]}, at=at)
-            self._session.commit()
+        results: list[ReconResult] = []
+        for source in self._reconnaissance:
+            try:
+                results.append(source.discover(at=at))
+            except Exception as error:  # noqa: BLE001 - recon must not fail the cycle
+                _LOGGER.warning("reconnaissance failed: %s", error)
+                self._audit("agent.recon_failed", {"error": str(error)[:200]}, at=at)
+                self._session.commit()
+
+        if not results:
             return ReconSummary(skipped="reconnaissance_failed")
 
-        # Reconnaissance is bounded and paced, but every request it sent still has to
-        # appear in the ledger. A mission that under-reports what it put on the wire
-        # cannot answer the only question the rate limit exists to answer.
-        self._charge(mission, result.base_url, result.sent_at)
+        # Observation before inference, whatever order the sources were configured in.
+        # A prefix is reconciled against facts already in the store, so what was seen
+        # on the wire has to be recorded before what was read from a bundle — getting
+        # this backwards costs nothing visible and silently skips the correction.
+        results.sort(key=lambda result: result.source != _OBSERVED_SOURCE)
 
-        if not result.classifications:
+        recorded = held_back = requests_sent = 0
+        for result in results:
+            # Reconnaissance is bounded and paced, but every request it sent still has
+            # to appear in the ledger. A mission that under-reports what it put on the
+            # wire cannot answer the only question the rate limit exists to answer.
+            self._charge(mission, result.base_url, result.sent_at)
+            requests_sent += result.requests_sent
+            stored, held = self._record_recon(mission, result, at=at)
+            recorded += stored
+            held_back += held
+
+        if not recorded and not held_back:
             return ReconSummary(
-                requests_sent=result.requests_sent, skipped="no_endpoints_recovered"
+                requests_sent=requests_sent, skipped="no_endpoints_recovered"
             )
+        return ReconSummary(
+            endpoints_recorded=recorded,
+            endpoints_held_back=held_back,
+            requests_sent=requests_sent,
+        )
+
+    def _record_recon(
+        self, mission: Mission, result: ReconResult, *, at: datetime
+    ) -> tuple[int, int]:
+        """Store one pass's endpoints, correcting inferred paths where evidence allows."""
+        if not result.classifications:
+            # A pass that recovered nothing still has to say so, and say why. One
+            # target's certificate was not trusted; both sources refused it and
+            # returned errors rather than raising, so nothing was written and the
+            # knowledge base showed a target with no surface and no explanation. An
+            # operator reading that sees a system with nothing on it, which is the
+            # same thing a safe system looks like.
+            self._audit(
+                "agent.recon_empty",
+                {
+                    "source": result.source,
+                    "base_url": result.base_url,
+                    "requests_sent": result.requests_sent,
+                    "errors": "; ".join(result.errors)[:400] or "no endpoints recovered",
+                },
+                at=self._now(),
+            )
+            self._session.commit()
+            return (0, 0)
+
+        classifications = result.classifications
+        reconciled = ""
+        if result.source != _OBSERVED_SOURCE:
+            # Paths read from source are relative to whatever base the client prepends
+            # at run time. Checking them against what was actually seen on the wire is
+            # the only way to find that out, and the finding is only applied when the
+            # evidence establishes it — see agent.reconcile.
+            finding = find_prefix(
+                tuple(item.path for item in classifications),
+                self._observed_paths(mission.engagement_id),
+            )
+            if finding.established:
+                classifications = classify_all(
+                    apply_prefix(
+                        tuple((item.method, item.path) for item in classifications),
+                        finding.prefix,
+                    )
+                )
+                reconciled = finding.describe()
+                _LOGGER.info("reconciled inferred paths: %s", reconciled)
 
         stored, held = record_endpoints(
             self._session,
             mission.engagement_id,
             result.base_url,
-            result.classifications,
+            classifications,
+            source=result.source,
             at=at,
         )
         self._audit(
@@ -460,6 +566,9 @@ class MissionController:
                 "endpoints": stored,
                 "held_back": held,
                 "requests_sent": result.requests_sent,
+                "source": result.source,
+                "base_url": result.base_url,
+                "reconciled": reconciled,
                 "first_request_at": _moment_text(result.sent_at[:1]),
                 "last_request_at": _moment_text(result.sent_at[-1:]),
                 "surface_digest": result.surface_digest,
@@ -467,11 +576,7 @@ class MissionController:
             at=self._now(),
         )
         self._session.commit()
-        return ReconSummary(
-            endpoints_recorded=stored,
-            endpoints_held_back=held,
-            requests_sent=result.requests_sent,
-        )
+        return (stored, held)
 
     def _charge(
         self, mission: Mission, base_url: str, sent_at: Sequence[datetime]
@@ -505,24 +610,39 @@ class MissionController:
         """
         prepared = self._prepare_sweep(mission, at=at)
         if isinstance(prepared, str):
-            return SweepSummary(skipped=prepared)
+            return self._sweep_skipped(prepared, at=at)
         plan, host, gate = prepared
         if not plan.endpoints:
-            return SweepSummary(
-                endpoints_withheld=len(plan.withheld), skipped="nothing_safe_to_probe"
+            return self._sweep_skipped(
+                "nothing_safe_to_probe", withheld=len(plan.withheld), at=at
             )
         if self._prober is None:  # pragma: no cover - _prepare_sweep already refused
             return SweepSummary(skipped="no_prober_configured")
 
+        # Charged as each request goes out, not from the batch the sweep returns at
+        # the end. A paced sweep of two hundred endpoints runs for an hour and a half,
+        # and for all of it the ledger used to say nothing had been spent: the budget
+        # could not see work in flight, and nothing outside could tell a long sweep
+        # from a stuck one. I could not tell either, and said the agent had hung when
+        # it was working.
+        charged: list[datetime] = []
+
+        def charge(moment: datetime) -> None:
+            gate.record_request(host=host, at=moment)
+            charged.append(moment)
+            # Committed per request so the ledger is true if this process dies
+            # mid-sweep, and visible to anything else looking.
+            self._session.commit()
+
         try:
-            outcome = self._prober.probe(plan.endpoints, at=at)
+            outcome = self._prober.probe(plan.endpoints, at=at, on_request=charge)
         except Exception as error:  # noqa: BLE001 - a sweep must not fail the cycle
             _LOGGER.warning("sweep failed: %s", error)
             self._audit("agent.sweep_failed", {"error": str(error)[:200]}, at=at)
             self._session.commit()
             return SweepSummary(skipped="sweep_failed")
 
-        for moment in outcome.sent_at:
+        for moment in outcome.sent_at[len(charged) :]:
             gate.record_request(host=host, at=moment)
         # Timestamped when it finished, not when the cycle began. A paced sweep runs for
         # half an hour; recording it at the cycle's start time tells an auditor that
@@ -533,6 +653,15 @@ class MissionController:
             {
                 "probed": len(plan.endpoints),
                 "withheld": len(plan.withheld),
+                # What the plan was allowed to include, not only how big it was. A
+                # later run that intends to ask more needs to know this one did not.
+                "probed_mutating": self._probe_mutating,
+                # Endpoints the plan wanted and the budget would not pay for. A sweep
+                # that ends with any of these has not finished its plan, and waiting a
+                # day to continue leaves them unasked rather than re-asked.
+                "withheld_for_budget": sum(
+                    1 for _, reason in plan.withheld if reason == "request_budget"
+                ),
                 "requests_sent": outcome.requests_sent,
                 "first_request_at": _moment_text(outcome.sent_at[:1]),
                 "last_request_at": _moment_text(outcome.sent_at[-1:]),
@@ -553,6 +682,123 @@ class MissionController:
             skipped=outcome.stopped_early,
         )
 
+    def _sweep_left_unfinished(self, engagement_id: EngagementId) -> bool:
+        """Return whether the last sweep stopped with endpoints it could not pay for.
+
+        The interval governs how often the same questions are re-asked. An endpoint the
+        budget refused was not asked at all, and it is not new either -- so neither of
+        the other two rules reaches it, and it waits a day to be refused again.
+
+        Observed: the largest target holds 397 probeable endpoints and its last
+        completed sweep reached 63 of them. The remaining 334 were withheld for budget,
+        and the cadence then held them for twenty-four hours.
+        """
+        for event in AuditEventRepository(self._session).list_for_engagement(
+            engagement_id, limit=60
+        ):
+            if event.event_type != _SWEEP_COMPLETED_EVENT:
+                continue
+            try:
+                payload = json.loads(event.payload)
+            except (ValueError, TypeError):
+                return False
+            if not isinstance(payload, dict):
+                return False
+            if "withheld_for_budget" not in payload:
+                # Written before this was recorded, which says nothing about whether
+                # that sweep finished its plan -- and "nothing" is not "it did".
+                #
+                # Third time today I have defaulted a missing field the other way and
+                # made a rule unreachable for exactly the records that needed it. The
+                # cost of being wrong here is one extra sweep of endpoints that may
+                # already have been asked; the cost of the other default was 334
+                # endpoints never asked at all.
+                return True
+            return int(payload["withheld_for_budget"]) > 0
+        return False
+
+    def _plan_widened(self, engagement_id: EngagementId) -> bool:
+        """Return whether this run intends to ask more than the last sweep did.
+
+        Turning on empty-body probing adds every mutating endpoint to the plan. The
+        inventory has not changed, so no endpoint is new -- but sixty-one of them have
+        never been asked anything, and making that decision wait a day is the same
+        restraint costing more than it saves as the two cadence rules above.
+
+        A sweep that asks questions never asked before is not a repetition, which is
+        the only thing the interval exists to prevent.
+        """
+        for event in AuditEventRepository(self._session).list_for_engagement(
+            engagement_id, limit=60
+        ):
+            if event.event_type != _SWEEP_COMPLETED_EVENT:
+                continue
+            try:
+                payload = json.loads(event.payload)
+            except (ValueError, TypeError):
+                return False
+            if not isinstance(payload, dict):
+                return False
+            # A record written before this was tracked says nothing about what that
+            # sweep included, and "nothing" is not "it already asked these". The only
+            # way this widens is if the operator has turned empty-body probing on,
+            # which is a decision to ask more -- exactly the case the rule is for.
+            #
+            # An earlier version treated the missing field as "do not widen", to avoid
+            # one extra sweep per target after an upgrade. That is the second time in a
+            # day a caution has been written that makes its own rule unreachable for
+            # precisely the targets that need it: every record predating a change
+            # predates it.
+            return bool(self._probe_mutating) and not bool(
+                payload.get("probed_mutating", False)
+            )
+        return False
+
+    def _has_unasked_endpoints(
+        self, engagement_id: EngagementId, *, since: datetime | None
+    ) -> bool:
+        """Return whether the inventory holds endpoints no sweep has ever reached.
+
+        The cadence governs how often the same questions are re-asked. An endpoint
+        discovered since the last sweep has not been asked anything, so waiting is not
+        restraint -- it is a day of not knowing.
+
+        Observed: reconciliation corrected 195 inferred paths onto the prefix the
+        client actually prepends, which was the entire point of building it, and the
+        sweep then declined them for twenty-four hours because it had run that morning
+        against the uncorrected ones.
+        """
+        if since is None:
+            return True
+        return any(
+            stored.entity.first_seen_at > since
+            for stored in EndpointRepository(self._session).list_for_engagement(
+                engagement_id, limit=_ENDPOINT_SELECTION_LIMIT
+            )
+        )
+
+    def _sweep_skipped(
+        self, reason: str, *, withheld: int = 0, at: datetime
+    ) -> SweepSummary:
+        """Record that no probing happened this cycle, and why.
+
+        Two targets recovered 251 and 53 endpoints and then probed none of them, with
+        nothing in the database between the reconnaissance and the end of the run.
+        Reconnaissance had spent the request budget, so the sweep was refused -- which
+        is the budget working, and which looked from the outside exactly like a target
+        with nothing worth asking about.
+
+        A skipped step that leaves no record is indistinguishable from a step that had
+        nothing to do.
+        """
+        self._audit(
+            "agent.sweep_skipped",
+            {"reason": reason, "endpoints_withheld": withheld},
+            at=self._now(),
+        )
+        self._session.commit()
+        return SweepSummary(endpoints_withheld=withheld, skipped=reason)
+
     def _prepare_sweep(
         self, mission: Mission, *, at: datetime
     ) -> tuple[SweepPlan, str, BudgetGate] | str:
@@ -564,15 +810,21 @@ class MissionController:
         if self._prober is None:
             return "no_prober_configured"
 
+        swept_at = AuditEventRepository(self._session).last_occurrence(
+            mission.engagement_id, _SWEEP_COMPLETED_EVENT
+        )
         decision = evaluate_task(
             RecurringTask.DEEP_RECON,
             mission.cadence,
-            last_run_at=AuditEventRepository(self._session).last_occurrence(
-                mission.engagement_id, _SWEEP_COMPLETED_EVENT
-            ),
+            last_run_at=swept_at,
             now=at,
         )
-        if not decision.due:
+        if (
+            not decision.due
+            and not self._has_unasked_endpoints(mission.engagement_id, since=swept_at)
+            and not self._plan_widened(mission.engagement_id)
+            and not self._sweep_left_unfinished(mission.engagement_id)
+        ):
             return decision.reason
 
         endpoints = EndpointRepository(self._session).list_for_engagement(
@@ -651,6 +903,68 @@ class MissionController:
         self._session.commit()
         return ReconSummary(candidates_created=recorded.total, leads_created=leads)
 
+    def _observed_paths(self, engagement_id: EngagementId) -> tuple[str, ...]:
+        """Return the paths this engagement has actually seen leave for the target."""
+        return tuple(
+            stored.entity.path
+            for stored in EndpointRepository(self._session).list_for_engagement(
+                engagement_id, limit=_ENDPOINT_SELECTION_LIMIT
+            )
+            if stored.entity.source.startswith(_OBSERVED_SOURCE)
+        )
+
+    def _entry_changed(self, engagement_id: EngagementId) -> bool:
+        """Return whether a source is now pointed somewhere it has not looked before.
+
+        The cadence exists so a bundle is not refetched every few minutes, which is a
+        rule about repeating the same question. Being pointed at a *different* entry
+        URL is a different question, and waiting an hour to ask it is just an hour of
+        the old answer.
+
+        Not hypothetical. Two targets were registered at their web server's root, which
+        served the IIS welcome page, and both were recorded as having one endpoint.
+        Correcting the entry URL to the one the authorization publishes took them to
+        thirteen and twenty-three -- and without this the correction would have sat
+        unused until the cadence let it through.
+        """
+        wanted = {
+            str(getattr(source, "base_url", "")).rstrip("/")
+            for source in self._reconnaissance
+            if getattr(source, "base_url", None)
+        }
+        if not wanted:
+            return False
+
+        # The audit trail is where a pass records what it was pointed at, and it is
+        # written whether the pass recovered anything or not.
+        looked: set[str] = set()
+        for event in AuditEventRepository(self._session).list_for_engagement(
+            engagement_id, limit=60
+        ):
+            if event.event_type not in {"agent.recon_completed", "agent.recon_empty"}:
+                continue
+            # The payload is stored as canonical JSON bytes, immutably. A record
+            # written before this field existed simply has no base_url, and is skipped
+            # rather than treated as a visit to somewhere unknown.
+            try:
+                payload = json.loads(event.payload)
+            except (ValueError, TypeError):
+                continue
+            recorded = payload.get("base_url") if isinstance(payload, dict) else None
+            if isinstance(recorded, str) and recorded:
+                looked.add(recorded.rstrip("/"))
+        # No record of looking here is exactly what "somewhere it has not looked
+        # before" means. An earlier version of this required `looked` to be non-empty,
+        # meaning to be cautious about records written before the field existed -- and
+        # that is precisely the state of every target whose entry URL needed
+        # correcting, so the correction could not fire for any of them. Four targets
+        # stayed at one endpoint each through two passes because of it.
+        #
+        # Costing one extra reconnaissance pass per target after an upgrade is the
+        # whole price: once a pass records where it looked, an unchanged entry is
+        # recognised and waits again.
+        return bool(wanted - looked)
+
     def _last_recon_at(self, engagement_id: EngagementId) -> datetime | None:
         """Return when reconnaissance last stored an endpoint, if ever."""
         endpoints = EndpointRepository(self._session).list_for_engagement(
@@ -694,7 +1008,18 @@ class MissionController:
         gate: BudgetGate,
         at: datetime,
     ) -> LeadOutcome:
+        # The schedulable list is built once at the top of the cycle and then worked
+        # one lead at a time. A person closing a lead in between -- which is what
+        # triage is -- leaves it in that list, and working it writes the lead back to
+        # waiting. The human verdict is then gone, the lead returns to the queue, and
+        # the next cycle spends budget re-asking a question somebody already answered.
+        #
+        # Re-reading here costs one query per lead and makes the window zero.
+        stored = self._reload_lead(stored.entity.id)
         lead = stored.entity
+        if lead.status.terminal:
+            return LeadOutcome(lead.id, "skipped", f"closed as {lead.status.value}")
+
         eligibility = evaluate_eligibility(
             lead,
             now=at,
@@ -882,6 +1207,12 @@ class MissionController:
             (LeadStatus.STALE, LeadStatus.REJECTED),
             limit=_LEAD_SELECTION_LIMIT,
         ):
+            # A surface change can invalidate the agent's own answer, because that
+            # answer was about a surface that no longer exists. It cannot invalidate a
+            # person's: "this is jquery.min.js, it is a static file" does not stop
+            # being true because the application was redeployed.
+            if stored.entity.closed_by_researcher:
+                continue
             self._save_lead(
                 reawaken(stored.entity, reason="attack_surface_changed", now=at),
                 stored.version,

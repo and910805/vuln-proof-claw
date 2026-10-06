@@ -85,6 +85,20 @@ class ProbeResult:
     location: str = ""
     elapsed_ms: int = 0
     observed_at: datetime | None = None
+    declares_failure: bool = False
+    """Whether the body itself says the request was refused.
+
+    Derived once, at the boundary where the response is read, by
+    :func:`~vuln_proof_claw.agent.bodyfacts.declares_failure` -- a single boolean, not
+    the content. The oracles still never see a body.
+
+    It exists because the rule's premise is not universally true. "An API that
+    authenticates rejects before dispatching: 401 or 403" describes many APIs and not
+    one zero-trust platform under test, whose ``/api/me`` answers an anonymous caller
+    with ``200`` and a body saying it refused, every identity field null. Without this
+    the oracle reads a refusal as a finding, and a reviewer has to open each one to
+    discover the application said no all along.
+    """
 
     def __post_init__(self) -> None:
         for name in ("identity", "method", "target"):
@@ -161,10 +175,74 @@ def _target_of(*candidates: ProbeResult | None) -> str:
 
 def _is_html(content_type: str) -> bool:
     """Return whether a response is a web page rather than an API answer."""
-    return content_type.split(";", 1)[0].strip().lower() in {
+    return _media_type(content_type) in {
         "text/html",
         "application/xhtml+xml",
     }
+
+
+def _media_type(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+#: Media types a web server hands out as files, not as answers. Serving one without
+#: authentication is how the web works, so it cannot be evidence that authentication
+#: is missing. Kept as types rather than file extensions because the type is what the
+#: server actually said; a path ending in .js proves nothing on its own.
+_STATIC_TYPES: Final = frozenset(
+    {
+        "application/javascript",
+        "text/javascript",
+        "application/x-javascript",
+        "text/css",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/svg+xml",
+        "image/x-icon",
+        "image/vnd.microsoft.icon",
+        "font/woff",
+        "font/woff2",
+        "font/ttf",
+        "font/otf",
+        "application/font-woff",
+        "application/font-woff2",
+        "application/vnd.ms-fontobject",
+        "text/plain",
+    }
+)
+
+
+def _is_static_asset(content_type: str) -> bool:
+    """Return whether the server answered with a file rather than with business logic."""
+    media = _media_type(content_type)
+    return media in _STATIC_TYPES or media.startswith(("image/", "font/", "audio/", "video/"))
+
+
+def _not_business_content(content_type: str) -> tuple[str, str] | None:
+    """Return why a response says nothing about access control, or None.
+
+    Shared by both unauthenticated rules, because the reason is the same in each
+    and keeping two copies is how the second one came to be missing it: the
+    missing-authentication rule learned to ignore static files, and the hour after
+    the fix an anonymous sweep reported eleven improper-access-control candidates
+    on one target -- eight webpack chunks, a logo, and the application shell.
+
+    A file the server hands to everyone is a file. An application shell answered on
+    every unmatched path is a router. Neither is privileged content, and a rule that
+    cannot tell them apart from one fills a review queue with work that has to be
+    read and dismissed before the real findings are reached.
+    """
+    if _is_html(content_type):
+        return ("returned HTML, not an API response", "html_response_is_an_application_shell")
+    if _is_static_asset(content_type):
+        return (
+            f"returned {_media_type(content_type)}, a static file rather than a "
+            "business-layer answer",
+            "static_asset_is_not_business_logic",
+        )
+    return None
 
 
 def _find(probes: Sequence[ProbeResult], identity: str) -> ProbeResult | None:
@@ -174,7 +252,7 @@ def _find(probes: Sequence[ProbeResult], identity: str) -> ProbeResult | None:
     return None
 
 
-def check_unauthenticated_access(
+def check_unauthenticated_access(  # noqa: PLR0911 - one guard clause per suppression
     probes: Sequence[ProbeResult],
     *,
     authenticated: str,
@@ -185,6 +263,10 @@ def check_unauthenticated_access(
     succeed with identical bodies, that is only a finding if the content is actually
     privileged, which this rule cannot know. It therefore reports only the narrower,
     checkable case — anonymous succeeds where the server also serves real content.
+
+    "Real content" excludes what the server hands to everyone by design: scripts,
+    images, fonts, and the application shell. Identical bodies are the entire signal
+    here, and those are identical to everyone on purpose.
     """
     anonymous = _find(probes, ANONYMOUS)
     user = _find(probes, authenticated)
@@ -222,6 +304,19 @@ def check_unauthenticated_access(
             reason="anonymous body too small to be meaningful",
             suppressed_by="empty_or_tiny_body",
         )
+    benign = _not_business_content(anonymous.content_type)
+    if benign is not None:
+        # Identical bodies are the whole signal here, and a file served to everyone is
+        # identical to everyone by design. Without this the rule reports every script,
+        # image and application shell on the target.
+        reason, suppression = benign
+        return OracleVerdict(
+            OracleRule.UNAUTHENTICATED_ACCESS,
+            triggered=False,
+            target=target,
+            reason=f"anonymous {reason}",
+            suppressed_by=suppression,
+        )
     if anonymous.body_digest != user.body_digest:
         return OracleVerdict(
             OracleRule.UNAUTHENTICATED_ACCESS,
@@ -242,7 +337,7 @@ def check_unauthenticated_access(
     )
 
 
-def check_horizontal_privilege(
+def check_horizontal_privilege(  # noqa: PLR0911 - one guard clause per suppression
     probes: Sequence[ProbeResult],
     *,
     owner: str,
@@ -281,6 +376,18 @@ def check_horizontal_privilege(
             triggered=False,
             target=target,
             reason=f"{other} correctly received {other_probe.status_code}",
+        )
+    benign = _not_business_content(owner_probe.content_type)
+    if benign is not None:
+        # Identical bodies are the whole signal for a comparison rule, and a file the
+        # server hands to everyone is identical to everyone by design.
+        reason, suppression = benign
+        return OracleVerdict(
+            OracleRule.HORIZONTAL_PRIVILEGE,
+            triggered=False,
+            target=target,
+            reason=f"{owner} {reason}",
+            suppressed_by=suppression,
         )
     if other_probe.body_digest != owner_probe.body_digest:
         return OracleVerdict(
@@ -346,6 +453,18 @@ def check_vertical_privilege(
             triggered=False,
             target=target,
             reason=f"{lower} correctly received {low.status_code}",
+        )
+    benign = _not_business_content(low.content_type)
+    if benign is not None:
+        # Identical bodies are the whole signal for a comparison rule, and a file the
+        # server hands to everyone is identical to everyone by design.
+        reason, suppression = benign
+        return OracleVerdict(
+            OracleRule.VERTICAL_PRIVILEGE,
+            triggered=False,
+            target=target,
+            reason=f"{lower} {reason}",
+            suppressed_by=suppression,
         )
     if low.body_digest != high.body_digest:
         return OracleVerdict(
@@ -438,7 +557,11 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
     * ``5xx`` with an empty body — an unhandled crash, not a business answer;
     * any redirect — commonly a login redirect, which *is* an auth check;
     * an HTML body — a single-page application serves its own shell on every path it
-      does not recognise, so this says nothing about the endpoint.
+      does not recognise, so this says nothing about the endpoint;
+    * a static asset — a script, stylesheet, font or image is a file the server hands
+      out, and handing one out unauthenticated is how the web works;
+    * a body that declares its own failure — some applications refuse with ``200`` and
+      ``success: false`` rather than with ``401``, and that is a control working.
     """
     if probe.identity != ANONYMOUS:
         return OracleVerdict(
@@ -470,18 +593,30 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
             reason=f"{probe.status_code} proves nothing about authentication",
             suppressed_by="no_handler_reached",
         )
-    if _is_html(probe.content_type):
-        # A single-page application answers every unmatched path with its own
-        # index.html at 200. That is the router's fallback, not a business-layer
-        # answer, and treating it as one reports a finding on any path that does not
-        # exist. An API that genuinely answers without authenticating does so in the
-        # content type it serves its API in.
+
+    # A single-page application answers every unmatched path with its own index.html,
+    # and a web server hands out its scripts and images to anyone. Neither says
+    # anything about whether this endpoint authenticates.
+    benign = _not_business_content(probe.content_type)
+    if benign is not None:
+        reason, suppression = benign
         return OracleVerdict(
             OracleRule.MISSING_AUTHENTICATION,
             triggered=False,
             target=probe.target,
-            reason=f"{probe.status_code} returned HTML, not an API response",
-            suppressed_by="html_response_is_an_application_shell",
+            reason=f"{probe.status_code} {reason}",
+            suppressed_by=suppression,
+        )
+    if probe.declares_failure:
+        # The application refused; it simply did so in the body rather than in the
+        # status line. Reading that as a finding reports an endpoint for enforcing
+        # exactly the control this rule exists to find missing.
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"{probe.status_code}, but the body states the request was refused",
+            suppressed_by="body_declares_failure",
         )
     if probe.status_code >= _SERVER_ERROR_MIN and probe.body_size == 0:
         return OracleVerdict(

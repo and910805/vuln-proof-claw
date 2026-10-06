@@ -34,6 +34,7 @@ from urllib.parse import urljoin
 
 from vuln_proof_claw.agent.authsession import AuthenticatedTransport, ProbeLimits
 from vuln_proof_claw.agent.endpoints import EndpointClassification, classify_all
+from vuln_proof_claw.agent.htmldiscovery import HtmlEndpoint
 from vuln_proof_claw.agent.htmldiscovery import extract_endpoints as extract_html_endpoints
 from vuln_proof_claw.agent.htmldiscovery import inventory as html_inventory
 from vuln_proof_claw.agent.jsdiscovery import (
@@ -49,6 +50,10 @@ from vuln_proof_claw.policy.scope import EngagementScope, evaluate_scope, normal
 _LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_MAX_ASSETS: Final = 8
+#: Linked pages to read beyond the entry page. Small on purpose: this is how a
+#: person reads an application's navigation, not how a scanner enumerates it, and
+#: every one of them is a paced request against someone else's system.
+_DEFAULT_MAX_PAGES: Final = 12
 #: An entry page commonly redirects once, to a locale prefix or a sign-in page. Two
 #: allows for a chain; more than that is a loop or a target leading us somewhere.
 _DEFAULT_MAX_REDIRECTS: Final = 2
@@ -102,6 +107,14 @@ class ReconResult:
     """What one reconnaissance pass recovered."""
 
     base_url: str
+    source: str = "jsdiscovery"
+    """How these paths were learned.
+
+    A path read from source is an inference; a path seen on the wire is a fact. They
+    are stored differently so that a later pass can tell one from the other — without
+    that distinction nothing can check an inference against an observation.
+    """
+
     assets: tuple[FetchedAsset, ...] = ()
     calls: tuple[DiscoveredCall, ...] = ()
     classifications: tuple[EndpointClassification, ...] = ()
@@ -146,6 +159,14 @@ class SpaReconnaissance:
     transport: AuthenticatedTransport
     scope: EngagementScope
     base_url: str
+    maximum_pages: int = _DEFAULT_MAX_PAGES
+    """How many linked pages to read beyond the entry page.
+
+    Zero reads only the entry page, which is what this did before. The cost is one
+    paced request per page, and the return on a server-rendered application is the
+    difference between knowing five endpoints and knowing its actual surface.
+    """
+
     maximum_assets: int = _DEFAULT_MAX_ASSETS
     maximum_redirects: int = _DEFAULT_MAX_REDIRECTS
     session_headers: Callable[[], tuple[tuple[str, str], ...]] | None = None
@@ -228,7 +249,7 @@ class SpaReconnaissance:
         # so the scripts yield nothing and the surface is in the markup instead: the
         # links it offers and the forms it posts. Read that too rather than reporting an
         # empty inventory for a target that plainly has one.
-        from_markup = html_inventory(extract_html_endpoints(html, page_url=self.base_url))
+        from_markup = html_inventory(self._walk_markup(html, errors=errors, at=moment))
         merged = (*recovered, *(item for item in from_markup if item not in recovered))
 
         return ReconResult(
@@ -239,6 +260,49 @@ class SpaReconnaissance:
             errors=tuple(errors),
             sent_at=tuple(self._sent_at[started_with:]),
         )
+
+    def _walk_markup(
+        self, html: str, *, errors: list[str], at: datetime
+    ) -> tuple[HtmlEndpoint, ...]:
+        """Read the entry page's markup, and a bounded number of the pages it links to.
+
+        A server-rendered application keeps its surface in its navigation. The entry
+        page of one management interface offered five requests; the pages one click
+        behind it offered the rest. Reading only the first page reports that
+        application as having almost no surface, and a sweep then confirms it.
+
+        Bounded, same-origin, and only ever following links the application itself
+        published -- which is what a person clicking through it would do, at the same
+        paced rate. It is not a crawl: there is no second level, no guessed path, and
+        no link this application did not print.
+        """
+        found = extract_html_endpoints(html, page_url=self.base_url)
+        if self.maximum_pages < 1:
+            return found
+
+        seen = {self.base_url}
+        followed = 0
+        for endpoint in found:
+            if followed >= self.maximum_pages:
+                break
+            # Only plain navigations. A form's target is a state change until something
+            # proves otherwise, and this is reconnaissance.
+            if endpoint.method != "GET" or "?" in endpoint.path:
+                continue
+            url = urljoin(self.base_url, endpoint.path)
+            if url in seen:
+                continue
+            seen.add(url)
+            followed += 1
+            page = self._fetch(url, _PAGE_LIMITS, at=at)
+            if page.body is None:
+                errors.append(f"linked page not retrieved: {endpoint.path} — {page.reason}")
+                continue
+            deeper = extract_html_endpoints(
+                page.body.decode("utf-8", errors="replace"), page_url=url
+            )
+            found = (*found, *(item for item in deeper if item not in found))
+        return found
 
     @staticmethod
     def _prioritise(assets: tuple[str, ...]) -> tuple[str, ...]:

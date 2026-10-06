@@ -14,11 +14,13 @@ discovery source, and the classifier decides what may be called.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import import_module
 from typing import Any, Final
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import SecretStr
 
@@ -79,6 +81,24 @@ class LoginInstruction:
                 raise DomainValidationError("login selectors must contain 1-256 characters")
 
 
+#: Generous for a page and nowhere near a crawl: a heavy application loads a few
+#: hundred resources, and anything past that is a loop rather than a visit.
+_DEFAULT_MAXIMUM_REQUESTS: Final = 400
+
+#: Settles a sign-in can perform: after opening the form, after submitting, after the
+#: continue step, after navigating, and once at the end.
+_SETTLE_STEPS: Final = 5
+
+#: Starting Playwright and launching Chromium, neither of which any per-operation
+#: timeout covers because both happen before there is a context to set one on.
+_LAUNCH_ALLOWANCE_SECONDS: Final = 90.0
+
+
+def request_settle_steps() -> int:
+    """Return how many settle waits one visit may perform."""
+    return _SETTLE_STEPS
+
+
 @dataclass(frozen=True, slots=True)
 class BrowserRunRequest:
     target: str
@@ -87,6 +107,42 @@ class BrowserRunRequest:
     login: LoginInstruction | None = None
     timeout_ms: int = 15_000
     settle_ms: int = 2_000
+    skip_page_furniture: bool = True
+    """Do not fetch images, fonts or media.
+
+    They are already excluded from the inventory, so fetching them spends the target's
+    rate budget on bytes nothing reads. On one storefront they were almost the whole
+    visit, and reconnaissance left no allowance for the probing it exists to inform.
+
+    Off only when a page genuinely will not work without them, which is rare and
+    should be a deliberate choice rather than the default.
+    """
+
+    maximum_requests: int = _DEFAULT_MAXIMUM_REQUESTS
+
+    @property
+    def deadline_seconds(self) -> float:
+        """How long the whole visit may take, including starting a browser.
+
+        Derived from the timeouts already configured rather than set separately, so
+        raising one of those cannot leave the deadline underneath it. The allowance is
+        for launching Playwright and Chromium, which happens before any per-operation
+        timeout can apply.
+        """
+        steps = request_settle_steps()
+        return (self.timeout_ms + steps * self.settle_ms) / 1000 + _LAUNCH_ALLOWANCE_SECONDS
+    """The most in-scope requests one visit may make.
+
+    A browser fetches whatever the page asks for, and a page can ask for a great deal.
+    One storefront visit recorded five and a half thousand requests in a minute against
+    an authorization of three per minute per domain -- most aborted here as out of
+    scope, but with no ceiling there was nothing that would have stopped them had they
+    been in scope.
+
+    The limit the engagement states is for probing, and a page visit is not probing.
+    This is not that limit; it is the bound that keeps one visit from becoming a load
+    test of somebody else's system.
+    """
     """How long to let the application keep calling after the page has loaded.
 
     A single-page application fetches its real data after DOMContentLoaded, so
@@ -139,19 +195,49 @@ class BrowserRunRequest:
         object.__setattr__(self, "allowed_hosts", normalized_hosts)
 
 
+def body_field_names(body: str | None) -> tuple[str, ...]:
+    """Return the field names a request body carried, and nothing else.
+
+    Understands JSON objects and form encoding, which is what a browser sends. A value
+    is never read: it is not needed to describe an endpoint and a login's is a
+    credential, so the only way to keep that promise is for no value to be reachable
+    from what this returns.
+
+    A body it cannot parse yields nothing rather than a guess.
+    """
+    if not body:
+        return ()
+    try:
+        document = json.loads(body)
+    except ValueError:
+        document = None
+    if isinstance(document, dict):
+        return tuple(str(key) for key in document)
+    if document is not None:
+        return ()
+    try:
+        return tuple(dict.fromkeys(name for name, _ in parse_qsl(body, strict_parsing=True)))
+    except ValueError:
+        return ()
+
+
 @dataclass(frozen=True, slots=True)
 class ObservedRequest:
     """One request the application made of its own accord.
 
-    ``carried_body`` rather than the body itself: what a request *was* is enough to
-    classify an endpoint, and a login's body is a credential. Recording the shape and
-    not the contents keeps this safe to write into evidence.
+    ``carried_body`` rather than the body itself, and ``body_keys`` rather than the
+    values under them. A login's body is a credential; the names of its fields are not,
+    and they are what parameter testing needs to know. Nothing here can carry a value,
+    which is what keeps an observation safe to write into evidence.
     """
 
     method: str
     url: str
     resource_type: str
     carried_body: bool
+    body_keys: tuple[str, ...] = ()
+    """The field names a body carried, never the values under them."""
+
     sent_at: datetime | None = None
     """When the browser issued it, taken as it was issued.
 
@@ -172,6 +258,14 @@ _NOT_API: Final = frozenset(
     {"stylesheet", "image", "font", "media", "manifest", "other"}
 )
 
+#: Resource types this never needs and therefore never asks for. They are already
+#: excluded from the inventory, so fetching them only spends the target's rate budget
+#: on bytes nothing reads -- and on a storefront they are almost all of it.
+#:
+#: Scripts are not here: the application needs them to run, and reading them is itself
+#: a discovery source.
+_NEVER_FETCHED: Final = frozenset({"image", "font", "media"})
+
 
 @dataclass(frozen=True, slots=True)
 class BrowserRunResult:
@@ -181,6 +275,20 @@ class BrowserRunResult:
     screenshot: bytes
     blocked_requests: tuple[str, ...]
     observed_requests: tuple[ObservedRequest, ...] = ()
+    declined_requests: int = 0
+    """How many images, fonts and media this chose not to fetch.
+
+    Not blocked and not truncated: in scope, allowed, and of no use to an inventory of
+    an application's API. Reported so the ledger's numbers can be read next to what
+    they would have been.
+    """
+
+    truncated_requests: int = 0
+    """How many in-scope requests the ceiling refused after the budget was spent.
+
+    Non-zero means this visit saw less of the application than it wanted to, which an
+    operator has to know: an inventory cut short looks the same as a small surface.
+    """
 
     @property
     def api_requests(self) -> tuple[ObservedRequest, ...]:
@@ -204,10 +312,39 @@ def inventory(requests: tuple[ObservedRequest, ...]) -> tuple[tuple[str, str], .
     return tuple(seen)
 
 
+class BrowserVisitTimeoutError(RuntimeError):
+    """A visit ran past its deadline and was abandoned."""
+
+
 class IsolatedBrowserRunner:
     """Use a fresh Chromium process/context for exactly one bounded run."""
 
     async def run(self, request: BrowserRunRequest) -> BrowserRunResult:
+        """Make the visit, or give up on it. Never neither.
+
+        The per-operation timeout is set on the context, which exists only after the
+        browser has launched -- so launching it was unbounded, and so was starting
+        Playwright itself. An agent spent an hour and seven minutes inside this call,
+        having authenticated and sent nothing, while its scheduled task reported
+        Running and its log's last line said the login had succeeded.
+
+        One deadline over the whole visit covers every step including the ones before
+        a context exists. Timing out is reported as a failed visit, which the caller
+        already knows how to treat as a lost pass rather than a lost cycle.
+        """
+        try:
+            visited: BrowserRunResult = await asyncio.wait_for(
+                self._visit(request), timeout=request.deadline_seconds
+            )
+            return visited
+        except TimeoutError as expired:
+            raise BrowserVisitTimeoutError(
+                f"browser visit exceeded {request.deadline_seconds:.0f}s"
+            ) from expired
+
+    async def _visit(  # noqa: PLR0915 - one browser visit, start to finish, in order
+        self, request: BrowserRunRequest
+    ) -> BrowserRunResult:
         try:
             async_playwright = import_module("playwright.async_api").async_playwright
         except ImportError as error:  # pragma: no cover - optional dependency
@@ -217,6 +354,8 @@ class IsolatedBrowserRunner:
 
         blocked: list[str] = []
         observed: list[ObservedRequest] = []
+        truncated: list[str] = []
+        declined: list[str] = []
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(
                 headless=True,
@@ -231,20 +370,17 @@ class IsolatedBrowserRunner:
                 )
                 context.set_default_timeout(request.timeout_ms)
 
-                def record(outgoing: Any) -> None:
-                    # Recorded after the route handler has already allowed it, so an
-                    # observation is never of a request that left the scope.
+                def note(outgoing: Any) -> None:
                     observed.append(
                         ObservedRequest(
                             method=outgoing.method,
                             url=outgoing.url,
                             resource_type=outgoing.resource_type,
                             carried_body=outgoing.post_data is not None,
+                            body_keys=body_field_names(outgoing.post_data),
                             sent_at=datetime.now(UTC),
                         )
                     )
-
-                context.on("request", record)
 
                 async def enforce_scope(route: Any) -> None:
                     parsed_url = urlsplit(route.request.url)
@@ -260,8 +396,32 @@ class IsolatedBrowserRunner:
                     ):
                         blocked.append(route.request.url)
                         await route.abort("blockedbyclient")
-                    else:
-                        await route.continue_()
+                        return
+                    if (
+                        request.skip_page_furniture
+                        and route.request.resource_type in _NEVER_FETCHED
+                    ):
+                        # Declined, not blocked: the scope allows it and we simply have
+                        # no use for it. Counting it as blocked would read as the target
+                        # reaching somewhere it should not.
+                        declined.append(route.request.url)
+                        await route.abort("blockedbyclient")
+                        return
+                    if len(observed) >= request.maximum_requests:
+                        # The ceiling, not the page's appetite, decides how much of
+                        # somebody else's system one visit may use.
+                        truncated.append(route.request.url)
+                        await route.abort("blockedbyclient")
+                        return
+                    # Recorded here rather than on the context's request event, which
+                    # fires for every request a page *initiates* -- aborted ones
+                    # included. One storefront visit recorded 5,551 requests against
+                    # the target's minute, almost all of them aborted on this machine
+                    # and never sent. A ledger that over-reports is as useless as one
+                    # that under-reports: both leave the question "how hard did you hit
+                    # this host" unanswerable.
+                    note(route.request)
+                    await route.continue_()
 
                 await context.route("**/*", enforce_scope)
                 page = await context.new_page()
@@ -300,6 +460,8 @@ class IsolatedBrowserRunner:
                     status_code=response.status if response is not None else None,
                     screenshot=await page.screenshot(full_page=True),
                     blocked_requests=tuple(blocked),
+                    truncated_requests=len(truncated),
+                    declined_requests=len(declined),
                     observed_requests=tuple(observed),
                 )
             finally:

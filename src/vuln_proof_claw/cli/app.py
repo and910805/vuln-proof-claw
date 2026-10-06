@@ -13,6 +13,7 @@ from threading import Event
 from typing import Annotated
 
 import typer
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from vuln_proof_claw.agent.authsession import (
@@ -21,6 +22,7 @@ from vuln_proof_claw.agent.authsession import (
     ProbeError,
 )
 from vuln_proof_claw.agent.browserrecon import BrowserReconnaissance
+from vuln_proof_claw.agent.concurrency import ConcurrencyError, EngagementLock
 from vuln_proof_claw.agent.controller import (
     DEFAULT_WATCHDOG_SECONDS,
     MissionController,
@@ -33,6 +35,7 @@ from vuln_proof_claw.agent.planner import DeterministicPlanner
 from vuln_proof_claw.agent.recon import SpaReconnaissance
 from vuln_proof_claw.agent.runner import MissionRunner, RunnerConfig
 from vuln_proof_claw.agent.sweep import DifferentialSweep, SweepPolicy, SweepProber
+from vuln_proof_claw.automation.browser import LoginInstruction
 from vuln_proof_claw.cli.doctor import diagnose
 from vuln_proof_claw.cli.mission import (
     create_from_definition,
@@ -65,6 +68,7 @@ from vuln_proof_claw.execution.preflight import run_preflight
 from vuln_proof_claw.observability.logging import configure_logging
 from vuln_proof_claw.persistence.autonomous_repositories import MissionRepository
 from vuln_proof_claw.persistence.repositories import ScopeRepository
+from vuln_proof_claw.persistence.schema_check import inspect_schema, repair_schema
 from vuln_proof_claw.persistence.session import (
     create_engine_from_settings,
     create_session_factory,
@@ -110,6 +114,113 @@ def root(
     if version:
         print_version()
         raise typer.Exit
+
+
+def _announce_transport(*, insecure_tls: bool, origins: frozenset[str]) -> None:
+    """Say out loud what this run has been allowed to relax.
+
+    Both lines describe a weakened guarantee, so they belong in the operator's view of
+    the run rather than only in a flag they typed some time ago.
+    """
+    if insecure_tls:
+        typer.echo(
+            "[warning] TLS certificate verification is disabled; evidence from this "
+            "run is not protected against interception"
+        )
+    if origins:
+        typer.echo(f"[note] reading static code from: {', '.join(sorted(origins))}")
+
+
+def _claim_engagement(engine: Engine, *, key: str, mission_id: str) -> EngagementLock:
+    """Take this activity's single agent slot, or refuse and say who holds it.
+
+    Each target keeps its own database and therefore its own ledger, so four agents on
+    four targets each believed itself inside an hourly budget of 100 while between them
+    they sent 178 in that hour. No ledger was wrong; the total had nowhere to live. It
+    lives here.
+
+    The slot is per key, and the key defaults to the engagement. One authorization
+    written as several engagement files -- an internal list and a public one, say --
+    is still one hourly budget, and ``--concurrency-group`` is how an operator says so.
+    """
+    guard = EngagementLock(engagement_id=key, mission_id=mission_id)
+    try:
+        guard.acquire()
+    except ConcurrencyError as refusal:
+        engine.dispose()
+        typer.echo(f"[error] {refusal}")
+        typer.echo("        this authorization allows one agent at a time")
+        raise typer.Exit(code=1) from refusal
+    return guard
+
+
+def _require_current_schema(engine: Engine) -> None:
+    """Refuse to start against a database older than the code reading it.
+
+    Before the first cycle, not inside the hundredth. A database made by an earlier
+    release is a normal thing for an agent that runs for days across upgrades, and the
+    symptom without this check is every cycle failing with a sentence about SQLite --
+    which says nothing about the file being the cause, or about what to do next.
+    """
+    drift = inspect_schema(engine)
+    if drift.current:
+        return
+    engine.dispose()
+    typer.echo(f"[error] this database is older than the code reading it: {drift.describe()}")
+    typer.echo("        run 'vuln-proof-claw db repair' to bring it up to date")
+    raise typer.Exit(code=1)
+
+
+@app.command("db")
+def db_command(
+    action: Annotated[
+        str,
+        typer.Argument(help="check | repair"),
+    ] = "check",
+) -> None:
+    """Report, or additively repair, a database older than the code reading it.
+
+    An agent that runs for days is upgraded while its databases persist, so a file
+    written by last week's release is read by this week's. ``check`` says what the
+    models expect that the file does not have; ``repair`` adds the missing tables and
+    columns, which is the only shape of change a release makes to this schema.
+
+    Repair is additive and only additive. It never drops a column, never rewrites a
+    row, and never touches data: a database holding evidence is a record of what was
+    sent to someone else's system, and bringing its schema forward must not be able to
+    alter what it says.
+    """
+    if action not in {"check", "repair"}:
+        typer.echo(f"[error] unknown action: {action} (expected 'check' or 'repair')")
+        raise typer.Exit(code=2)
+
+    engine = create_engine_from_settings(load_settings())
+    try:
+        drift = inspect_schema(engine)
+        if drift.current:
+            typer.echo("schema matches the models; nothing to do")
+            return
+        typer.echo(f"out of date: {drift.describe()}")
+        if action == "check":
+            typer.echo("run 'vuln-proof-claw db repair' to bring it up to date")
+            raise typer.Exit(code=1)
+
+        added_tables, added_columns, refused = repair_schema(engine)
+        for name in added_tables:
+            typer.echo(f"  added table  {name}")
+        for table, column in added_columns:
+            typer.echo(f"  added column {table}.{column}")
+        for table, column, reason in refused:
+            typer.echo(f"  [skipped] {table}.{column}: {reason}")
+        if refused:
+            typer.echo(
+                "some columns could not be added in place; the file predates this "
+                "release by more than one additive step"
+            )
+            raise typer.Exit(code=1)
+        typer.echo("schema brought up to date; no row was read or written")
+    finally:
+        engine.dispose()
 
 
 @app.command("doctor")
@@ -393,7 +504,14 @@ def _build_prober(
         # Probing reaches only the engagement's own targets, so no asset origins here:
         # reading a CDN's code is reconnaissance, and this is the part that asks
         # questions of a host.
-        transport=PinnedAuthTransport(scope, ssl_context=tls),  # type: ignore[arg-type]
+        transport=PinnedAuthTransport(
+            scope,  # type: ignore[arg-type]
+            ssl_context=tls,
+            # Without this the transport refuses the login itself: a POST carrying a
+            # body is permitted only at the path the bundle nominates, and leaving it
+            # unset meant every configured login was rejected by our own guard.
+            login_path=bundle.login.path if bundle.login else None,
+        ),
         bundle=bundle,
         credentials=credentials,
         scope=scope,  # type: ignore[arg-type]
@@ -424,29 +542,36 @@ def _reconnaissance(  # noqa: PLR0913 - each argument is a separate operator dec
     origins: frozenset[str],
     session_headers: Callable[[], tuple[tuple[str, str], ...]] | None,
     use_browser: bool,
-) -> Reconnaissance | None:
-    """Build the discovery source, or none when no entry point was given."""
+    browser_login: LoginInstruction | None,
+) -> tuple[Reconnaissance, ...]:
+    """Build the discovery sources, or none when no entry point was given."""
     if base_url is None:
-        return None
-    if use_browser:
-        # The browser path carries its own session: it logs in through the page rather
-        # than replaying a cookie, so the header supplier does not apply to it.
-        return BrowserReconnaissance(
+        return ()
+    sources: list[Reconnaissance] = [
+        SpaReconnaissance(
+            transport=PinnedAuthTransport(
+                scope,  # type: ignore[arg-type]
+                ssl_context=tls,
+                read_only_origins=origins,
+            ),
             scope=scope,  # type: ignore[arg-type]
             base_url=base_url,
-            ignore_https_errors=tls is not None,
+            asset_origins=origins,
+            session_headers=session_headers,
         )
-    return SpaReconnaissance(
-        transport=PinnedAuthTransport(
-            scope,  # type: ignore[arg-type]
-            ssl_context=tls,
-            read_only_origins=origins,
-        ),
-        scope=scope,  # type: ignore[arg-type]
-        base_url=base_url,
-        asset_origins=origins,
-        session_headers=session_headers,
-    )
+    ]
+    if use_browser:
+        # The browser path carries its own session: it signs in through the page rather
+        # than replaying a cookie, so the header supplier does not apply to it.
+        sources.append(
+            BrowserReconnaissance(
+                scope=scope,  # type: ignore[arg-type]
+                base_url=base_url,
+                ignore_https_errors=tls is not None,
+                login=browser_login,
+            )
+        )
+    return tuple(sources)
 
 
 def _discovery_session(
@@ -480,6 +605,34 @@ def _discovery_session(
         return probing.sessions.cookie_header(probing.discovery_identity)
 
     return headers
+
+
+def _browser_login(
+    path: Path, resolution: CredentialResolution, identity: str
+) -> LoginInstruction | None:
+    """Build the page sign-in from the bundle, for the identity discovery will use.
+
+    Returns None when the bundle describes no browser login or that identity has no
+    credential yet — discovery then runs anonymously, which sees whatever the sign-in
+    screen itself fetches and says so, rather than failing.
+    """
+    bundle = load_identity_bundle(path)
+    if bundle.login is None or bundle.login.browser is None:
+        return None
+    credential = resolution.resolved.get(identity)
+    if credential is None:
+        return None
+    page = bundle.login.browser
+    return LoginInstruction(
+        login_url=page.login_url,
+        open_selector=page.open_selector,
+        username_selector=page.username_selector,
+        password_selector=page.password_selector,
+        submit_selector=page.submit_selector,
+        continue_selector=page.continue_selector,
+        username=credential.username,
+        password=credential.password,
+    )
 
 
 @mission_app.command("credentials")
@@ -539,12 +692,31 @@ def mission_credentials_command(
 
 
 @mission_app.command("run")
-def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named flags
+def mission_run_command(  # noqa: PLR0913, PLR0915, PLR0917 - Typer binds these as flags
     mission_id: Annotated[str, typer.Argument(help="Mission identifier.")],
     watchdog_seconds: Annotated[
         int,
         typer.Option("--watchdog", help="Seconds before a silent run is reaped."),
     ] = DEFAULT_WATCHDOG_SECONDS,
+    concurrency_group: Annotated[
+        str | None,
+        typer.Option(
+            "--concurrency-group",
+            help="Share one agent slot with every run given the same name. Defaults "
+            "to this mission's engagement. Use it when one authorization is written "
+            "as several engagement files: the hourly budget belongs to the activity, "
+            "not to whichever file a target happens to sit in.",
+        ),
+    ] = None,
+    max_cycles: Annotated[
+        int,
+        typer.Option(
+            "--max-cycles",
+            help="Stop after this many completed cycles (0 = run until stopped). "
+            "An engagement with several targets and one concurrency budget has to "
+            "work them in turn, and a loop that never ends cannot be taken in turns.",
+        ),
+    ] = 0,
     max_failures: Annotated[
         int,
         typer.Option("--max-failures", help="Consecutive failures before giving up."),
@@ -595,9 +767,10 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
         bool,
         typer.Option(
             "--browser",
-            help="Recover the surface by watching a browser use the target, instead "
-            "of reading its JavaScript. Finds the paths the application actually "
-            "sends, which are not always the ones its source contains. Needs "
+            help="Also watch a browser use the target, alongside reading its "
+            "JavaScript. The paths an application sends are not always the ones its "
+            "source contains, and only an observed request can show the difference: "
+            "what is seen corrects what is inferred, in the same pass. Needs "
             "vuln-proof-claw[browser].",
         ),
     ] = False,
@@ -631,16 +804,13 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
 
     origins = frozenset(asset_origin or ())
     tls = unverified_tls_context() if insecure_tls else None
-    if insecure_tls:
-        typer.echo(
-            "[warning] TLS certificate verification is disabled; evidence from this "
-            "run is not protected against interception"
-        )
-    if origins:
-        typer.echo(f"[note] reading static code from: {', '.join(sorted(origins))}")
+    _announce_transport(insecure_tls=insecure_tls, origins=origins)
 
     engine = create_engine_from_settings(load_settings())
+    _require_current_schema(engine)
     session_factory = create_session_factory(engine)
+    with session_factory() as opening:
+        locked_engagement = _engagement_of(opening, mission_id)
 
     @contextmanager
     def controller_factory() -> Iterator[MissionController]:
@@ -651,6 +821,7 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                 raise MissionControllerError("engagement_scope_unavailable")
             prober = None
             session_headers: Callable[[], tuple[tuple[str, str], ...]] | None = None
+            browser_login: LoginInstruction | None = None
             if identities is not None:
                 budget = _mission_of(session, mission_id).budget
                 probing = _build_prober(
@@ -673,6 +844,9 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                 # reconnaissance sees what an anonymous caller sees, which on an
                 # application behind a login is the login page and nothing else.
                 session_headers = _discovery_session(probing)
+                browser_login = _browser_login(
+                    identities, resolution, probing.discovery_identity
+                )
             yield MissionController(
                 session,
                 MissionId(mission_id),
@@ -690,6 +864,7 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
                     origins=origins,
                     session_headers=session_headers,
                     use_browser=browser,
+                    browser_login=browser_login,
                 ),
                 prober=prober,
                 probe_mutating=probe_mutating,
@@ -700,12 +875,25 @@ def mission_run_command(  # noqa: PLR0913, PLR0917 - Typer binds these as named 
         config=RunnerConfig(
             watchdog_seconds=watchdog_seconds,
             maximum_consecutive_failures=max_failures,
+            maximum_cycles=max_cycles,
         ),
     )
-    typer.echo(f"mission {mission_id} running continuously (Ctrl+C to stop)")
+    # One engagement, one agent. Each target keeps its own database and therefore its
+    # own ledger, so four agents on four targets of one engagement each believed itself
+    # inside an hourly budget of 100 while between them they sent 178 in the hour. No
+    # ledger was wrong; the total had nowhere to live. It lives here.
+    guard = _claim_engagement(
+        engine,
+        key=concurrency_group or str(locked_engagement),
+        mission_id=mission_id,
+    )
+
+    shape = "continuously" if not max_cycles else f"for {max_cycles} cycle(s)"
+    typer.echo(f"mission {mission_id} running {shape} (Ctrl+C to stop)")
     try:
         report = runner.run_forever(stop)
     finally:
+        guard.release()
         engine.dispose()
 
     typer.echo(

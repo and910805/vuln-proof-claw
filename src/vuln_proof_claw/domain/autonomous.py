@@ -295,6 +295,19 @@ class Lead:
     last_reasoning_summary: str | None = None
     next_action: str | None = None
     blocked_reason: str | None = None
+    closed_by_researcher: bool = False
+    """Whether a person closed this, rather than the agent.
+
+    A lead the agent rejected may be worth reopening when the target's surface
+    changes: the answer it recorded was about a surface that no longer exists. A lead
+    a person closed is a different kind of statement -- "this is jquery.min.js, it is
+    a static file" does not stop being true because the application was redeployed.
+
+    Twelve hand-triaged leads, each with a written reason, were returned to the queue
+    by a surface change. The agent then spent its budget re-asking them, and the
+    operator saw them again as work to do.
+    """
+
     dedupe_key: str | None = None
     id: LeadId = field(default_factory=new_lead_id)
     created_at: datetime = field(default_factory=utc_now)
