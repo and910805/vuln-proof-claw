@@ -131,23 +131,25 @@ def _announce_transport(*, insecure_tls: bool, origins: frozenset[str]) -> None:
         typer.echo(f"[note] reading static code from: {', '.join(sorted(origins))}")
 
 
-def _claim_engagement(
-    engine: Engine, *, engagement_id: EngagementId, mission_id: str
-) -> EngagementLock:
-    """Take this engagement's single agent slot, or refuse and say who holds it.
+def _claim_engagement(engine: Engine, *, key: str, mission_id: str) -> EngagementLock:
+    """Take this activity's single agent slot, or refuse and say who holds it.
 
     Each target keeps its own database and therefore its own ledger, so four agents on
-    four targets of one engagement each believed itself inside an hourly budget of 100
-    while between them they sent 178 in that hour. No ledger was wrong; the total had
-    nowhere to live. It lives here.
+    four targets each believed itself inside an hourly budget of 100 while between them
+    they sent 178 in that hour. No ledger was wrong; the total had nowhere to live. It
+    lives here.
+
+    The slot is per key, and the key defaults to the engagement. One authorization
+    written as several engagement files -- an internal list and a public one, say --
+    is still one hourly budget, and ``--concurrency-group`` is how an operator says so.
     """
-    guard = EngagementLock(engagement_id=str(engagement_id), mission_id=mission_id)
+    guard = EngagementLock(engagement_id=key, mission_id=mission_id)
     try:
         guard.acquire()
     except ConcurrencyError as refusal:
         engine.dispose()
         typer.echo(f"[error] {refusal}")
-        typer.echo("        this engagement authorizes one agent at a time")
+        typer.echo("        this authorization allows one agent at a time")
         raise typer.Exit(code=1) from refusal
     return guard
 
@@ -696,6 +698,16 @@ def mission_run_command(  # noqa: PLR0913, PLR0915, PLR0917 - Typer binds these 
         int,
         typer.Option("--watchdog", help="Seconds before a silent run is reaped."),
     ] = DEFAULT_WATCHDOG_SECONDS,
+    concurrency_group: Annotated[
+        str | None,
+        typer.Option(
+            "--concurrency-group",
+            help="Share one agent slot with every run given the same name. Defaults "
+            "to this mission's engagement. Use it when one authorization is written "
+            "as several engagement files: the hourly budget belongs to the activity, "
+            "not to whichever file a target happens to sit in.",
+        ),
+    ] = None,
     max_cycles: Annotated[
         int,
         typer.Option(
@@ -870,7 +882,11 @@ def mission_run_command(  # noqa: PLR0913, PLR0915, PLR0917 - Typer binds these 
     # own ledger, so four agents on four targets of one engagement each believed itself
     # inside an hourly budget of 100 while between them they sent 178 in the hour. No
     # ledger was wrong; the total had nowhere to live. It lives here.
-    guard = _claim_engagement(engine, engagement_id=locked_engagement, mission_id=mission_id)
+    guard = _claim_engagement(
+        engine,
+        key=concurrency_group or str(locked_engagement),
+        mission_id=mission_id,
+    )
 
     shape = "continuously" if not max_cycles else f"for {max_cycles} cycle(s)"
     typer.echo(f"mission {mission_id} running {shape} (Ctrl+C to stop)")

@@ -115,3 +115,25 @@ def test_the_lock_is_released_even_when_the_run_fails(tmp_path: Path) -> None:
         raise RuntimeError("cycle failed")
 
     assert not held.path.exists()
+
+
+def test_one_authorization_written_as_two_files_is_still_one_slot(tmp_path: Path) -> None:
+    """A real engagement was two files -- an internal target list and a public one --
+    and an agent on each ran happily side by side, because the lock was keyed on the
+    file rather than on the authorization. The hourly budget belongs to the activity."""
+    EngagementLock("nics-024", "mission-vpn", directory=tmp_path).acquire(at=NOW)
+
+    with pytest.raises(ConcurrencyError, match="mission-vpn"):
+        EngagementLock("nics-024", "mission-public", directory=tmp_path).acquire(at=NOW)
+
+
+def test_a_key_with_path_characters_cannot_escape_the_lock_directory(
+    tmp_path: Path,
+) -> None:
+    """The key reaches this from a command line, so it must not be able to name a file
+    anywhere else."""
+    held = EngagementLock("../../etc/passwd", "m1", directory=tmp_path)
+    held.acquire(at=NOW)
+
+    assert held.path.parent == tmp_path
+    assert held.path.exists()
