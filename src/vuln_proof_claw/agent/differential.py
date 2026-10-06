@@ -85,6 +85,20 @@ class ProbeResult:
     location: str = ""
     elapsed_ms: int = 0
     observed_at: datetime | None = None
+    declares_failure: bool = False
+    """Whether the body itself says the request was refused.
+
+    Derived once, at the boundary where the response is read, by
+    :func:`~vuln_proof_claw.agent.bodyfacts.declares_failure` -- a single boolean, not
+    the content. The oracles still never see a body.
+
+    It exists because the rule's premise is not universally true. "An API that
+    authenticates rejects before dispatching: 401 or 403" describes many APIs and not
+    one zero-trust platform under test, whose ``/api/me`` answers an anonymous caller
+    with ``200`` and a body saying it refused, every identity field null. Without this
+    the oracle reads a refusal as a finding, and a reviewer has to open each one to
+    discover the application said no all along.
+    """
 
     def __post_init__(self) -> None:
         for name in ("identity", "method", "target"):
@@ -521,7 +535,9 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
     * an HTML body — a single-page application serves its own shell on every path it
       does not recognise, so this says nothing about the endpoint;
     * a static asset — a script, stylesheet, font or image is a file the server hands
-      out, and handing one out unauthenticated is how the web works.
+      out, and handing one out unauthenticated is how the web works;
+    * a body that declares its own failure — some applications refuse with ``200`` and
+      ``success: false`` rather than with ``401``, and that is a control working.
     """
     if probe.identity != ANONYMOUS:
         return OracleVerdict(
@@ -566,6 +582,17 @@ def check_missing_authentication(  # noqa: PLR0911 - one guard clause per suppre
             target=probe.target,
             reason=f"{probe.status_code} {reason}",
             suppressed_by=suppression,
+        )
+    if probe.declares_failure:
+        # The application refused; it simply did so in the body rather than in the
+        # status line. Reading that as a finding reports an endpoint for enforcing
+        # exactly the control this rule exists to find missing.
+        return OracleVerdict(
+            OracleRule.MISSING_AUTHENTICATION,
+            triggered=False,
+            target=probe.target,
+            reason=f"{probe.status_code}, but the body states the request was refused",
+            suppressed_by="body_declares_failure",
         )
     if probe.status_code >= _SERVER_ERROR_MIN and probe.body_size == 0:
         return OracleVerdict(

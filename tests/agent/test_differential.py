@@ -40,6 +40,7 @@ def probe(  # noqa: PLR0913 - each field is one observable fact about one respon
     size: int = BIG,
     target: str = TARGET,
     content_type: str = "application/json",
+    declares_failure: bool = False,
 ) -> ProbeResult:
     return ProbeResult(
         identity=identity,
@@ -49,6 +50,7 @@ def probe(  # noqa: PLR0913 - each field is one observable fact about one respon
         body_digest=digest,
         body_size=size,
         content_type=content_type,
+        declares_failure=declares_failure,
     )
 
 
@@ -535,3 +537,25 @@ def test_both_rules_suppress_the_same_things() -> None:
                 authenticated="account_a",
             ).suppressed_by
         )
+
+
+def test_an_application_that_refuses_in_the_body_is_not_missing_authentication() -> None:
+    """Observed on a zero-trust platform under test: /api/me answers an anonymous
+    caller with 200 and a body saying it refused, every identity field null. The rule's
+    premise -- that an API which authenticates rejects with 401 or 403 -- is not true
+    of it, and without this the tool reports an endpoint for enforcing exactly the
+    control the rule exists to find missing."""
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, content_type="application/json", declares_failure=True)
+    )
+
+    assert verdict.triggered is False
+    assert verdict.suppressed_by == "body_declares_failure"
+
+
+def test_an_endpoint_that_answers_normally_still_triggers() -> None:
+    verdict = check_missing_authentication(
+        probe(ANONYMOUS, 200, content_type="application/json", declares_failure=False)
+    )
+
+    assert verdict.triggered is True

@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from typing import Final
 
+from vuln_proof_claw.agent.bodyfacts import declares_failure
 from vuln_proof_claw.agent.differential import ProbeResult, body_digest
 from vuln_proof_claw.agent.endpoints import ProbeStrategy
 from vuln_proof_claw.config.identities import (
@@ -344,6 +345,7 @@ class IdentitySessions:
             # sweep for every other path behind it.
             raise ProbeError(f"{type(failure).__name__}: {failure}") from failure
         header_map = {name.lower(): value for name, value in response.headers}
+        content_type = header_map.get("content-type", "")
         return ProbeResult(
             identity=identity,
             method=normalized_method,
@@ -351,7 +353,10 @@ class IdentitySessions:
             status_code=response.status_code,
             body_digest=body_digest(response.body),
             body_size=len(response.body),
-            content_type=header_map.get("content-type", ""),
+            content_type=content_type,
+            # One boolean, derived here and never the body itself: whether the
+            # application said no in its own words. See agent.bodyfacts.
+            declares_failure=declares_failure(response.body, content_type=content_type),
             location=header_map.get("location", ""),
             elapsed_ms=response.elapsed_ms,
             observed_at=started,
