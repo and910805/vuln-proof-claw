@@ -62,13 +62,14 @@ class StubRecon:
     requests_sent: int = 0
     source: str = "jsdiscovery"
     errors: tuple[str, ...] = ()
+    base_url: str = f"https://{TARGET_HOST}/"
 
     def discover(self, *, at: datetime) -> ReconResult:
         self.calls += 1
         if self.explode:
             raise RuntimeError("bundle unreachable")
         return ReconResult(
-            base_url=f"https://{TARGET_HOST}/",
+            base_url=self.base_url,
             classifications=self.classifications,
             source=self.source,
             errors=self.errors,
@@ -886,3 +887,62 @@ def test_an_empty_pass_with_no_errors_still_says_so(engine: Engine) -> None:
         ]
 
     assert recorded[0]["errors"] == "no endpoints recovered"
+
+
+def test_pointing_a_source_somewhere_new_makes_reconnaissance_due(engine: Engine) -> None:
+    """Two targets were registered at their web server's root, which served the IIS
+    welcome page, and both were recorded as having one endpoint. The cadence exists so
+    the same bundle is not refetched every few minutes; a different entry URL is a
+    different question, and waiting an hour to ask it is an hour of the old answer."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        first = recon_for(("GET", "/"))
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=first
+        )
+        controller.run_cycle(controller.start_run())
+
+        # Same moment, so the cadence has certainly not elapsed.
+        moved = recon_for(("GET", "/portal/login.aspx"))
+        moved.base_url = f"https://{TARGET_HOST}/portal/"
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=moved
+        )
+        controller.run_cycle(controller.start_run())
+
+        stored = {
+            item.entity.path
+            for item in EndpointRepository(session).list_for_engagement(engagement_id)
+        }
+
+    assert moved.calls == 1, "the corrected entry URL was not visited"
+    assert "/portal/login.aspx" in stored
+
+
+def test_the_same_entry_url_still_waits_for_the_cadence(engine: Engine) -> None:
+    """The rule being relaxed is about repeating the same question, and that rule
+    stays: an unchanged entry must not be refetched every cycle."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        session.commit()
+
+        first = recon_for(("GET", "/"))
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=first
+        )
+        controller.run_cycle(controller.start_run())
+
+        again = recon_for(("GET", "/"))
+        controller = controller_with(
+            session, MissionId(mission.id), executor=RecordingExecutor(), recon=again
+        )
+        report = controller.run_cycle(controller.start_run())
+
+    assert again.calls == 0
+    assert report.recon.skipped is not None

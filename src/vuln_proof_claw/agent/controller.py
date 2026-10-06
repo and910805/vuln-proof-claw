@@ -8,6 +8,7 @@ in memory: a crashed or rebooted process resumes from PostgreSQL alone.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
@@ -448,7 +449,7 @@ class MissionController:
             last_run_at=self._last_recon_at(mission.engagement_id),
             now=at,
         )
-        if not decision.due:
+        if not decision.due and not self._entry_changed(mission.engagement_id):
             return ReconSummary(skipped=decision.reason)
 
         results: list[ReconResult] = []
@@ -550,6 +551,7 @@ class MissionController:
                 "held_back": held,
                 "requests_sent": result.requests_sent,
                 "source": result.source,
+                "base_url": result.base_url,
                 "reconciled": reconciled,
                 "first_request_at": _moment_text(result.sent_at[:1]),
                 "last_request_at": _moment_text(result.sent_at[-1:]),
@@ -747,6 +749,48 @@ class MissionController:
             )
             if stored.entity.source.startswith(_OBSERVED_SOURCE)
         )
+
+    def _entry_changed(self, engagement_id: EngagementId) -> bool:
+        """Return whether a source is now pointed somewhere it has not looked before.
+
+        The cadence exists so a bundle is not refetched every few minutes, which is a
+        rule about repeating the same question. Being pointed at a *different* entry
+        URL is a different question, and waiting an hour to ask it is just an hour of
+        the old answer.
+
+        Not hypothetical. Two targets were registered at their web server's root, which
+        served the IIS welcome page, and both were recorded as having one endpoint.
+        Correcting the entry URL to the one the authorization publishes took them to
+        thirteen and twenty-three -- and without this the correction would have sat
+        unused until the cadence let it through.
+        """
+        wanted = {
+            str(getattr(source, "base_url", "")).rstrip("/")
+            for source in self._reconnaissance
+            if getattr(source, "base_url", None)
+        }
+        if not wanted:
+            return False
+
+        # The audit trail is where a pass records what it was pointed at, and it is
+        # written whether the pass recovered anything or not.
+        looked: set[str] = set()
+        for event in AuditEventRepository(self._session).list_for_engagement(
+            engagement_id, limit=60
+        ):
+            if event.event_type not in {"agent.recon_completed", "agent.recon_empty"}:
+                continue
+            # The payload is stored as canonical JSON bytes, immutably. A record
+            # written before this field existed simply has no base_url, and is skipped
+            # rather than treated as a visit to somewhere unknown.
+            try:
+                payload = json.loads(event.payload)
+            except (ValueError, TypeError):
+                continue
+            recorded = payload.get("base_url") if isinstance(payload, dict) else None
+            if isinstance(recorded, str) and recorded:
+                looked.add(recorded.rstrip("/"))
+        return bool(looked) and bool(wanted - looked)
 
     def _last_recon_at(self, engagement_id: EngagementId) -> datetime | None:
         """Return when reconnaissance last stored an endpoint, if ever."""
