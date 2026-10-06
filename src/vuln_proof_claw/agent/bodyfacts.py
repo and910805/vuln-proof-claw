@@ -34,6 +34,25 @@ _FAILURE_WORDS: Final = frozenset(
 #: reading content rather than noting a fact about the response.
 _MAXIMUM_ENVELOPE_BYTES: Final = 4096
 
+#: Field names an application uses to describe the outcome of a request rather than to
+#: answer it. An object built only from these carries no data, whatever it says.
+#:
+#: Compared with underscores and case removed, because the same envelope appears as
+#: ``ERROR_CODE``, ``errorCode`` and ``errcode`` across three products in one day.
+_ENVELOPE_FIELDS: Final = frozenset(
+    {
+        "error", "errors", "errorcode", "errormessage", "errormsg", "errcode", "errmsg",
+        "message", "msg", "detail", "details", "reason", "title", "type",
+        "code", "status", "statuscode", "state", "result", "success", "ok",
+        "timestamp", "time", "path", "traceid", "requestid",
+    }
+)
+
+#: Of those, the ones that name a failure rather than merely report an outcome.
+_ERROR_FIELDS: Final = frozenset(
+    {"error", "errors", "errorcode", "errormessage", "errormsg", "errcode", "errmsg"}
+)
+
 
 def declares_failure(  # noqa: PLR0911 - one guard per thing this must not decide
     body: bytes | str | None, *, content_type: str = ""
@@ -66,6 +85,45 @@ def declares_failure(  # noqa: PLR0911 - one guard per thing this must not decid
             return True
         if isinstance(value, str) and value.strip().lower() in _FAILURE_WORDS:
             return True
+    return _is_error_envelope(parsed)
+
+
+def _is_error_envelope(parsed: dict[str, Any]) -> bool:
+    """Return whether an object says only that something went wrong.
+
+    Observed on a mail platform: ``POST /auth/token`` with an empty body answers
+    ``200`` and ``{"ERROR_CODE": "ERR_01", "ERROR_MESSAGE": "Authentication failed"}``.
+    The application refused; its vocabulary for saying so is simply not the one the
+    checks above know.
+
+    Narrow in the direction that matters. Every top-level field must be one that
+    describes an outcome rather than carrying an answer, so a body that reports an
+    error *and* returns data -- ``{"error": "...", "users": [...]}`` -- is not an
+    envelope and still triggers whatever rule is asking. Suppressing that would hide a
+    real finding to avoid a false one, which is the wrong trade in a tool nobody reads
+    the suppressions of.
+    """
+    if not parsed:
+        return False
+    names = {key.replace("_", "").replace("-", "").lower() for key in parsed}
+    if not names <= _ENVELOPE_FIELDS:
+        return False
+    return any(
+        name in _ERROR_FIELDS and _is_present(parsed[key])
+        for key, name in ((k, k.replace("_", "").replace("-", "").lower()) for k in parsed)
+    )
+
+
+def _is_present(value: Any) -> bool:
+    """Return whether a field actually reports something.
+
+    ``{"errors": []}`` and ``{"error": ""}`` are an application saying there was no
+    error, and ``{"error_count": 0}`` is a number rather than a complaint.
+    """
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
     return False
 
 

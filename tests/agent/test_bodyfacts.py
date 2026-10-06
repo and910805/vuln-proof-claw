@@ -84,3 +84,64 @@ def test_a_large_body_is_not_an_envelope() -> None:
 def test_the_content_type_may_be_absent() -> None:
     """Not every transport reports one, and refusing to look would lose the fact."""
     assert declares_failure('{"success": false}') is True
+
+
+def test_an_error_envelope_in_another_vocabulary() -> None:
+    """A mail platform's POST /auth/token with an empty body: HTTP 200 and
+    {"ERROR_CODE": "ERR_01", "ERROR_MESSAGE": "Authentication failed"}. The
+    application refused; it simply does not use the words the other checks know."""
+    body = '{"ERROR_CODE":"ERR_01","ERROR_MESSAGE":"Authentication failed"}'
+
+    assert declares_failure(body, content_type=JSON) is True
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"errorCode": "E42"}',
+        '{"errcode": "x", "errmsg": "nope"}',
+        '{"error": "forbidden", "code": 403}',
+    ],
+)
+def test_the_same_envelope_however_it_is_spelled(body: str) -> None:
+    assert declares_failure(body, content_type=JSON) is True
+
+
+def test_an_error_alongside_data_is_not_an_envelope() -> None:
+    """Suppressing this would hide a real finding to avoid a false one, which is the
+    wrong trade in a tool whose suppressions nobody reads."""
+    body = '{"error": "partial", "users": [{"id": 1}]}'
+
+    assert declares_failure(body, content_type=JSON) is False
+
+
+@pytest.mark.parametrize(
+    "body",
+    ['{"errors": []}', '{"error": ""}', '{"error": null}', '{"error_count": 0}'],
+)
+def test_an_application_saying_there_was_no_error(body: str) -> None:
+    assert declares_failure(body, content_type=JSON) is False
+
+
+def test_an_envelope_with_no_error_field_declares_nothing() -> None:
+    """{"status": "ok", "code": 200} is an outcome, and the outcome is success."""
+    assert declares_failure('{"status": "ok", "code": 200}', content_type=JSON) is False
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # The nine exchanges behind a submitted IT-08 report. Every one of them must
+        # keep triggering: a change that widens what counts as "the application
+        # refused" can retract a finding already sent to a vendor, and nothing in the
+        # pipeline would say so.
+        '{"Data":[],"Status":"Success","ErrorMessage":""}',
+        '{"Status":"Error","ErrorMessage":"adminUuid is not existing"}',
+        '{"Status":"Error","ErrorMessage":"Request data is not complete."}',
+    ],
+)
+def test_a_submitted_finding_is_not_retracted_by_this(body: str) -> None:
+    """Two of these say Status: Error -- and they are the finding. The endpoint reached
+    its own validation layer without being authenticated, which is the defect; it
+    complaining about the parameters afterwards is the proof, not a refusal."""
+    assert declares_failure(body, content_type=JSON) is False
