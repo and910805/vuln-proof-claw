@@ -6,8 +6,9 @@ import base64
 import hashlib
 import html
 import json
+from collections import Counter
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -58,6 +59,7 @@ from vuln_proof_claw.persistence.repositories import (
     EngagementRepository,
     ReportExportRepository,
     ScopeRepository,
+    StoredReportExport,
 )
 from vuln_proof_claw.policy.scope import EngagementScope
 
@@ -107,9 +109,44 @@ def _finding_evidence_links(
     payload_ids: dict[str, tuple[str, ...]] = {}
     control_ids: dict[str, tuple[str, ...]] = {}
     for finding_id, evidence_id, role in rows:
+        if role not in {"payload", "control"}:
+            raise HTTPException(status_code=409, detail="finding_evidence_invalid")
         destination = control_ids if role == "control" else payload_ids
         destination[finding_id] = (*destination.get(finding_id, ()), evidence_id)
     return payload_ids, control_ids
+
+
+def _validate_verified_report_findings(
+    findings: tuple[FindingRecord, ...],
+    payload_ids: dict[str, tuple[str, ...]],
+    control_ids: dict[str, tuple[str, ...]],
+    raw_by_id: dict[str, bytes],
+    integrity: EvidenceIntegrity,
+) -> None:
+    """Refuse to publish a verified claim whose proof is missing or invalid."""
+    verified = tuple(row for row in findings if row.status == "verified")
+    if not verified:
+        return
+    if integrity.status != "valid":
+        raise HTTPException(status_code=409, detail="finding_evidence_integrity_failed")
+
+    for finding in verified:
+        payload = payload_ids.get(finding.id, ())
+        control = control_ids.get(finding.id, ())
+        if (
+            not payload
+            or finding.verification_method not in {"observed", "differential"}
+            or (finding.verification_method == "differential" and not control)
+            or set(payload) & set(control)
+            or not {*payload, *control} <= raw_by_id.keys()
+        ):
+            raise HTTPException(status_code=409, detail="finding_evidence_invalid")
+        if finding.verification_method == "differential" and any(
+            raw_by_id[payload_id] == raw_by_id[control_id]
+            for payload_id in payload
+            for control_id in control
+        ):
+            raise HTTPException(status_code=409, detail="finding_evidence_invalid")
 
 
 def build_engagement_report(session: Session, engagement_id: str) -> EngagementReport:
@@ -209,6 +246,22 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             status="valid" if verification.valid else "invalid",
             checked_records=verification.checked_records,
             reason=verification.reason,
+        )
+    if any(row.status == "verified" for row in finding_rows):
+        persisted = {
+            row.evidence_id: row.raw_content
+            for row in session.scalars(
+                select(EvidencePayloadRecord).where(
+                    EvidencePayloadRecord.engagement_id == normalized_id
+                )
+            )
+        }
+        _validate_verified_report_findings(
+            finding_rows,
+            evidence_ids_by_finding,
+            control_ids_by_finding,
+            {row.id: persisted[row.id] for row in evidence_rows if row.id in persisted},
+            integrity,
         )
     api_documents = list({item.source_url: item for item in api_documents}.values())
     unique_operations = {
@@ -563,6 +616,8 @@ def render_sarif(report: EngagementReport) -> bytes:
     rules: dict[str, dict[str, object]] = {}
     results: list[dict[str, object]] = []
     for finding in report.findings:
+        if finding.status != "verified":
+            continue
         rules.setdefault(
             finding.vulnerability_class,
             {
@@ -590,10 +645,6 @@ def render_sarif(report: EngagementReport) -> bytes:
                 "proofclaw_version": finding.version,
             },
         }
-        if finding.status == "rejected":
-            result["suppressions"] = [
-                {"kind": "inSource", "justification": "Rejected during review"}
-            ]
         results.append(result)
     payload = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
@@ -640,6 +691,68 @@ def _serialize_report(report: EngagementReport, export_format: ReportFormat) -> 
     if export_format is ReportFormat.SARIF:
         return "application/sarif+json", render_sarif(report)
     return "text/markdown", render_markdown(report).encode()
+
+
+def _verified_markdown_rows(content: str) -> Counter[str]:
+    lines = content.splitlines()
+    start = lines.index("## Findings")
+    end = lines.index("## API operation inventory", start)
+    return Counter(line for line in lines[start:end] if line.startswith("| verified | "))
+
+
+def _validate_saved_report_export(session: Session, stored: StoredReportExport) -> None:
+    """Recheck a historical verified claim against its current linked evidence."""
+    if (
+        len(stored.content) != stored.entity.size
+        or hashlib.sha256(stored.content).hexdigest() != stored.entity.digest
+    ):
+        raise HTTPException(status_code=409, detail="report_export_integrity_failed")
+    json_claims: tuple[FindingReportItem, ...] = ()
+    markdown_rows: Counter[str] = Counter()
+    sarif_results: tuple[dict[str, Any], ...] = ()
+    try:
+        if stored.entity.format is ReportFormat.JSON:
+            snapshot = json.loads(stored.content)
+            json_claims = tuple(
+                FindingReportItem.model_validate(item)
+                for item in snapshot["findings"]
+                if item["status"] == "verified"
+            )
+        elif stored.entity.format is ReportFormat.MARKDOWN:
+            markdown_rows = _verified_markdown_rows(stored.content.decode("utf-8"))
+        else:
+            snapshot = json.loads(stored.content)
+            sarif_results = tuple(snapshot["runs"][0]["results"])
+    except (UnicodeDecodeError, ValueError, KeyError, IndexError, TypeError) as error:
+        raise HTTPException(status_code=409, detail="report_export_revalidation_failed") from error
+    if not (json_claims or markdown_rows or sarif_results):
+        return
+
+    current = build_engagement_report(session, str(stored.entity.engagement_id))
+    if current.evidence_integrity.status != "valid":
+        raise HTTPException(status_code=409, detail="finding_evidence_integrity_failed")
+    try:
+        if stored.entity.format is ReportFormat.JSON:
+            current_json_claims = {
+                item.id: item for item in current.findings if item.status == "verified"
+            }
+            valid = all(current_json_claims.get(item.id) == item for item in json_claims)
+        elif stored.entity.format is ReportFormat.MARKDOWN:
+            current_markdown_rows = _verified_markdown_rows(render_markdown(current))
+            valid = not markdown_rows - current_markdown_rows
+        else:
+            current_results = json.loads(render_sarif(current))["runs"][0]["results"]
+            current_sarif_results = {
+                item["properties"]["proofclaw_finding_id"]: item for item in current_results
+            }
+            valid = all(
+                current_sarif_results.get(item["properties"]["proofclaw_finding_id"]) == item
+                for item in sarif_results
+            )
+    except (ValueError, KeyError, IndexError, TypeError) as error:
+        raise HTTPException(status_code=409, detail="report_export_revalidation_failed") from error
+    if not valid:
+        raise HTTPException(status_code=409, detail="report_export_revalidation_failed")
 
 
 def _download_response(content: bytes, *, media_type: str, filename: str, digest: str) -> Response:
@@ -754,6 +867,7 @@ def create_report_export(  # noqa: PLR0913, PLR0917 - explicit HTTP dependencies
     if existing is not None:
         if existing.entity.format is not requested_format:
             raise HTTPException(status_code=409, detail="idempotency_key_conflict")
+        _validate_saved_report_export(session, existing)
         response.status_code = status.HTTP_200_OK
         return _export_summary(existing.entity)
 
@@ -788,6 +902,7 @@ def create_report_export(  # noqa: PLR0913, PLR0917 - explicit HTTP dependencies
             raise
         if replay.entity.format is not requested_format:
             raise HTTPException(status_code=409, detail="idempotency_key_conflict") from None
+        _validate_saved_report_export(session, replay)
         response.status_code = status.HTTP_200_OK
         return _export_summary(replay.entity)
     return _export_summary(export)
@@ -836,9 +951,7 @@ def download_report_export(
     stored = ReportExportRepository(session).get(ReportExportId(export_id))
     if stored is None or stored.entity.engagement_id != normalized_id:
         raise HTTPException(status_code=404, detail="report_export_not_found")
-    actual_digest = hashlib.sha256(stored.content).hexdigest()
-    if len(stored.content) != stored.entity.size or actual_digest != stored.entity.digest:
-        raise HTTPException(status_code=409, detail="report_export_integrity_failed")
+    _validate_saved_report_export(session, stored)
     record_audit_event(
         session,
         normalized_id,

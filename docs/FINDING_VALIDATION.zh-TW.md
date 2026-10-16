@@ -18,16 +18,22 @@ ProofClaw 對每項 Finding 都必須分別回答兩個問題：
   `verified`。這只證明所觀察的性質，不代表已成功利用漏洞。
 - OpenAPI 宣告與未登入的成功回應會產生 `candidate`：僅靠 API 規格，無法確認回傳內容
   原本應該保密。
-- `nuclei` 與 `httpx` Parser 只把有目標來源資料支持的特定觀察列為
-  `pending_verification`；其他 Scanner 紀錄會被排除。其輸出仍需獨立審查，才能成為
-  verified 主張。Template Severity、CVE 標籤或 LLM 斷言都不是影響的證據。
+- `nuclei` Parser 將有目標來源資料支持的特定觀察列為 `pending_verification`，
+  `httpx` Parser 則列為 `candidate`；其他 Scanner 紀錄會被排除。其輸出仍需獨立審查，
+  才能成為 verified 主張。Template Severity、CVE 標籤或 LLM 斷言都不是影響的證據。
+- 自主 Mission 流程將 Scanner 觀察轉為 Candidate 與 Lead。`VerificationOutcome`
+  根據結構化答案計算判定，決定性的授權 Oracle 可比較不同身分的 Probe。未說明驗證
+  方法的 Outcome 不會自動成為 `verified`。持久化已驗證 Finding 時，Repository 會檢查
+  Evidence 歸屬與完整性；但 Outcome 的 Probe 欄位尚未從已儲存的 Capture 獨立推導，
+  也尚未核對 Action 授權及預期安全政策。在完成語意綁定前，應將此路徑視為調查輔助。
 - `POST /api/v1/automation/verify` 根據呼叫端提供的 Observation 計算 `pass`、
   `candidate` 或 `inconclusive`。其結果不是持久化的 Finding 決定，也不能取代以 Evidence
   為基礎的審查。Planner／Operator／Verifier 的 Next-step Endpoint 只選擇下一個角色，
   不會重新測試目標。
 - Finding Review API 使用樂觀版本檢查與 Audit Event 處理人工決定。
-  升級為 `verified` 前，會檢查整條 Engagement Evidence Chain、連結 Evidence 的存在與歸屬，
-  明確的驗證方法，以及審查理由。目前尚未檢查 Action 是否成功、目標語意是否一致，
+  每次持久化 `verified` Finding，Repository 都會檢查整條 Engagement Evidence Chain、
+  連結 Evidence 的存在與歸屬；人工升級另需明確的驗證方法及審查理由。
+  目前尚未檢查 Action 是否成功、目標語意是否一致，
   或回應能否證明主張。差異比較的審查會拒絕位元組完全相同的測試與對照擷取，
   但目前不會判斷變化是否足以支持主張。
   詳見 [Finding 審查](FINDING_REVIEW.zh-TW.md)。
@@ -85,15 +91,17 @@ Evidence 遺失、互相矛盾、跨 Engagement、來自失敗 Action，或完�
 ## 實作順序
 
 1. **Evidence-bound Decision（首道關卡已實作）：** Evidence 遺失、損毀或跨 Engagement 時，
-   Review 會安全拒絕並留下可稽核紀錄。下一步須將每筆 Evidence 綁定到成功執行的 Action
-   與精確目標。
+   Repository 寫入已驗證 Finding 與產生報告都會安全拒絕；Review 會留下可稽核決定。
+   SARIF 只包含已驗證 Finding。下一步須將每筆 Evidence 綁定到成功執行的 Action 與精確目標。
 2. **Verification Case：** 持久化主張、方法、預期／實際斷言、Evidence 用途、Verifier 版本、
    嘗試紀錄與不可變判定。Observation 應從已儲存的 Capture 建立，而非相信呼叫端填入的回應摘要。
 3. **有界重測 Runner：** 依漏洞類別新增經核准且受 Scope 約束的 Recipe；測試、Baseline 與
    Negative Control 各自擷取成 Evidence。Verifier 必須獨立檢查 Discovery 的說法，
    並明確表示不確定結果。
 4. **揭露品質：** JSON、Markdown、HTML、SARIF 與 Bundle 應一致呈現判定依據、對照證據、
-   重現說明及限制，並在數量與畫面上區分 Candidate 和 Verified Finding。
+   重現說明及限制，並在數量與畫面上區分 Candidate 和 Verified Finding。未來的儲存匯出
+   應加入有版本的逐 Finding 證明清單；現有 Markdown 匯出沒有穩定 Finding ID，重新驗證
+   已驗證主張時只能精確比對表格列。
 
 驗收測試應包含偽造 Observation、Evidence 遺失或變更、跨 Engagement 連結、錯誤 Action／目標、
 缺少對照、執行失敗、回應互相矛盾、安全重測成功、逾時／無法定論，以及所有報告格式都保留

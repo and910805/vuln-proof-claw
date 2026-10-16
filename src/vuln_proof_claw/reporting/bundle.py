@@ -79,6 +79,18 @@ def build_disclosure_bundle(
     sarif: bytes,
 ) -> bytes:
     """Return a deterministic ZIP containing reports and a digest manifest."""
+    if any(item.status == "verified" for item in report.findings) and (
+        report.evidence_integrity.status != "valid"
+        or any(
+            not item.evidence_ids
+            or item.verification_method not in {"observed", "differential"}
+            or (item.verification_method == "differential" and not item.control_evidence_ids)
+            or bool(set(item.evidence_ids) & set(item.control_evidence_ids))
+            for item in report.findings
+            if item.status == "verified"
+        )
+    ):
+        raise ValueError("verified findings require valid linked evidence")
     files: dict[str, tuple[str, bytes]] = {
         "README.txt": ("text/plain", _readme(report)),
         "report.html": ("text/html", html),

@@ -45,15 +45,19 @@ one another's decision.
 - `rejected`: the current evidence does not support the claim.
 - `needs_manual_review`: the automated result needs a human decision or more context.
 
-Before accepting `verified`, the API verifies the full engagement evidence chain and
-checks that each linked payload or control record exists and belongs to the finding's
-engagement. Missing, cross-engagement, or integrity-invalid evidence blocks promotion.
+Before any `verified` Finding is saved, the repository verifies the full engagement
+evidence chain and checks that each linked payload or control record exists and
+belongs to the finding's engagement. This also covers direct Finding creation outside
+the review endpoint. Missing, cross-engagement, or integrity-invalid evidence blocks
+the write.
 For a `differential` finding, the gate also rejects a test and control capture with
 identical raw bytes (`finding_control_not_distinct`). Different bytes are only a
 sanity check; they do not establish that the correct variable changed or that the
 observed difference proves the claim.
 Reports expose the test and control evidence IDs separately, so a reader can tell
 which captured exchange supports the claim and which acts as the comparison.
+Report generation rechecks the evidence for verified findings; SARIF contains only
+verified results.
 The reviewer rationale is stored in the immutable `finding.reviewed` audit event,
 not in the finding title or target data. Other successful review decisions also create
 that event; their comment remains optional. The endpoint requires the operator role

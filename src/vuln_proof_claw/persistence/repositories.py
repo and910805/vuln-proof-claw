@@ -51,6 +51,10 @@ from vuln_proof_claw.domain.models import (
     UsageSample,
     WorkerExecution,
 )
+from vuln_proof_claw.evidence.finding_validation import (
+    FindingEvidenceError,
+    validate_verified_finding_evidence,
+)
 from vuln_proof_claw.persistence.models import (
     ActionRecord,
     ApprovalRecord,
@@ -806,6 +810,7 @@ class FindingRepository:
         self._session = session
 
     def add(self, finding: Finding) -> None:
+        validate_verified_finding_evidence(self._session, finding)
         self._session.add(
             FindingRecord(
                 id=finding.id,
@@ -885,24 +890,20 @@ class FindingRepository:
             row.version,
         )
 
-    def replace_evidence(
-        self,
-        finding_id: FindingId,
-        evidence_ids: tuple[EvidenceId, ...],
-        *,
-        role: str = _PAYLOAD_ROLE,
+    def _replace_control_evidence(
+        self, finding_id: FindingId, evidence_ids: tuple[EvidenceId, ...]
     ) -> None:
         self._session.execute(
             delete(finding_evidence).where(
                 finding_evidence.c.finding_id == finding_id,
-                finding_evidence.c.role == role,
+                finding_evidence.c.role == _CONTROL_ROLE,
             )
         )
         if evidence_ids:
             self._session.execute(
                 insert(finding_evidence),
                 [
-                    {"finding_id": finding_id, "evidence_id": evidence_id, "role": role}
+                    {"finding_id": finding_id, "evidence_id": evidence_id, "role": _CONTROL_ROLE}
                     for evidence_id in evidence_ids
                 ],
             )
@@ -917,6 +918,11 @@ class FindingRepository:
         )
         if row is None:
             raise ConcurrentUpdateError
+        if finding.engagement_id != row.engagement_id or set(finding.evidence_ids) != set(
+            self._linked(finding.id, _PAYLOAD_ROLE)
+        ):
+            raise FindingEvidenceError("finding_evidence_invalid")
+        validate_verified_finding_evidence(self._session, finding)
         row.status = finding.status.value
         row.verification_method = (
             finding.verification_method.value if finding.verification_method is not None else None
@@ -925,7 +931,7 @@ class FindingRepository:
         row.confidence = finding.confidence.value
         row.remediation = finding.remediation
         self._session.flush()
-        self.replace_evidence(finding.id, finding.control_evidence_ids, role=_CONTROL_ROLE)
+        self._replace_control_evidence(finding.id, finding.control_evidence_ids)
         stored = self.get(finding.id)
         if stored is None:  # pragma: no cover - persistence invariant
             raise RuntimeError("persisted finding could not be reloaded")

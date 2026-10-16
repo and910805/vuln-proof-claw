@@ -14,8 +14,11 @@ bypass them.
 
 These hold for every phase. A change that weakens one is a defect, not a trade-off.
 
-1. **Evidence before claims.** A `Finding` is only ever produced by the Verifier from
-   reproducible evidence. Scanners and heuristics produce `Candidate`s, never findings.
+1. **Evidence before claims in autonomous missions.** The mission pipeline promotes a
+   `Lead` to a `Finding` only through a verification outcome. Scanner and heuristic
+   results enter that pipeline as `Candidate`s. The separate request-driven scanner
+   parsers can still persist unverified Findings; their statuses must remain
+   `candidate` or `pending_verification` until evidence-backed review.
 2. **No action outside authorized scope.** Every target-facing operation passes
    `policy.scope.evaluate_scope()`. Scope is default-deny, deny-before-allow.
 3. **The agent cannot approve itself.** L2/L3 require a human approval record that is
@@ -104,9 +107,13 @@ Lead               a testable hypothesis with confidence and a next action
 Finding            reproducible, evidence-backed, scope-confirmed
 ```
 
-`nuclei`, ZAP, and Burp results enter at **Candidate**. There is no code path from a
-scanner result to a `Finding`. This is enforced in `agent/leads.py:promote_to_finding()`,
-which requires a `VerificationOutcome` carrying evidence identifiers.
+In the autonomous mission pipeline, `nuclei`, ZAP, and Burp results enter at
+**Candidate**. `agent/leads.py:promote_to_finding()` requires a
+`VerificationOutcome` carrying evidence identifiers and a verification method.
+The promotion function does not itself read the persisted evidence. The repository
+checks evidence provenance and chain integrity if the returned verified Finding is
+saved; the probe fields still need to be derived from those captures and checked
+against the Action policy decision before autonomous claims can be trusted.
 
 ### 4.2 Mission objects
 

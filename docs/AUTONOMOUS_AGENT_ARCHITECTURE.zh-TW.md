@@ -12,8 +12,10 @@
 
 以下條件適用於每一個階段。削弱其中任何一項都是缺陷，而非取捨。
 
-1. **先有證據，才有主張。** `Finding` 只能由 Verifier 從可重現的證據產生。
-   掃描器與啟發式規則只能產生 `Candidate`，永遠不能直接產生 Finding。
+1. **自主 Mission 先有證據，才有主張。** Mission 流程只會透過驗證結果將 `Lead`
+   升級為 `Finding`；掃描器與啟發式結果在此流程中先成為 `Candidate`。另一條請求驅動的
+   Scanner Parser 路徑仍可持久化未驗證的 Finding；在以證據審查前，其狀態必須維持
+   `candidate` 或 `pending_verification`。
 2. **絕不超出授權範圍。** 每個面向目標的操作都必須通過
    `policy.scope.evaluate_scope()`。範圍採預設拒絕、拒絕優先於允許。
 3. **代理不能自我核准。** L2/L3 需要人工核准紀錄，且綁定到完全一致的
@@ -98,9 +100,11 @@ Lead               具備信心值與下一步行動的可測試假說
 Finding            可重現、有證據支撐、範圍已確認
 ```
 
-`nuclei`、ZAP 與 Burp 的結果一律從 **Candidate** 進入。沒有任何程式路徑能讓掃描器結果
-直接成為 `Finding`。此規則由 `agent/leads.py:promote_to_finding()` 強制執行，
-該函式要求提供帶有證據識別碼的 `VerificationOutcome`。
+在自主 Mission 流程中，`nuclei`、ZAP 與 Burp 的結果從 **Candidate** 進入。
+`agent/leads.py:promote_to_finding()` 要求提供帶有 Evidence ID 與驗證方法的
+`VerificationOutcome`。升級函式本身不讀取持久化 Evidence；儲存其回傳的已驗證 Finding
+時，Repository 會檢查 Evidence 歸屬與 Chain 完整性。仍須由這些 Capture 推導 Probe 欄位，
+並核對 Action 政策決定，才能信任自主流程的安全主張。
 
 ### 4.2 任務物件
 

@@ -41,9 +41,10 @@ Response 會包含新的 `version`、綁定 Finding 的 Evidence ID 與審查者
 - `rejected`：目前 Evidence 不支持此主張。
 - `needs_manual_review`：自動結果需要人工決定或更多情境。
 
-接受 `verified` 前，API 會驗證整條 Engagement Evidence Chain，並檢查每筆連結的測試或
-對照 Evidence 都存在且屬於 Finding 所在的 Engagement。Evidence 遺失、跨 Engagement 或
-完整性無效時會阻止升級。審查理由只存於不可變的 `finding.reviewed` Audit Event，
+持久化任何 `verified` Finding 前，Repository 都會驗證整條 Engagement Evidence Chain，
+並檢查每筆連結的測試或對照 Evidence 都存在且屬於 Finding 所在的 Engagement。這也涵蓋
+未經 Review Endpoint 的直接 Finding 建立。Evidence 遺失、跨 Engagement 或完整性無效時
+會阻止寫入。審查理由只存於不可變的 `finding.reviewed` Audit Event，
 不會寫入 Finding title 或 target data。其他成功的審查決定也會建立該 Event；其 comment
 仍可省略。API 啟用 Authentication 時，Endpoint 需要 Operator role。
 
@@ -52,6 +53,7 @@ Response 會包含新的 `version`、綁定 Finding 的 Evidence ID 與審查者
 正確變因，也不能證明差異足以支持主張。
 
 報告會分開列出測試與對照的 Evidence ID，讓讀者能區分支持主張的擷取結果與作為比較的紀錄。
+產生報告時也會重新檢查已驗證 Finding 的 Evidence；SARIF 只列出已驗證結果。
 
 此關卡檢查 Evidence 的來源與完整性，不判斷漏洞主張的語意是否成立。目前尚未證明所屬
 Action 執行成功、Action 目標與 Finding 目標一致，或回應足以證明所主張的安全影響。

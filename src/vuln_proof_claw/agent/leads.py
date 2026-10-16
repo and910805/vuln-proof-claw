@@ -70,7 +70,7 @@ class VerificationOutcome:
     Deliberately without a default. A finding at high severity or above must state
     this, and choosing one here on the verifier's behalf would forge the answer to the
     question a reviewer most wants to ask. A verifier that does not know says nothing,
-    and promotion then refuses rather than inventing it.
+    and automatic promotion stops for manual review rather than inventing it.
     """
 
     control_evidence_ids: tuple[EvidenceId, ...] = ()
@@ -255,18 +255,20 @@ def verification_verdict(outcome: VerificationOutcome) -> FindingStatus:
     """Compute the verdict from the verifier's structured answers.
 
     Anything that would need destructive testing to prove stops here and becomes a
-    human decision; it is never escalated automatically.
+    human decision; it is never escalated automatically. An otherwise supported
+    claim with no stated verification method also needs a human decision.
     """
     if outcome.requires_destructive_testing:
         return FindingStatus.NEEDS_MANUAL_REVIEW
-    if not outcome.reproducible:
+    if (
+        not outcome.reproducible
+        or outcome.expected_behavior
+        or not outcome.proves_security_impact
+        or not outcome.evidence_ids
+    ):
         return FindingStatus.REJECTED
-    if outcome.expected_behavior:
-        return FindingStatus.REJECTED
-    if not outcome.proves_security_impact:
-        return FindingStatus.REJECTED
-    if not outcome.evidence_ids:
-        return FindingStatus.REJECTED
+    if outcome.verification_method is None:
+        return FindingStatus.NEEDS_MANUAL_REVIEW
     return FindingStatus.VERIFIED
 
 

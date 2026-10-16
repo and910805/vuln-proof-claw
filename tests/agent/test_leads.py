@@ -215,6 +215,22 @@ def test_an_informational_outcome_need_not_state_a_method() -> None:
     ).verification_method is None
 
 
+@pytest.mark.parametrize(
+    "severity",
+    [FindingSeverity.INFORMATIONAL, FindingSeverity.LOW, FindingSeverity.MEDIUM],
+)
+def test_an_outcome_without_a_method_cannot_auto_verify(
+    severity: FindingSeverity,
+) -> None:
+    unclassified = outcome(severity=severity, verification_method=None)
+
+    assert verification_verdict(unclassified) is FindingStatus.NEEDS_MANUAL_REVIEW
+    lead, finding = promote_to_finding(make_lead(), unclassified, now=NOW)
+    assert finding is None
+    assert lead.status is LeadStatus.NEEDS_APPROVAL
+    assert lead.blocked_reason == "requires_manual_review"
+
+
 def test_a_promoted_finding_carries_the_method_the_verifier_stated() -> None:
     """The reviewer's first question is what the claim rests on; it travels through."""
     _, finding = promote_to_finding(make_lead(), outcome(), now=NOW)

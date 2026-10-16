@@ -1,7 +1,7 @@
 """Finding review transition rules.
 
-The state invariants -- what a verified finding must carry, and what a HIGH or
-CRITICAL claim must state -- live in ``Finding.__post_init__`` so that every
+The state invariants -- what every verified finding must carry, and what a HIGH
+or CRITICAL claim must state before review -- live in ``Finding.__post_init__`` so every
 writer is bound by them, not only the review endpoint. ``dataclasses.replace``
 re-runs ``__post_init__``, so the transition below inherits them for free and
 only has to police the parts that are genuinely about the transition.

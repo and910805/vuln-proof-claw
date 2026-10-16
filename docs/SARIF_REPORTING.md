@@ -10,9 +10,11 @@ HTTP bodies are never embedded.
 GET /api/v1/engagements/{engagement_id}/report.sarif
 ```
 
-The response uses `application/sarif+json` and includes a `proofclaw_*` property set
-for each result: review status, confidence, finding ID, evidence IDs, remediation,
-and the finding record version. Severity maps to SARIF levels as follows:
+The response uses `application/sarif+json` and includes only `verified` findings as
+results. Each result has a `proofclaw_*` property set: review status, confidence,
+finding ID, evidence IDs, remediation, and the finding record version. Candidate,
+pending, manual-review, and rejected findings remain visible in the JSON, Markdown,
+and HTML engagement reports. Severity maps to SARIF levels as follows:
 
 | ProofClaw severity | SARIF level |
 | --- | --- |
@@ -20,8 +22,8 @@ and the finding record version. Severity maps to SARIF levels as follows:
 | medium | warning |
 | low, informational | note |
 
-Rejected findings remain visible for auditability and carry a SARIF suppression with
-the reason `Rejected during review`.
+If a verified finding's linked evidence is missing, belongs to another engagement,
+or fails integrity checks, the report request fails instead of exporting that claim.
 
 ## Immutable export
 
@@ -37,8 +39,10 @@ Content-Type: application/json
 ```
 
 The resulting digest, size, and media type are persisted. A dedicated evidence-reader
-credential is required to download the stored bytes, and the API verifies the SHA-256
-digest before returning them.
+credential is required to download the stored bytes. Before download or an
+idempotency-key replay, the API verifies the SHA-256 digest and rechecks any verified
+claims against their current Finding state and linked evidence. A historical export
+whose verified claim was later rejected or whose evidence became invalid is refused.
 
 SARIF export is an interchange/reporting feature, not permission to run a scanner. The
 existing Scope, DNS, Evidence, and budget controls remain the only target-facing path.

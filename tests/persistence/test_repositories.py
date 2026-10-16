@@ -20,6 +20,7 @@ from vuln_proof_claw.domain.enums import (
     VerificationMethod,
     WorkerState,
 )
+from vuln_proof_claw.domain.identifiers import EvidenceId, new_evidence_id
 from vuln_proof_claw.domain.models import (
     Action,
     Approval,
@@ -32,6 +33,9 @@ from vuln_proof_claw.domain.models import (
     Task,
     WorkerExecution,
 )
+from vuln_proof_claw.evidence.finding_validation import FindingEvidenceError
+from vuln_proof_claw.evidence.models import EvidenceMetadata
+from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
 from vuln_proof_claw.persistence.base import Base
 from vuln_proof_claw.persistence.repositories import (
     ActionRepository,
@@ -103,6 +107,30 @@ def make_action(engagement: Engagement, task: Task) -> Action:
         idempotency_key="action-1",
         created_at=NOW,
     )
+
+
+def _append_raw_evidence(
+    session: Session, engagement: Engagement, action: Action, raw: bytes
+) -> EvidenceId:
+    evidence_id = new_evidence_id()
+    PersistentEvidenceStore(session).append(
+        EvidenceMetadata(
+            evidence_id=evidence_id,
+            engagement_id=engagement.id,
+            action_id=action.id,
+            tool_name="http-client",
+            tool_version="1.0.0",
+            normalized_parameters={"method": "GET"},
+            captured_at=NOW,
+            duration_ms=1,
+            worker_image="test-worker",
+            environment={"transport": "test"},
+            scope_decision="scope_allowed",
+            media_type="application/http",
+        ),
+        raw,
+    )
+    return evidence_id
 
 
 def test_engagement_scope_round_trip(engine: Engine) -> None:
@@ -287,7 +315,7 @@ def test_approval_evidence_artifact_and_finding_round_trip(engine: Engine) -> No
             vulnerability_class="broken_access_control",
             affected_target=action.normalized_target,
             evidence_ids=(evidence.id,),
-            status=FindingStatus.VERIFIED,
+            status=FindingStatus.PENDING_VERIFICATION,
             verification_method=VerificationMethod.OBSERVED,
             created_at=NOW,
         )
@@ -305,6 +333,146 @@ def test_approval_evidence_artifact_and_finding_round_trip(engine: Engine) -> No
         assert stored_artifact == artifact
         assert stored_finding is not None
         assert stored_finding.entity == finding
+
+
+def test_finding_repository_add_refuses_verified_metadata_only_evidence(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        engagement, task = add_hierarchy(session)
+        action = make_action(engagement, task)
+        ActionRepository(session).add(action)
+        evidence = Evidence(
+            action_id=action.id,
+            tool_name="http-client",
+            tool_version="1.0.0",
+            digest=DIGEST,
+            captured_at=NOW,
+        )
+        EvidenceRepository(session).add(evidence)
+        finding = Finding(
+            engagement_id=engagement.id,
+            title="Unbacked verified claim",
+            vulnerability_class="CWE-693",
+            affected_target=action.normalized_target,
+            evidence_ids=(evidence.id,),
+            verification_method=VerificationMethod.OBSERVED,
+            status=FindingStatus.VERIFIED,
+            created_at=NOW,
+        )
+
+        with pytest.raises(FindingEvidenceError) as raised:
+            FindingRepository(session).add(finding)
+        assert raised.value.code == "finding_evidence_invalid"
+        assert FindingRepository(session).get(finding.id) is None
+
+
+def test_finding_repository_save_refuses_verified_metadata_only_evidence(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        engagement, task = add_hierarchy(session)
+        action = make_action(engagement, task)
+        ActionRepository(session).add(action)
+        evidence = Evidence(
+            action_id=action.id,
+            tool_name="http-client",
+            tool_version="1.0.0",
+            digest=DIGEST,
+            captured_at=NOW,
+        )
+        EvidenceRepository(session).add(evidence)
+        finding = Finding(
+            engagement_id=engagement.id,
+            title="Claim awaiting review",
+            vulnerability_class="CWE-693",
+            affected_target=action.normalized_target,
+            evidence_ids=(evidence.id,),
+            status=FindingStatus.PENDING_VERIFICATION,
+            created_at=NOW,
+        )
+        FindingRepository(session).add(finding)
+
+    with session_factory.begin() as session:
+        repository = FindingRepository(session)
+        stored = repository.get(finding.id)
+        assert stored is not None
+        reviewed = replace(
+            stored.entity,
+            status=FindingStatus.VERIFIED,
+            verification_method=VerificationMethod.OBSERVED,
+        )
+        with pytest.raises(FindingEvidenceError) as raised:
+            repository.save(reviewed, expected_version=stored.version)
+        assert raised.value.code == "finding_evidence_invalid"
+        unchanged = repository.get(finding.id)
+        assert unchanged is not None
+        assert unchanged.entity.status is FindingStatus.PENDING_VERIFICATION
+        assert unchanged.version == 1
+
+
+def test_finding_repository_add_accepts_integrity_checked_raw_evidence(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        engagement, task = add_hierarchy(session)
+        action = make_action(engagement, task)
+        ActionRepository(session).add(action)
+        evidence_id = _append_raw_evidence(
+            session, engagement, action, b"HTTP/1.1 200 OK\r\n\r\nobserved"
+        )
+        finding = Finding(
+            engagement_id=engagement.id,
+            title="Evidence-backed verified claim",
+            vulnerability_class="CWE-693",
+            affected_target=action.normalized_target,
+            evidence_ids=(evidence_id,),
+            verification_method=VerificationMethod.OBSERVED,
+            status=FindingStatus.VERIFIED,
+            created_at=NOW,
+        )
+        FindingRepository(session).add(finding)
+
+    with session_factory() as session:
+        stored = FindingRepository(session).get(finding.id)
+        assert stored is not None
+        assert stored.entity == finding
+
+
+def test_finding_repository_save_cannot_swap_persisted_payload_links(engine: Engine) -> None:
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        engagement, task = add_hierarchy(session)
+        action = make_action(engagement, task)
+        ActionRepository(session).add(action)
+        linked_id = _append_raw_evidence(session, engagement, action, b"linked response")
+        substitute_id = _append_raw_evidence(session, engagement, action, b"substitute response")
+        finding = Finding(
+            engagement_id=engagement.id,
+            title="Claim awaiting review",
+            vulnerability_class="CWE-693",
+            affected_target=action.normalized_target,
+            evidence_ids=(linked_id,),
+            status=FindingStatus.PENDING_VERIFICATION,
+            created_at=NOW,
+        )
+        FindingRepository(session).add(finding)
+
+    with session_factory.begin() as session:
+        repository = FindingRepository(session)
+        stored = repository.get(finding.id)
+        assert stored is not None
+        substituted = replace(
+            stored.entity,
+            status=FindingStatus.VERIFIED,
+            verification_method=VerificationMethod.OBSERVED,
+            evidence_ids=(substitute_id,),
+        )
+        with pytest.raises(FindingEvidenceError) as raised:
+            repository.save(substituted, expected_version=stored.version)
+        assert raised.value.code == "finding_evidence_invalid"
+        unchanged = repository.get(finding.id)
+        assert unchanged is not None
+        assert unchanged.entity.status is FindingStatus.PENDING_VERIFICATION
+        assert unchanged.entity.evidence_ids == (linked_id,)
+        assert unchanged.version == 1
 
 
 def test_approval_consumption_uses_optimistic_version(engine: Engine) -> None:

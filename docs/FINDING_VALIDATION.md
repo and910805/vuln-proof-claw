@@ -24,21 +24,30 @@ prove a vulnerability, or identify the bundle's author.
 - An OpenAPI declaration paired with an unauthenticated successful response produces a
   `candidate`: the API specification alone cannot establish that the returned content
   was meant to be private.
-- The `nuclei` and `httpx` parsers emit `pending_verification` findings for selected
-  target-derived observations; other scanner records are suppressed. Their output
-  needs independent review before a verified claim. Template severity, a CVE label,
-  or an LLM assertion is not evidence of impact.
+- The `nuclei` parser emits `pending_verification` findings and the `httpx` parser
+  emits `candidate` findings for selected target-derived observations; other scanner
+  records are suppressed. Their output needs independent review before a verified
+  claim. Template severity, a CVE label, or an LLM assertion is not evidence of impact.
+- The autonomous mission path turns scanner observations into Candidates and Leads.
+  `VerificationOutcome` computes a verdict from structured answers, and deterministic
+  authorization oracles can compare identity probes. An outcome without a stated
+  method cannot automatically become `verified`. The repository checks evidence
+  provenance and integrity when a verified Finding is saved, but the outcome's probe
+  fields are not independently derived from stored captures or checked against Action
+  authorization and the expected security policy. Treat this path as an investigation
+  aid until that semantic binding is implemented.
 - `POST /api/v1/automation/verify` computes `pass`, `candidate`, or `inconclusive`
   from caller-supplied observations. Its output is not a persisted Finding decision or
   a substitute for evidence-backed review. The Planner/Operator/Verifier next-step
   endpoint selects a role; it does not perform a target retest.
 - The Finding review API handles a human decision with optimistic version checking
-  and an audit event. Before a transition to `verified`, it checks the full engagement
-  evidence chain, linked evidence ownership and existence, a stated verification
-  method, and an explicit reviewer rationale. It does not yet check Action success,
-  semantic target match, or whether the response proves the claim. A differential
-  review rejects byte-identical test and control captures, but does not yet evaluate
-  whether the changed bytes establish the claim. See
+  and an audit event. Every repository write of a `verified` Finding checks the full
+  engagement evidence chain and linked evidence ownership and existence; a review
+  transition also requires a stated verification method and explicit reviewer
+  rationale. It does not yet check Action success, semantic target match, or whether
+  the response proves the claim. A differential review rejects byte-identical test
+  and control captures, but does not yet evaluate whether the changed bytes establish
+  the claim. See
   [Finding review](FINDING_REVIEW.md).
 
 ## Required claim and proof
@@ -105,8 +114,9 @@ side effects, scope drift, inconsistent identity, or exhausted budgets.
 
 ## Implementation sequence
 
-1. **Evidence-bound decisions (first gate implemented):** review fails closed on
-   missing, corrupt, or foreign-engagement linked evidence and records the decision.
+1. **Evidence-bound decisions (first gate implemented):** verified repository writes
+   and report generation fail closed on missing, corrupt, or foreign-engagement linked
+   evidence; review records the decision. SARIF contains only verified findings.
    Next, bind each evidence record to a successful Action and the precise target.
 2. **Verification cases:** persist structured claim, method, expected/observed
    assertions, evidence roles, verifier version, attempts, and an immutable verdict.
@@ -118,6 +128,9 @@ side effects, scope drift, inconsistent identity, or exhausted budgets.
 4. **Disclosure quality:** expose verdict basis, control references, reproduction
    instructions, and limitations consistently in JSON, Markdown, HTML, SARIF, and
    bundles. Distinguish candidates from verified findings in counts and presentation.
+   Give future stored exports a versioned per-finding proof manifest; historical
+   Markdown exports currently revalidate verified claims by exact table row because
+   that format does not carry a stable finding ID.
 
 Acceptance tests should cover forged observation input, missing or altered evidence,
 cross-engagement links, wrong Action/target, missing controls, failed execution,
