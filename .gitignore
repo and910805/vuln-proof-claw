@@ -33,6 +33,13 @@ node_modules/
 /evidence/
 /reports/
 
+# Local target-specific verification materials
+/_選中八條/
+/漏洞報告彙整/
+/live_verify_oct16.py
+/連線驗證-2026-10-16-正式紀錄.jsonl
+/連線驗證摘要-2026-10-16.md
+
 # Editors and operating systems
 .DS_Store
 Thumbs.db

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -55,6 +57,29 @@ def discover_markdown(root: Path) -> list[Path]:
             relative = path.relative_to(root)
             if path.is_file() and not IGNORED_PARTS.intersection(relative.parts):
                 found.add(path)
+    if (root / ".git").exists() and found:
+        # Local research notes can be intentionally excluded from this project.
+        # Keep checking new, non-ignored documents before they are committed.
+        git_executable = shutil.which("git")
+        if git_executable is None:
+            raise RuntimeError("Git is required to check ignored Markdown documents")
+        encoded_paths = {
+            path.relative_to(root).as_posix().encode("utf-8"): path for path in found
+        }
+        checked = subprocess.run(  # noqa: S603 - resolved Git binary and fixed arguments
+            [git_executable, "check-ignore", "-z", "--stdin"],
+            input=b"\0".join(encoded_paths) + b"\0",
+            capture_output=True,
+            cwd=root,
+            check=False,
+        )
+        if checked.returncode not in (0, 1):
+            raise RuntimeError("could not check ignored Markdown documents")
+        found.difference_update(
+            encoded_paths[item]
+            for item in checked.stdout.split(b"\0")
+            if item in encoded_paths
+        )
     return sorted(found, key=lambda path: path.relative_to(root).as_posix())
 
 

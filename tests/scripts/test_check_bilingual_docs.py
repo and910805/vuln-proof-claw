@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -58,3 +60,21 @@ def test_unmaintained_and_ignored_markdown_is_not_scanned(tmp_path: Path) -> Non
     write_document(tmp_path, "docs/.venv/generated.md")
 
     assert discover_markdown(tmp_path) == []
+
+
+def test_git_ignored_local_note_does_not_hide_other_missing_translations(
+    tmp_path: Path,
+) -> None:
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        pytest.skip("Git is not installed")
+    subprocess.run(  # noqa: S603 - resolved Git binary and fixed init arguments
+        [git_executable, "init", "-q"], cwd=tmp_path, capture_output=True, check=True
+    )
+    (tmp_path / ".gitignore").write_text("/private-note.md\n", encoding="utf-8")
+    write_document(tmp_path, "private-note.md")
+    write_document(tmp_path, "docs/guide.md")
+
+    assert find_pairing_errors(tmp_path) == [
+        "missing Traditional Chinese document: docs/guide.md -> docs/guide.zh-TW.md"
+    ]
