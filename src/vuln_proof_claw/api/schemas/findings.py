@@ -21,6 +21,8 @@ class FindingReviewRequest(BaseModel):
     status: FindingReviewStatus
     expected_version: int = Field(ge=1)
     comment: str | None = Field(default=None, max_length=4000)
+    verification_method: Literal["observed", "differential"] | None = None
+    control_evidence_ids: tuple[str, ...] | None = Field(default=None, max_length=32)
 
     @field_validator("comment")
     @classmethod
@@ -47,6 +49,7 @@ class FindingReviewSummary(BaseModel):
     confidence: str
     remediation: str
     evidence_ids: tuple[str, ...]
+    control_evidence_ids: tuple[str, ...]
     version: int
     reviewed_at: datetime
     reviewed_by: str

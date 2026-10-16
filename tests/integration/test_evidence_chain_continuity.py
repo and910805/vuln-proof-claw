@@ -375,17 +375,17 @@ async def test_critical_finding_needs_a_control_only_when_it_claims_a_differenti
         base = f"/api/v1/engagements/{engagement_id}/findings"
         observed = await client.patch(
             f"{base}/{stated_observation}",
-            json={"status": "verified", "expected_version": 1},
+            json={"status": "verified", "expected_version": 1, "comment": "Observed response."},
             headers=OPERATOR_HEADERS,
         )
         uncontrolled = await client.patch(
             f"{base}/{differential_without_control}",
-            json={"status": "verified", "expected_version": 1},
+            json={"status": "verified", "expected_version": 1, "comment": "Compare responses."},
             headers=OPERATOR_HEADERS,
         )
         accepted = await client.patch(
             f"{base}/{differential_with_control}",
-            json={"status": "verified", "expected_version": 1},
+            json={"status": "verified", "expected_version": 1, "comment": "Control differs."},
             headers=OPERATOR_HEADERS,
         )
         report = await client.get(

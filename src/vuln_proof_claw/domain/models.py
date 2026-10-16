@@ -377,10 +377,16 @@ class Finding:
         _require_aware(self.created_at, "created_at")
         if self.cwe_id is not None:
             _require_cwe(self.cwe_id)
+        if len(set(self.evidence_ids)) != len(self.evidence_ids) or len(
+            set(self.control_evidence_ids)
+        ) != len(self.control_evidence_ids):
+            raise DomainValidationError("finding evidence IDs must be unique within each role")
         if set(self.evidence_ids) & set(self.control_evidence_ids):
             raise DomainValidationError("one evidence record cannot be both payload and control")
         if self.status is FindingStatus.VERIFIED and not self.evidence_ids:
             raise DomainValidationError("verified findings require at least one evidence record")
+        if self.status is FindingStatus.VERIFIED and self.verification_method is None:
+            raise DomainValidationError("verified findings must state a verification method")
         if self.severity in SEVERITY_REQUIRES_STATED_METHOD and self.verification_method is None:
             raise DomainValidationError(
                 "high and critical findings must state a verification method"

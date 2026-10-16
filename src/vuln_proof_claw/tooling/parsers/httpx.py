@@ -7,9 +7,10 @@ inventory, and emitting a finding per inventory field is how a scanner
 integration ends up with a report nobody trusts.
 
 Each check reads one captured record against a fixed expectation, so every
-finding here is ``OBSERVED``: there is no baseline to hold it against. A claim
-that needs a comparison -- that a payload changed the response -- cannot be made
-from this output at all, and this parser never pretends otherwise.
+finding here is an ``OBSERVED`` candidate: there is no baseline to hold it
+against. The tool's output needs a separate evidence review before the finding
+can be marked verified. A claim that needs a comparison -- that a payload
+changed the response -- cannot be made from this output at all.
 """
 
 from __future__ import annotations
@@ -152,7 +153,7 @@ def parse_httpx_findings(
                 cwe_id=cwe,
                 affected_target=str(normalized),
                 evidence_ids=(evidence_id,),
-                status=FindingStatus.VERIFIED,
+                status=FindingStatus.CANDIDATE,
                 verification_method=VerificationMethod.OBSERVED,
                 severity=severity,
                 confidence=confidence,

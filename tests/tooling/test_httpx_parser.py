@@ -213,10 +213,9 @@ def test_every_finding_states_its_basis_and_carries_a_validated_cwe() -> None:
         assert finding.cwe_id is not None, finding.title
         assert finding.cwe_id == finding.vulnerability_class, finding.title
         assert finding.evidence_ids == (EVIDENCE,), finding.title
-        assert finding.status is FindingStatus.VERIFIED, finding.title
-        # A single record cannot support a differential claim, so none of these
-        # may carry one -- Finding refuses a verified differential without a
-        # control, and there is no control to give it.
+        assert finding.status is FindingStatus.CANDIDATE, finding.title
+        # One scanner record supports a lead with an observed basis. Review of
+        # the persisted evidence is still required before verification.
         assert finding.control_evidence_ids == (), finding.title
 
 

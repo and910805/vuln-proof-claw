@@ -43,6 +43,28 @@ type AssessmentCopy = {
   activeLimited: string;
   findingDetails: string;
   noFindings: string;
+  verificationCandidate: string;
+  verificationPending: string;
+  verificationVerified: string;
+  verificationRejected: string;
+  verificationManualReview: string;
+  verificationUnknown: string;
+  candidateNextStep: string;
+  pendingNextStep: string;
+  verifiedNextStep: string;
+  rejectedNextStep: string;
+  manualReviewNextStep: string;
+  unknownNextStep: string;
+  verificationMethod: string;
+  verificationObserved: string;
+  verificationDifferential: string;
+  verificationNotRecorded: string;
+  evidenceReferences: string;
+  noEvidenceReferences: string;
+  controlEvidenceReferences: string;
+  noControlEvidenceReferences: string;
+  nextStep: string;
+  remediation: string;
   downloadJson: string;
   downloadMarkdown: string;
   downloadSarif: string;
@@ -254,17 +276,7 @@ export function AssessmentWorkspace({
                   ) : (
                     <ul>
                       {latestReport.findings.map((finding) => (
-                        <li key={finding.id}>
-                          <div className="finding-heading">
-                            <strong>{finding.title}</strong>
-                            <span className={`severity-badge severity-${finding.severity}`}>
-                              {finding.severity}
-                            </span>
-                          </div>
-                          <code>{finding.vulnerability_class} · {finding.confidence}</code>
-                          <span>{finding.affected_target}</span>
-                          <p>{finding.remediation}</p>
-                        </li>
+                        <FindingResult finding={finding} key={finding.id} t={t} />
                       ))}
                     </ul>
                   )}
@@ -399,6 +411,85 @@ export function AssessmentWorkspace({
         )}
       </section>
     </>
+  );
+}
+
+function verificationDetails(status: string, t: AssessmentCopy) {
+  switch (status) {
+    case "candidate":
+      return { label: t.verificationCandidate, nextStep: t.candidateNextStep, tone: "candidate" };
+    case "pending_verification":
+      return { label: t.verificationPending, nextStep: t.pendingNextStep, tone: "pending" };
+    case "verified":
+      return { label: t.verificationVerified, nextStep: t.verifiedNextStep, tone: "verified" };
+    case "rejected":
+      return { label: t.verificationRejected, nextStep: t.rejectedNextStep, tone: "rejected" };
+    case "needs_manual_review":
+      return { label: t.verificationManualReview, nextStep: t.manualReviewNextStep, tone: "manual" };
+    default:
+      return { label: t.verificationUnknown, nextStep: t.unknownNextStep, tone: "unknown" };
+  }
+}
+
+function FindingResult({
+  finding,
+  t,
+}: {
+  finding: EngagementReport["findings"][number];
+  t: AssessmentCopy;
+}) {
+  const verification = verificationDetails(finding.status, t);
+  const method = finding.verification_method === "observed"
+    ? t.verificationObserved
+    : finding.verification_method === "differential"
+      ? t.verificationDifferential
+      : t.verificationNotRecorded;
+  return (
+    <li className="finding-card">
+      <div className="finding-heading">
+        <strong>{finding.title}</strong>
+        <span className={`severity-badge severity-${finding.severity}`}>
+          {finding.severity}
+        </span>
+      </div>
+      <div className="finding-classification">
+        <code>{finding.cwe_id ? `${finding.cwe_id} · ${finding.vulnerability_class}` : finding.vulnerability_class}</code>
+        <span>{finding.confidence}</span>
+      </div>
+      <span className="finding-target">{finding.affected_target}</span>
+      <div className={`verification-state verification-state-${verification.tone}`}>
+        <span aria-hidden="true" className="verification-state-dot" />
+        <strong>{verification.label}</strong>
+      </div>
+      <dl className="finding-verification-details">
+        <div>
+          <dt>{t.verificationMethod}</dt>
+          <dd>{method}</dd>
+        </div>
+        <div>
+          <dt>{t.evidenceReferences}</dt>
+          <dd>
+            {finding.evidence_ids.length > 0 ? (
+              <ul className="finding-evidence-list">
+                {finding.evidence_ids.map((id) => <li key={id}><code>{id}</code></li>)}
+              </ul>
+            ) : t.noEvidenceReferences}
+          </dd>
+        </div>
+        <div>
+          <dt>{t.controlEvidenceReferences}</dt>
+          <dd>
+            {finding.control_evidence_ids?.length ? (
+              <ul className="finding-evidence-list">
+                {finding.control_evidence_ids.map((id) => <li key={id}><code>{id}</code></li>)}
+              </ul>
+            ) : t.noControlEvidenceReferences}
+          </dd>
+        </div>
+      </dl>
+      <p className="finding-next-step"><strong>{t.nextStep}</strong> {verification.nextStep}</p>
+      <p className="finding-remediation"><strong>{t.remediation}</strong> {finding.remediation}</p>
+    </li>
   );
 }
 

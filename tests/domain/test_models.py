@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from vuln_proof_claw.domain.enums import FindingStatus, RiskLevel, WorkerState
+from vuln_proof_claw.domain.enums import FindingStatus, RiskLevel, VerificationMethod, WorkerState
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import (
     EvidenceId,
@@ -167,6 +167,7 @@ def test_verified_finding_requires_evidence() -> None:
         affected_target="https://example.test/api/users",
         evidence_ids=(EvidenceId("evidence-1"),),
         status=FindingStatus.VERIFIED,
+        verification_method=VerificationMethod.OBSERVED,
         created_at=NOW,
     )
     assert finding.status is FindingStatus.VERIFIED

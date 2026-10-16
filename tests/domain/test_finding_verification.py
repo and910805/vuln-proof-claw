@@ -49,7 +49,7 @@ def test_baseline_and_negative_control_are_control_artifacts() -> None:
 
 def test_an_observation_can_be_verified_without_a_control() -> None:
     reviewed = review_finding(
-        finding(severity=FindingSeverity.LOW),
+        finding(severity=FindingSeverity.LOW, verification_method=VerificationMethod.OBSERVED),
         FindingStatus.VERIFIED,
     )
     assert reviewed.status is FindingStatus.VERIFIED
@@ -170,7 +170,11 @@ def test_reviewing_to_the_same_status_is_a_no_op() -> None:
 
 def test_a_verified_finding_cannot_slip_back_to_pending() -> None:
     # Reopening has to go through manual review so the reversal is visible.
-    verified = finding(severity=FindingSeverity.LOW, status=FindingStatus.VERIFIED)
+    verified = finding(
+        severity=FindingSeverity.LOW,
+        status=FindingStatus.VERIFIED,
+        verification_method=VerificationMethod.OBSERVED,
+    )
     with pytest.raises(DomainValidationError, match="manual review"):
         review_finding(verified, FindingStatus.PENDING_VERIFICATION)
 
@@ -182,7 +186,11 @@ def test_a_rejected_finding_cannot_slip_back_to_pending() -> None:
 
 
 def test_a_verified_finding_can_be_reopened_for_manual_review() -> None:
-    verified = finding(severity=FindingSeverity.LOW, status=FindingStatus.VERIFIED)
+    verified = finding(
+        severity=FindingSeverity.LOW,
+        status=FindingStatus.VERIFIED,
+        verification_method=VerificationMethod.OBSERVED,
+    )
     reopened = review_finding(verified, FindingStatus.NEEDS_MANUAL_REVIEW)
     assert reopened.status is FindingStatus.NEEDS_MANUAL_REVIEW
 
@@ -197,6 +205,9 @@ def test_rejecting_needs_no_control_even_at_high_severity() -> None:
 
 
 def test_an_informational_observation_needs_no_control() -> None:
-    candidate = finding(severity=FindingSeverity.INFORMATIONAL)
+    candidate = finding(
+        severity=FindingSeverity.INFORMATIONAL,
+        verification_method=VerificationMethod.OBSERVED,
+    )
     assert not requires_control_evidence(candidate)
     assert review_finding(candidate, FindingStatus.VERIFIED).status is FindingStatus.VERIFIED

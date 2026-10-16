@@ -21,6 +21,7 @@ from vuln_proof_claw.evidence.persistence import (
 from vuln_proof_claw.evidence.store import DuplicateEvidenceError, InvalidEvidenceError
 from vuln_proof_claw.persistence.base import Base
 from vuln_proof_claw.persistence.models import EvidencePayloadRecord
+from vuln_proof_claw.persistence.models import EvidenceRecord as EvidenceMetadataRecord
 from vuln_proof_claw.persistence.repositories import (
     ActionRepository,
     EngagementRepository,
@@ -156,3 +157,22 @@ def test_persistent_verification_detects_tampered_raw_content(engine: Engine) ->
 
     assert not verification.valid
     assert verification.reason == "digest_mismatch"
+
+
+def test_persistent_verification_detects_metadata_index_drift(engine: Engine) -> None:
+    engagement, action = seed_action(engine)
+    item = metadata(engagement, action, 1)
+    session_factory = create_session_factory(engine)
+    with session_factory.begin() as session:
+        PersistentEvidenceStore(session).append(item, b"original")
+
+    with session_factory.begin() as session:
+        indexed = session.get(EvidenceMetadataRecord, item.evidence_id)
+        assert indexed is not None
+        indexed.tool_name = "different-tool"
+
+    with session_factory() as session:
+        verification = PersistentEvidenceStore(session).verify_engagement(engagement.id)
+
+    assert not verification.valid
+    assert verification.reason == "metadata_record_mismatch"

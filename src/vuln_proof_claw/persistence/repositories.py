@@ -918,10 +918,14 @@ class FindingRepository:
         if row is None:
             raise ConcurrentUpdateError
         row.status = finding.status.value
+        row.verification_method = (
+            finding.verification_method.value if finding.verification_method is not None else None
+        )
         row.severity = finding.severity.value
         row.confidence = finding.confidence.value
         row.remediation = finding.remediation
         self._session.flush()
+        self.replace_evidence(finding.id, finding.control_evidence_ids, role=_CONTROL_ROLE)
         stored = self.get(finding.id)
         if stored is None:  # pragma: no cover - persistence invariant
             raise RuntimeError("persisted finding could not be reloaded")

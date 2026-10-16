@@ -1,4 +1,4 @@
-"""Admit a nuclei match only when the record itself entails the claim.
+"""Admit a nuclei match for review only with target-derived supporting output.
 
 nuclei's JSONL carries exactly one field that is evidence about the target: the
 captured request/response pair. Everything else -- ``info.severity``,
@@ -9,11 +9,11 @@ metadata grades the author's confidence, not the target's state, and that
 conflation is the specific bug that makes a "critical" version-banner guess
 look like a proven compromise.
 
-So this parser does not soften a broad claim into a candidate. It either admits
-a record whose evidence entails the claim, or it suppresses the record and says
-why. There is no middle tier carrying a CVE title with a disclaimer attached,
-because a CVE-titled row reads as "we found CVE-X" to every human and every
-ticketing integration downstream, whatever its status field says.
+The parser suppresses broad version and CVE inferences rather than attaching a
+disclaimer to a claim the record cannot support. Admitted records become
+``pending_verification`` findings: the captured output is worth independent
+review, but a template match alone cannot establish the target's intended
+policy, impact, or exploitability.
 
 That means a scan producing two hundred JSONL lines can legitimately yield zero
 findings. A domain model that refuses undefendable claims has to be allowed to
@@ -491,7 +491,7 @@ def parse_nuclei_output(
                     cwe_id=cwe,
                     affected_target=str(normalized),
                     evidence_ids=(evidence_id,),
-                    status=FindingStatus.VERIFIED,
+                    status=FindingStatus.PENDING_VERIFICATION,
                     # Never DIFFERENTIAL: see the module docstring. The JSONL
                     # cannot be shown to contain a control, and a claimed control
                     # that cannot be produced is what the domain refuses.

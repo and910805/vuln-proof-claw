@@ -123,12 +123,15 @@ export type EngagementReport = {
     id: string;
     title: string;
     vulnerability_class: string;
+    cwe_id: string | null;
+    verification_method: "observed" | "differential" | null;
     affected_target: string;
     status: string;
     severity: string;
     confidence: string;
     remediation: string;
     evidence_ids: string[];
+    control_evidence_ids: string[];
     version: number;
     created_at: string;
   }>;

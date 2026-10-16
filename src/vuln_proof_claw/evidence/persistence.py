@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from vuln_proof_claw.domain.identifiers import ActionId, EngagementId, EvidenceId
 from vuln_proof_claw.domain.models import Evidence
-from vuln_proof_claw.evidence.canonical import canonical_json
+from vuln_proof_claw.evidence.canonical import canonical_json, freeze_canonical
 from vuln_proof_claw.evidence.hash_chain import (
     ChainVerification,
     append_to_chain,
@@ -183,7 +183,7 @@ class PersistentEvidenceStore:
             raw_content=bytes(payload.raw_content),
         )
 
-    def verify_engagement(self, engagement_id: str) -> ChainVerification:
+    def verify_engagement(self, engagement_id: str) -> ChainVerification:  # noqa: PLR0911
         """Recompute every link from persisted canonical metadata and raw bytes."""
         rows = tuple(
             self._session.execute(
@@ -200,6 +200,25 @@ class PersistentEvidenceStore:
         for index, (payload, metadata) in enumerate(rows):
             if payload.chain_index != index:
                 return ChainVerification(False, index, index, "chain_index_mismatch")
+            try:
+                canonical = json.loads(bytes(payload.canonical_metadata))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return ChainVerification(False, index, index, "canonical_metadata_invalid")
+            indexed_fields = {
+                "evidence_id": metadata.id,
+                "engagement_id": payload.engagement_id,
+                "action_id": metadata.action_id,
+                "tool_name": metadata.tool_name,
+                "tool_version": metadata.tool_version,
+                "captured_at": freeze_canonical(_utc(metadata.captured_at)),
+            }
+            if not isinstance(canonical, dict) or any(
+                canonical.get(field) != value for field, value in indexed_fields.items()
+            ):
+                return ChainVerification(False, index, index, "metadata_record_mismatch")
+            action = self._session.get(ActionRecord, metadata.action_id)
+            if action is None or action.engagement_id != engagement_id:
+                return ChainVerification(False, index, index, "action_engagement_mismatch")
             if metadata.previous_digest != expected_previous:
                 return ChainVerification(False, index, index, "previous_digest_mismatch")
             if payload.raw_size != len(payload.raw_content):

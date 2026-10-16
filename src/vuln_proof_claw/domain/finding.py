@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from vuln_proof_claw.domain.enums import FindingStatus, VerificationMethod
 from vuln_proof_claw.domain.errors import DomainValidationError
+from vuln_proof_claw.domain.identifiers import EvidenceId
 from vuln_proof_claw.domain.models import Finding
 
 _REVIEWABLE = frozenset(
@@ -36,14 +37,33 @@ def requires_control_evidence(finding: Finding) -> bool:
     return finding.verification_method is VerificationMethod.DIFFERENTIAL
 
 
-def review_finding(finding: Finding, status: FindingStatus) -> Finding:
+def review_finding(
+    finding: Finding,
+    status: FindingStatus,
+    *,
+    verification_method: VerificationMethod | None = None,
+    control_evidence_ids: tuple[EvidenceId, ...] | None = None,
+) -> Finding:
     """Return a reviewed finding while enforcing the lifecycle rules."""
     if status not in _REVIEWABLE:
         raise DomainValidationError("finding review must use a review status")
-    if finding.status is status:
+    if (
+        finding.status is status
+        and verification_method is None
+        and control_evidence_ids is None
+    ):
         return finding
     if finding.status is FindingStatus.VERIFIED and status is FindingStatus.PENDING_VERIFICATION:
         raise DomainValidationError("verified findings must be reopened for manual review first")
     if finding.status is FindingStatus.REJECTED and status is FindingStatus.PENDING_VERIFICATION:
         raise DomainValidationError("rejected findings must be reopened for manual review first")
-    return replace(finding, status=status)
+    return replace(
+        finding,
+        status=status,
+        verification_method=verification_method or finding.verification_method,
+        control_evidence_ids=(
+            finding.control_evidence_ids
+            if control_evidence_ids is None
+            else control_evidence_ids
+        ),
+    )

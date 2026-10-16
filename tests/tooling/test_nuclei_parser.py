@@ -90,7 +90,7 @@ def test_an_independently_rederivable_artifact_is_admitted() -> None:
     assert [f.title for f in result.findings] == ["Expired SSL Certificate"]
     assert result.suppressed == ()
     finding = result.findings[0]
-    assert finding.status is FindingStatus.VERIFIED
+    assert finding.status is FindingStatus.PENDING_VERIFICATION
     assert finding.verification_method is VerificationMethod.OBSERVED
     assert finding.confidence is FindingConfidence.HIGH
     assert finding.severity is FindingSeverity.LOW
@@ -115,7 +115,7 @@ def test_an_out_of_band_interaction_is_admitted_on_the_interaction_itself() -> N
     # record carries the callback: its protocol and the unique token correlating
     # it to this request. The `oast` tag alone does NOT admit this -- see
     # test_nuclei_parser_adversarial.py, where one tag string used to mint a
-    # VERIFIED CVE row from a record containing no interaction at all.
+    # CVE-titled Finding from a record containing no interaction at all.
     oob = record(
         template="http/vulnerabilities/generic/oob-ssrf.yaml",
         **{"template-id": "oob-ssrf", "matched-at": TARGET},
@@ -321,7 +321,7 @@ def test_severity_cannot_change_confidence_or_status(severity: str) -> None:
 
     assert len(result.findings) == 1
     assert result.findings[0].confidence is FindingConfidence.HIGH
-    assert result.findings[0].status is FindingStatus.VERIFIED
+    assert result.findings[0].status is FindingStatus.PENDING_VERIFICATION
 
 
 def test_severity_cannot_promote_a_refused_record() -> None:

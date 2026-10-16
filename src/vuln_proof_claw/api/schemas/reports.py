@@ -51,6 +51,7 @@ class FindingReportItem(BaseModel):
     confidence: str
     remediation: str
     evidence_ids: tuple[str, ...]
+    control_evidence_ids: tuple[str, ...] = ()
     version: int
     created_at: datetime
 

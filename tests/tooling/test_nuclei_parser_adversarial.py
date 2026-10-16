@@ -95,7 +95,7 @@ def parse(stdout: str) -> NucleiParseResult:
 
 
 def test_the_oast_tag_alone_does_not_assert_that_the_target_called_back() -> None:
-    # This was a CRITICAL defect. One tag string used to mint a VERIFIED
+    # This was a CRITICAL defect. One tag string used to mint a
     # CRITICAL row titled with a CVE, asserting the target had contacted
     # scanner-controlled infrastructure -- from a record containing no
     # interaction at all. Worse, the default contract passes -no-interactsh, so
@@ -196,7 +196,7 @@ def test_metadata_verified_cannot_change_confidence_or_status(verified: bool) ->
     result = parse(ssl_record(info={"metadata": {"verified": verified, "max-request": 1}}))
 
     assert result.findings[0].confidence is FindingConfidence.HIGH
-    assert result.findings[0].status is FindingStatus.VERIFIED
+    assert result.findings[0].status is FindingStatus.PENDING_VERIFICATION
 
 
 @pytest.mark.parametrize("matcher_name", ["word-1", "certificate-expired", ""])

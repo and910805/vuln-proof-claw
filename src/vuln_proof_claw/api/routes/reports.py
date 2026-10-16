@@ -85,6 +85,33 @@ def _scope_definition(scope: EngagementScope) -> ScopeDefinition:
     )
 
 
+def _finding_evidence_links(
+    session: Session, finding_rows: tuple[FindingRecord, ...]
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    """Keep observations and negative controls distinct in every report format."""
+    if not finding_rows:
+        return {}, {}
+    rows = session.execute(
+        select(
+            finding_evidence.c.finding_id,
+            finding_evidence.c.evidence_id,
+            finding_evidence.c.role,
+        )
+        .where(finding_evidence.c.finding_id.in_(row.id for row in finding_rows))
+        .order_by(
+            finding_evidence.c.finding_id,
+            finding_evidence.c.role,
+            finding_evidence.c.evidence_id,
+        )
+    )
+    payload_ids: dict[str, tuple[str, ...]] = {}
+    control_ids: dict[str, tuple[str, ...]] = {}
+    for finding_id, evidence_id, role in rows:
+        destination = control_ids if role == "control" else payload_ids
+        destination[finding_id] = (*destination.get(finding_id, ()), evidence_id)
+    return payload_ids, control_ids
+
+
 def build_engagement_report(session: Session, engagement_id: str) -> EngagementReport:
     normalized_id = EngagementId(engagement_id)
     stored = EngagementRepository(session).get(normalized_id)
@@ -114,17 +141,9 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
             .order_by(FindingRecord.created_at, FindingRecord.id)
         )
     )
-    finding_evidence_rows = tuple(
-        session.execute(
-            select(finding_evidence.c.finding_id, finding_evidence.c.evidence_id).where(
-                finding_evidence.c.finding_id.in_(row.id for row in finding_rows)
-            )
-        )
-    ) if finding_rows else ()
-    evidence_ids_by_finding: dict[str, tuple[str, ...]] = {}
-    for finding_id, evidence_id in finding_evidence_rows:
-        evidence_ids_by_finding.setdefault(finding_id, ())
-        evidence_ids_by_finding[finding_id] += (evidence_id,)
+    evidence_ids_by_finding, control_ids_by_finding = _finding_evidence_links(
+        session, finding_rows
+    )
     action_states: dict[str, int] = {}
     for action in actions:
         action_states[action.state] = action_states.get(action.state, 0) + 1
@@ -203,7 +222,14 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
         for action in actions
         if action.action_type == "active_safe_api_read" and action.state == "succeeded"
     )
-    steps = _build_steps(actions, evidence_rows, finding_rows, evidence_ids_by_finding)
+    linked_ids_by_finding = {
+        row.id: (
+            *evidence_ids_by_finding.get(row.id, ()),
+            *control_ids_by_finding.get(row.id, ()),
+        )
+        for row in finding_rows
+    }
+    steps = _build_steps(actions, evidence_rows, finding_rows, linked_ids_by_finding)
     return EngagementReport(
         generated_at=datetime.now(UTC),
         engagement_id=engagement.id,
@@ -270,6 +296,7 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
                 confidence=row.confidence,
                 remediation=row.remediation,
                 evidence_ids=evidence_ids_by_finding.get(row.id, ()),
+                control_evidence_ids=control_ids_by_finding.get(row.id, ()),
                 version=row.version,
                 created_at=row.created_at,
             )
@@ -384,8 +411,9 @@ def render_markdown(report: EngagementReport) -> str:
     if report.findings:
         lines.extend(
             (
-                "| Severity | Confidence | Class | Title | Target | Remediation |",
-                "| --- | --- | --- | --- | --- | --- |",
+                "| Status | Severity | Confidence | Method | Class | Title | Target | "
+                "Evidence | Control | Remediation |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             )
         )
         lines.extend(
@@ -393,11 +421,15 @@ def render_markdown(report: EngagementReport) -> str:
             + " | ".join(
                 _markdown_cell(value)
                 for value in (
+                    item.status,
                     item.severity,
                     item.confidence,
+                    item.verification_method or "—",
                     item.vulnerability_class,
                     item.title,
                     item.affected_target,
+                    ", ".join(item.evidence_ids) or "—",
+                    ", ".join(item.control_evidence_ids) or "—",
                     item.remediation,
                 )
             )
@@ -440,12 +472,17 @@ def render_html(report: EngagementReport) -> str:
     escape = html.escape
     finding_rows = "".join(
         "<tr>"
+        f"<td>{escape(item.status)}</td>"
         f'<td><span class="severity {escape(item.severity)}">{escape(item.severity)}</span></td>'
-        f"<td>{escape(item.confidence)}</td><td>{escape(item.vulnerability_class)}</td>"
+        f"<td>{escape(item.confidence)}</td>"
+        f"<td>{escape(item.verification_method or '—')}</td>"
+        f"<td>{escape(item.vulnerability_class)}</td>"
         f"<td><strong>{escape(item.title)}</strong><br><small>{escape(item.affected_target)}</small></td>"
+        f"<td><small>Payload: {escape(', '.join(item.evidence_ids) or '—')}<br>"
+        f"Control: {escape(', '.join(item.control_evidence_ids) or '—')}</small></td>"
         f"<td>{escape(item.remediation)}</td></tr>"
         for item in report.findings
-    ) or '<tr><td colspan="5">No findings recorded.</td></tr>'
+    ) or '<tr><td colspan="8">No findings recorded.</td></tr>'
     target_rows = "".join(
         f"<li><code>{escape(item)}</code></li>" for item in report.discovery.scanned_targets
     )
@@ -503,8 +540,9 @@ table {{ display:block; overflow:auto; }} }}
 <h2>Execution steps</h2><div class="card"><table><thead><tr><th>#</th><th>Target</th>
 <th>Action</th><th>State</th><th>Evidence digest</th><th>Findings</th></tr></thead>
 <tbody>{step_rows}</tbody></table></div>
-<h2>Findings</h2><div class="card"><table><thead><tr><th>Severity</th>
-<th>Confidence</th><th>Class</th><th>Finding</th><th>Remediation</th></tr></thead>
+<h2>Findings</h2><div class="card"><table><thead><tr><th>Status</th><th>Severity</th>
+<th>Confidence</th><th>Method</th><th>Class</th><th>Finding</th>
+<th>Evidence IDs</th><th>Remediation</th></tr></thead>
 <tbody>{finding_rows}</tbody></table></div>
 <h2>API operation inventory</h2><div class="card"><table><thead><tr><th>Method</th>
 <th>Path</th><th>Authentication</th><th>Safe probe</th></tr></thead>
@@ -546,6 +584,8 @@ def render_sarif(report: EngagementReport) -> bytes:
                 "proofclaw_confidence": finding.confidence,
                 "proofclaw_finding_id": finding.id,
                 "proofclaw_evidence_ids": list(finding.evidence_ids),
+                "proofclaw_control_evidence_ids": list(finding.control_evidence_ids),
+                "proofclaw_verification_method": finding.verification_method,
                 "proofclaw_remediation": finding.remediation,
                 "proofclaw_version": finding.version,
             },

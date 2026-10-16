@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.orm import Session
+
+from vuln_proof_claw.persistence.models import EngagementRecord, FindingRecord, ProjectRecord
 
 EXPECTED_TABLES = {
     "actions",
@@ -99,6 +103,54 @@ def test_postgresql_migration_can_render_offline_sql(capsys: pytest.CaptureFixtu
     assert "CREATE TABLE report_exports" in output
     assert "ALTER TABLE findings ADD COLUMN severity" in output
     assert "CREATE INDEX ix_evidence_action_captured" in output
+
+
+def test_upgrade_reopens_legacy_verified_finding_without_method(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'legacy-finding.db'}"
+    config = alembic_config(database_url)
+    command.upgrade(config, "0011_optional_verification_method")
+    engine = create_engine(database_url)
+    now = datetime(2026, 10, 16, tzinfo=UTC)
+    try:
+        with Session(engine) as session, session.begin():
+            session.add(ProjectRecord(id="project-1", name="Legacy", created_at=now))
+            session.flush()
+            session.add(
+                EngagementRecord(
+                    id="engagement-1",
+                    project_id="project-1",
+                    name="Legacy assessment",
+                    starts_at=now,
+                    ends_at=now + timedelta(days=1),
+                    maximum_risk="L1",
+                    created_at=now,
+                )
+            )
+            session.flush()
+            session.add(
+                FindingRecord(
+                    id="finding-1",
+                    engagement_id="engagement-1",
+                    title="Old unsupported claim",
+                    vulnerability_class="CWE-693",
+                    affected_target="https://example.test/",
+                    verification_method=None,
+                    status="verified",
+                    severity="low",
+                    confidence="medium",
+                    remediation="Review the old evidence.",
+                    created_at=now,
+                )
+            )
+
+        command.upgrade(config, "head")
+        with Session(engine) as session:
+            stored = session.get(FindingRecord, "finding-1")
+            assert stored is not None
+            assert stored.status == "needs_manual_review"
+            assert stored.verification_method is None
+    finally:
+        engine.dispose()
 
 
 def test_live_postgresql_upgrade_when_test_database_is_configured() -> None:

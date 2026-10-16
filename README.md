@@ -322,6 +322,7 @@ CI rejects an English Markdown document without its `.zh-TW.md` peer.
 | Control-plane workflow API | [docs/WORKFLOW_API.md](docs/WORKFLOW_API.md) | [docs/WORKFLOW_API.zh-TW.md](docs/WORKFLOW_API.zh-TW.md) |
 | Authentication and approvals | [docs/AUTH_AND_APPROVALS.md](docs/AUTH_AND_APPROVALS.md) | [docs/AUTH_AND_APPROVALS.zh-TW.md](docs/AUTH_AND_APPROVALS.zh-TW.md) |
 | Finding review | [docs/FINDING_REVIEW.md](docs/FINDING_REVIEW.md) | [docs/FINDING_REVIEW.zh-TW.md](docs/FINDING_REVIEW.zh-TW.md) |
+| Finding validation model | [docs/FINDING_VALIDATION.md](docs/FINDING_VALIDATION.md) | [docs/FINDING_VALIDATION.zh-TW.md](docs/FINDING_VALIDATION.zh-TW.md) |
 | SARIF reporting | [docs/SARIF_REPORTING.md](docs/SARIF_REPORTING.md) | [docs/SARIF_REPORTING.zh-TW.md](docs/SARIF_REPORTING.zh-TW.md) |
 | Evidence access and report exports | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.md) | [docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md](docs/EVIDENCE_ACCESS_AND_REPORT_EXPORTS.zh-TW.md) |
 | Verifiable disclosure bundles | [docs/DISCLOSURE_BUNDLES.md](docs/DISCLOSURE_BUNDLES.md) | [docs/DISCLOSURE_BUNDLES.zh-TW.md](docs/DISCLOSURE_BUNDLES.zh-TW.md) |

@@ -17,6 +17,7 @@ from vuln_proof_claw.domain.enums import (
     ArtifactKind,
     FindingStatus,
     RiskLevel,
+    VerificationMethod,
     WorkerState,
 )
 from vuln_proof_claw.domain.models import (
@@ -287,6 +288,7 @@ def test_approval_evidence_artifact_and_finding_round_trip(engine: Engine) -> No
             affected_target=action.normalized_target,
             evidence_ids=(evidence.id,),
             status=FindingStatus.VERIFIED,
+            verification_method=VerificationMethod.OBSERVED,
             created_at=NOW,
         )
         FindingRepository(session).add(finding)
