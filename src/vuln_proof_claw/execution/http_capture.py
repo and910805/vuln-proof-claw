@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ _MAX_TIMEOUT_SECONDS = 60
 _MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 _MIN_HTTP_STATUS = 100
 _MAX_HTTP_STATUS = 599
+_HEADER_PAIR_SIZE = 2
 
 
 class HttpCaptureError(Exception):
@@ -47,6 +49,10 @@ class CapturePolicyError(HttpCaptureError):
 
 class CaptureTransportError(HttpCaptureError):
     """Raised when the isolated transport cannot complete a request."""
+
+
+class InvalidHttpCaptureEvidenceError(HttpCaptureError):
+    """Stored bytes are not a canonical, self-consistent http-v1 capture document."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +117,14 @@ class HttpCaptureResponse:
         object.__setattr__(self, "final_target", str(normalize_target(self.final_target)))
         object.__setattr__(self, "headers", _normalize_headers(self.headers, request=False))
         object.__setattr__(self, "body", bytes(self.body))
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedHttpCapture:
+    """Typed request and response reconstructed from one stored capture document."""
+
+    request: HttpCaptureRequest
+    response: HttpCaptureResponse
 
 
 class HttpCaptureTransport(Protocol):
@@ -219,6 +233,112 @@ def http_capture_evidence_bytes(
     )
 
 
+def _capture_object(
+    value: object,
+    *,
+    required: frozenset[str],
+    optional: frozenset[str] = frozenset(),
+) -> dict[str, object]:
+    if (
+        not isinstance(value, dict)
+        or not required <= value.keys()
+        or value.keys() - required - optional
+    ):
+        raise InvalidHttpCaptureEvidenceError("http_capture_schema_invalid")
+    return cast("dict[str, object]", value)
+
+
+def _capture_headers(value: object) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list):
+        raise InvalidHttpCaptureEvidenceError("http_capture_headers_invalid")
+    headers: list[tuple[str, str]] = []
+    for item in value:
+        if (
+            not isinstance(item, list)
+            or len(item) != _HEADER_PAIR_SIZE
+            or not isinstance(item[0], str)
+            or not isinstance(item[1], str)
+        ):
+            raise InvalidHttpCaptureEvidenceError("http_capture_headers_invalid")
+        headers.append((item[0], item[1]))
+    return tuple(headers)
+
+
+def parse_http_capture_evidence(raw: bytes, *, action_id: ActionId) -> ParsedHttpCapture:
+    """Reconstruct the exact producer document; never trust caller-supplied observations.
+
+    The action ID is supplied by the evidence index, since it is not part of the raw
+    HTTP document. The caller must still verify that index, Action, scope and approval.
+    Duration is metadata outside this document, so the reconstructed response uses 0.
+    """
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise InvalidHttpCaptureEvidenceError("http_capture_evidence_too_large")
+    try:
+        document: object = json.loads(raw)
+        if canonical_json(document) != raw:
+            raise InvalidHttpCaptureEvidenceError("http_capture_not_canonical")
+        root = _capture_object(
+            document, required=frozenset({"capture_schema", "request", "response"})
+        )
+        if root["capture_schema"] != "http-v1":
+            raise InvalidHttpCaptureEvidenceError("http_capture_schema_invalid")
+        request_data = _capture_object(
+            root["request"],
+            required=frozenset({"headers", "method", "target"}),
+            optional=frozenset({"query"}),
+        )
+        response_data = _capture_object(
+            root["response"],
+            required=frozenset(
+                {"body_base64", "body_sha256", "final_target", "headers", "status_code"}
+            ),
+        )
+        method = request_data["method"]
+        target = request_data["target"]
+        query = request_data.get("query", "")
+        final_target = response_data["final_target"]
+        status_code = response_data["status_code"]
+        encoded_body = response_data["body_base64"]
+        body_sha256 = response_data["body_sha256"]
+        if (
+            not isinstance(method, str)
+            or method not in _ALLOWED_METHODS
+            or not isinstance(target, str)
+            or not isinstance(query, str)
+            or not isinstance(final_target, str)
+            or not isinstance(status_code, int)
+            or isinstance(status_code, bool)
+            or not isinstance(encoded_body, str)
+            or not isinstance(body_sha256, str)
+        ):
+            raise InvalidHttpCaptureEvidenceError("http_capture_fields_invalid")
+        request = HttpCaptureRequest(
+            action_id=action_id,
+            method=cast('Literal["GET", "HEAD"]', method),
+            target=target,
+            headers=_capture_headers(request_data["headers"]),
+            query=query,
+        )
+        body = base64.b64decode(encoded_body, validate=True)
+        if len(body) > _MAX_RESPONSE_BYTES or hashlib.sha256(body).hexdigest() != body_sha256:
+            raise InvalidHttpCaptureEvidenceError("http_capture_body_invalid")
+        response = HttpCaptureResponse(
+            status_code=status_code,
+            final_target=final_target,
+            headers=_capture_headers(response_data["headers"]),
+            body=body,
+            duration_ms=0,
+        )
+        if (
+            response.final_target != request.target
+            or http_capture_evidence_bytes(request, response) != raw
+        ):
+            raise InvalidHttpCaptureEvidenceError("http_capture_content_mismatch")
+        return ParsedHttpCapture(request=request, response=response)
+    except (ValueError, UnicodeDecodeError, DomainValidationError, RecursionError) as error:
+        raise InvalidHttpCaptureEvidenceError("http_capture_evidence_invalid") from error
+
+
 class HttpCaptureCoordinator:
     """Authorize, execute through an injected boundary, and persist one capture."""
 
@@ -286,6 +406,7 @@ class HttpCaptureCoordinator:
                 "headers": [list(item) for item in request.headers],
                 "method": request.method,
                 "target": request.target,
+                **({"query": request.query} if request.query else {}),
             },
             captured_at=timestamp,
             duration_ms=response.duration_ms,

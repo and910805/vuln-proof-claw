@@ -258,6 +258,7 @@ def create_http_action(
             action_type=action_type,
             normalized_target=request.target,
             parameter_digest=capture_parameter_digest(request),
+            query=request.query,
             risk_level=classify_risk(action_type),
             idempotency_key=payload.idempotency_key,
         )

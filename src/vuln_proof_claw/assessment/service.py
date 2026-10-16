@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from collections import deque
 from dataclasses import dataclass
@@ -40,8 +39,10 @@ from vuln_proof_claw.domain.identifiers import (
     new_action_id,
 )
 from vuln_proof_claw.domain.models import Action, Finding, Flow, Task
-from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
-from vuln_proof_claw.evidence.store import InvalidEvidenceError
+from vuln_proof_claw.evidence.http_capture_validation import (
+    PersistedCaptureValidationError,
+    load_authorized_http_capture,
+)
 from vuln_proof_claw.execution.http_capture import (
     HttpCaptureCoordinator,
     HttpCaptureLimits,
@@ -345,11 +346,29 @@ class PassiveAssessmentService:
             )
 
         evidence_id = result.evidence.metadata.evidence_id
+        try:
+            captured = load_authorized_http_capture(
+                self._session,
+                engagement_id,
+                evidence_id,
+                expected_target=request.target,
+            )
+        except PersistedCaptureValidationError as error:
+            record_audit_event(
+                self._session,
+                engagement_id,
+                "assessment.validation_failed",
+                actor,
+                {"action_id": action.id, "evidence_id": evidence_id, "reason": str(error)},
+            )
+            self._session.commit()
+            raise AssessmentConflictError("capture_validation_failed") from error
+        response = captured.response
         findings = analyze_passive_response(
             engagement_id,
             request.target,
             evidence_id,
-            result.response,
+            response,
         )
         repository = FindingRepository(self._session)
         for finding in findings:
@@ -363,7 +382,7 @@ class PassiveAssessmentService:
                 "action_id": action.id,
                 "evidence_id": evidence_id,
                 "finding_count": len(findings),
-                "status_code": result.response.status_code,
+                "status_code": response.status_code,
             },
         )
         self._session.commit()
@@ -372,11 +391,11 @@ class PassiveAssessmentService:
             replayed=existing is not None,
             discovered_targets=discover_targets(
                 request.target,
-                result.response,
+                response,
                 include_conventional=include_conventional,
             ),
             captured_evidence_id=evidence_id,
-            captured_response=result.response,
+            captured_response=response,
         )
 
     def crawl(  # noqa: PLR0912, PLR0913 - explicit bounded crawl workflow
@@ -548,29 +567,19 @@ class PassiveAssessmentService:
         engagement_id: EngagementId,
         evidence_ids: tuple[EvidenceId, ...],
     ) -> tuple[OpenApiDocument, ...]:
-        store = PersistentEvidenceStore(self._session)
         documents: list[OpenApiDocument] = []
         for evidence_id in evidence_ids:
             try:
-                stored = store.get_for_engagement(engagement_id, evidence_id)
-            except InvalidEvidenceError:
+                captured = load_authorized_http_capture(self._session, engagement_id, evidence_id)
+            except PersistedCaptureValidationError:
                 continue
-            if stored is None:
+            if not (
+                _SUCCESS_STATUS_MIN
+                <= captured.response.status_code
+                < _SUCCESS_STATUS_MAX_EXCLUSIVE
+            ):
                 continue
-            try:
-                payload = json.loads(stored.raw_content)
-                request_target = payload["request"]["target"]
-                response_payload = payload["response"]
-                response = HttpCaptureResponse(
-                    status_code=response_payload["status_code"],
-                    final_target=response_payload["final_target"],
-                    headers=tuple(tuple(item) for item in response_payload["headers"]),
-                    body=base64.b64decode(response_payload["body_base64"], validate=True),
-                    duration_ms=0,
-                )
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                continue
-            document = parse_openapi_document(request_target, response)
+            document = parse_openapi_document(captured.request.target, captured.response)
             if document is not None:
                 documents.append(document)
         return tuple({document.source_url: document for document in documents}.values())
@@ -672,6 +681,7 @@ class PassiveAssessmentService:
             action_type=action_type,
             normalized_target=request.target,
             parameter_digest=capture_parameter_digest(request),
+            query=request.query,
             risk_level=classify_risk(action_type),
             idempotency_key=idempotency_key,
             created_at=at,

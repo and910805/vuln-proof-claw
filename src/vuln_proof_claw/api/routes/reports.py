@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import html
 import json
 from collections import Counter
 from datetime import UTC, datetime
+from http import HTTPStatus
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -44,9 +44,12 @@ from vuln_proof_claw.assessment.openapi import OpenApiDocument, parse_openapi_do
 from vuln_proof_claw.domain.enums import ReportFormat
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId, ReportExportId
 from vuln_proof_claw.domain.models import ReportExport
+from vuln_proof_claw.evidence.http_capture_validation import (
+    PersistedCaptureValidationError,
+    load_authorized_http_capture,
+)
 from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
 from vuln_proof_claw.evidence.store import InvalidEvidenceError
-from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
 from vuln_proof_claw.persistence.models import (
     ActionRecord,
     EvidencePayloadRecord,
@@ -199,31 +202,17 @@ def build_engagement_report(session: Session, engagement_id: str) -> EngagementR
     )
     candidates: dict[str, None] = {}
     api_documents: list[OpenApiDocument] = []
-    evidence_store = PersistentEvidenceStore(session)
     for row in evidence_rows:
         try:
-            stored_payload = evidence_store.get_for_engagement(normalized_id, EvidenceId(row.id))
-        except InvalidEvidenceError:
+            captured = load_authorized_http_capture(session, normalized_id, EvidenceId(row.id))
+        except PersistedCaptureValidationError:
             continue
-        if stored_payload is None:
+        if not HTTPStatus.OK <= captured.response.status_code < HTTPStatus.MULTIPLE_CHOICES:
             continue
-        try:
-            capture = json.loads(stored_payload.raw_content)
-            request_target = capture["request"]["target"]
-            response_payload = capture["response"]
-            response = HttpCaptureResponse(
-                status_code=response_payload["status_code"],
-                final_target=response_payload["final_target"],
-                headers=tuple(tuple(item) for item in response_payload["headers"]),
-                body=base64.b64decode(response_payload["body_base64"], validate=True),
-                duration_ms=0,
-            )
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            continue
-        for discovered in discover_targets(request_target, response):
+        for discovered in discover_targets(captured.request.target, captured.response):
             if discovered.url not in scanned_targets:
                 candidates.setdefault(discovered.url, None)
-        api_document = parse_openapi_document(request_target, response)
+        api_document = parse_openapi_document(captured.request.target, captured.response)
         if api_document is not None:
             api_documents.append(api_document)
     payload_count = sum(

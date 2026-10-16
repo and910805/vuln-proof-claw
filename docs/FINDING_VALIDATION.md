@@ -12,18 +12,31 @@ ProofClaw must be able to answer two different questions for every finding:
    verification method, an expected result, an observed result, and enough context to
    rule out ordinary alternative explanations.
 
-The offline disclosure-bundle verifier checks package and evidence-chain integrity.
-It does **not** independently replay a request, validate authorization assumptions,
-prove a vulnerability, or identify the bundle's author.
+The offline disclosure-bundle verifier checks the archive and its digest manifest. The
+bundle records the evidence-chain verdict, but excludes raw evidence, so the offline
+verifier cannot recompute that chain. It also does **not** replay a request, validate
+authorization assumptions, prove a vulnerability, or identify the bundle's author.
 
 ## Current boundaries
 
-- Deterministic passive HTTP checks can emit `verified` findings for directly
-  observed header or transport properties of one captured response. These findings
-  establish the observed property, not a successful exploit.
+- The controlled passive HTTP assessment can automatically emit `verified` findings
+  for narrowly worded header or transport properties. Before analysis, it rebuilds
+  the response from persisted canonical `http-v1` raw bytes rather than trusting a
+  caller-supplied response. It verifies the full engagement evidence chain, the
+  controlled capture source, and the evidence's same-engagement Action. The Action
+  must be `SUCCEEDED`, and its execution time, target, query, parameter digest, and
+  final response target must agree with the capture. Canonical metadata must record
+  the matching allowed scope decision and, when applicable, an approval bound to the
+  Action and valid at its start. A non-2xx response produces no passive findings.
+  These checks establish the observed property, not a successful exploit.
+- A cookie name that merely suggests sensitivity cannot prove the cookie's purpose.
+  Missing `Secure`, `HttpOnly`, or `SameSite` on such a cookie remains a `candidate`
+  even when the attribute is visibly absent from the response.
 - An OpenAPI declaration paired with an unauthenticated successful response produces a
   `candidate`: the API specification alone cannot establish that the returned content
-  was meant to be private.
+  was meant to be private. Active-safe probing and report inventory read only validated
+  successful HTTP captures; error-page links and OpenAPI-shaped error bodies do not
+  seed follow-up requests.
 - The `nuclei` parser emits `pending_verification` findings and the `httpx` parser
   emits `candidate` findings for selected target-derived observations; other scanner
   records are suppressed. Their output needs independent review before a verified
@@ -44,11 +57,15 @@ prove a vulnerability, or identify the bundle's author.
   and an audit event. Every repository write of a `verified` Finding checks the full
   engagement evidence chain and linked evidence ownership and existence; a review
   transition also requires a stated verification method and explicit reviewer
-  rationale. It does not yet check Action success, semantic target match, or whether
-  the response proves the claim. A differential review rejects byte-identical test
-  and control captures, but does not yet evaluate whether the changed bytes establish
-  the claim. See
+  rationale. The Action, target, parameter, scope-decision, and approval checks above
+  apply to the controlled passive auto path only; general manual review and mission
+  findings do not yet have that typed binding or a check that the response proves the
+  claim. A differential review rejects byte-identical test and control captures, but
+  does not yet evaluate whether the changed bytes establish the claim. See
   [Finding review](FINDING_REVIEW.md).
+- The current scope record is not an immutable historical snapshot. The passive
+  validator checks the capture's recorded allowed decision and Action binding; it
+  cannot reconstruct every scope rule as it stood when the request ran.
 
 ## Required claim and proof
 
@@ -78,9 +95,12 @@ behavior; a negative control removes the condition alleged to cause the result. 
 the target, relevant inputs, timing, and identity context comparable. If these cannot
 be captured safely, the result remains inconclusive or needs manual review.
 
-## Promotion criteria
+## Promotion criteria for the general verifier
 
-A candidate may become `verified` only when all applicable checks pass:
+The following are target acceptance criteria for all future verification paths. The
+controlled passive auto path enforces its applicable capture checks; the general
+manual, mission, and differential paths do not yet enforce every criterion below.
+A candidate should become `verified` only when all applicable checks pass:
 
 1. The claim is precise, and the linked evidence is available, integrity-valid,
    attributable to this engagement and the intended Action/target, and captured under
@@ -97,10 +117,11 @@ A candidate may become `verified` only when all applicable checks pass:
    user-controlled reflection, authorization policy, middleware effects, and target
    state changes as relevant to the claim.
 
-Missing, conflicting, cross-engagement, failed-action, or integrity-invalid evidence
-must block promotion. A failed retest or contradictory control is not silently
-discarded. `rejected` means the available evidence refutes or fails to support the
-claim after review; `needs_manual_review` means the answer is unresolved.
+The general verifier should block promotion for missing, conflicting,
+cross-engagement, failed-action, or integrity-invalid evidence. A failed retest or
+contradictory control must not be silently discarded. `rejected` means the available
+evidence refutes or fails to support the claim after review; `needs_manual_review`
+means the answer is unresolved.
 
 ## Safe validation path
 
@@ -114,11 +135,13 @@ side effects, scope drift, inconsistent identity, or exhausted budgets.
 
 ## Implementation sequence
 
-1. **Evidence-bound decisions (first gate implemented):** verified repository writes
-   and report generation fail closed on missing, corrupt, or foreign-engagement linked
-   evidence; review records the decision. SARIF contains only verified findings.
-   Next, bind each evidence record to a successful Action and the precise target.
-2. **Verification cases:** persist structured claim, method, expected/observed
+1. **Evidence-bound decisions and controlled passive validation (implemented):**
+   verified repository writes and report generation fail closed on missing, corrupt,
+   or foreign-engagement linked evidence; review records the decision. SARIF contains
+   only verified findings. The controlled passive auto path additionally rebuilds
+   canonical captures and checks successful Action, target, parameters, recorded scope
+   decision, and applicable approval. Extend this binding to other verification paths.
+2. **General verification cases:** persist structured claim, method, expected/observed
    assertions, evidence roles, verifier version, attempts, and an immutable verdict.
    Build observations from stored captures, not client-supplied response summaries.
 3. **Bounded retest runners:** add approved, scoped recipes per vulnerability class;

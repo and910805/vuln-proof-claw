@@ -389,6 +389,7 @@ class ActionWorkerCoordinator:
                 "headers": [list(item) for item in request.headers],
                 "method": request.method,
                 "target": request.target,
+                **({"query": request.query} if request.query else {}),
             },
             captured_at=capture.captured_at,
             duration_ms=capture.duration_ms,

@@ -5,8 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from httpx import AsyncClient
+from sqlalchemy.orm import Session
 
 from tests.api.test_console import console_client
+from vuln_proof_claw.domain.identifiers import ActionId
+from vuln_proof_claw.execution.http_capture import HttpCaptureRequest, capture_parameter_digest
+from vuln_proof_claw.persistence.repositories import ActionRepository
+from vuln_proof_claw.persistence.session import create_engine
 
 
 async def _create_engagement(
@@ -120,6 +125,43 @@ async def test_action_idempotency_replays_exact_request_and_rejects_drift(
     assert conflict.status_code == 409
     assert conflict.json()["detail"] == "idempotency_key_conflict"
     assert audit.json()["total"] == 4
+
+
+async def test_http_action_preserves_query_bound_to_parameter_digest(tmp_path: Path) -> None:
+    database_path = tmp_path / "query-action.db"
+    target = "https://api.example.test/v1/items?page=2&sort=asc"
+    async with console_client(database_path) as client:
+        engagement_id = await _create_engagement(client)
+        _, task_id = await _create_task(client, engagement_id)
+        created = await client.post(
+            f"/api/v1/tasks/{task_id}/http-actions",
+            json={
+                "action_type": "public_page_read",
+                "method": "GET",
+                "target": target,
+                "headers": {"Accept": "application/json"},
+                "idempotency_key": "query-action",
+            },
+        )
+
+    assert created.status_code == 201
+    engine = create_engine(f"sqlite:///{database_path}")
+    try:
+        with Session(engine) as session:
+            stored = ActionRepository(session).get(ActionId(created.json()["id"]))
+            assert stored is not None
+            action = stored.entity
+            request = HttpCaptureRequest(
+                action_id=action.id,
+                method="GET",
+                target=target,
+                headers=(("Accept", "application/json"),),
+            )
+            assert action.normalized_target == request.target
+            assert action.query == request.query == "page=2&sort=asc"
+            assert action.parameter_digest == capture_parameter_digest(request)
+    finally:
+        engine.dispose()
 
 
 async def test_policy_persists_denied_and_approval_required_outcomes(tmp_path: Path) -> None:

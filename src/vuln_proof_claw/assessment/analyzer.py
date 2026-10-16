@@ -17,15 +17,22 @@ from vuln_proof_claw.policy.scope import normalize_target
 
 _VERSION_DISCLOSURE = re.compile(r"[/ ]\d+(?:\.\d+)+")
 _SENSITIVE_COOKIE = re.compile(r"(?:auth|jwt|session|sid|token)", re.IGNORECASE)
+_SUCCESS_MIN = 200
+_SUCCESS_MAX_EXCLUSIVE = 300
 
 
-def analyze_passive_response(
+def analyze_passive_response(  # noqa: PLR0912 - each distinct check is kept explicit
     engagement_id: EngagementId,
     target: str,
     evidence_id: EvidenceId,
     response: HttpCaptureResponse,
 ) -> tuple[Finding, ...]:
     """Return conservative findings derived only from the captured response."""
+    # Error pages and redirects are not the requested resource. Their headers
+    # cannot establish a security property of that resource.
+    if not _SUCCESS_MIN <= response.status_code < _SUCCESS_MAX_EXCLUSIVE:
+        return ()
+
     normalized = normalize_target(target)
     headers: dict[str, list[str]] = {}
     for name, value in response.headers:
@@ -40,6 +47,8 @@ def analyze_passive_response(
         cwe: str,
         severity: FindingSeverity,
         remediation: str,
+        *,
+        candidate: bool = False,
     ) -> None:
         # One argument fills both fields, so they cannot drift apart at a call
         # site. They are not redundant downstream: vulnerability_class is what
@@ -57,12 +66,12 @@ def analyze_passive_response(
                 cwe_id=cwe,
                 affected_target=str(normalized),
                 evidence_ids=(evidence_id,),
-                status=FindingStatus.VERIFIED,
+                status=FindingStatus.CANDIDATE if candidate else FindingStatus.VERIFIED,
                 # Every check here reads one captured response against a fixed
                 # expectation. There is no baseline to compare against.
                 verification_method=VerificationMethod.OBSERVED,
                 severity=severity,
-                confidence=FindingConfidence.HIGH,
+                confidence=FindingConfidence.MEDIUM if candidate else FindingConfidence.HIGH,
                 remediation=remediation,
             )
         )
@@ -114,12 +123,11 @@ def analyze_passive_response(
 
     for cookie in headers.get("set-cookie", ()):
         name, separator, _remainder = cookie.partition("=")
+        # The name suggests a sensitive cookie but cannot prove its purpose.
         if not separator or not _SENSITIVE_COOKIE.search(name):
             continue
         attributes = {
-            part.strip().partition("=")[0].lower()
-            for part in cookie.split(";")[1:]
-            if part.strip()
+            part.strip().partition("=")[0].lower() for part in cookie.split(";")[1:] if part.strip()
         }
         if normalized.scheme == "https" and "secure" not in attributes:
             add(
@@ -127,6 +135,7 @@ def analyze_passive_response(
                 "CWE-614",
                 FindingSeverity.HIGH,
                 "Set the Secure attribute on sensitive cookies served over HTTPS.",
+                candidate=True,
             )
         if "httponly" not in attributes:
             add(
@@ -134,6 +143,7 @@ def analyze_passive_response(
                 "CWE-1004",
                 FindingSeverity.HIGH,
                 "Set HttpOnly unless client-side JavaScript must read this cookie.",
+                candidate=True,
             )
         if "samesite" not in attributes:
             add(
@@ -142,5 +152,6 @@ def analyze_passive_response(
                 FindingSeverity.MEDIUM,
                 "Set SameSite=Lax or SameSite=Strict unless a reviewed cross-site "
                 "flow requires None.",
+                candidate=True,
             )
     return tuple(findings)

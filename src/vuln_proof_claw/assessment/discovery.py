@@ -6,6 +6,7 @@ import html
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from http import HTTPStatus
 from typing import Literal
 from urllib.parse import urljoin
 
@@ -108,6 +109,8 @@ def discover_targets(
     """Extract unique same-origin targets without initiating network activity."""
     if max_targets < 1:
         raise ValueError("max_targets must be positive")
+    if not HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
+        return ()
     origin = normalize_target(target)
     base = str(normalize_target(response.final_target))
     headers = {name.lower(): value.lower() for name, value in response.headers}

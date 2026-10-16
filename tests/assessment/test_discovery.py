@@ -1,5 +1,7 @@
 """Coverage for deterministic same-origin Web discovery."""
 
+from dataclasses import replace
+
 from vuln_proof_claw.assessment.discovery import DISCOVERY_PRESETS, discover_targets
 from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
 
@@ -67,3 +69,14 @@ def test_discovery_is_bounded_and_presets_are_hard_limited() -> None:
     assert len(result) == 3
     assert DISCOVERY_PRESETS["safe"].request_budget == 5
     assert DISCOVERY_PRESETS["deep"].request_budget == 30
+
+
+def test_error_response_cannot_seed_follow_up_requests() -> None:
+    error_page = replace(
+        response(b'<a href="/admin">Admin</a>'),
+        status_code=503,
+    )
+
+    assert discover_targets(
+        "https://example.test/start", error_page, include_conventional=True
+    ) == ()

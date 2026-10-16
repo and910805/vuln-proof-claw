@@ -9,15 +9,24 @@ ProofClaw 對每項 Finding 都必須分別回答兩個問題：
 2. **Evidence 是否足以證明這項具體安全主張？** Hash 正確不代表已確認目標的預期權限政策，
    也不代表漏洞可被利用。主張需要明確的驗證方法、預期結果、實際結果，以及排除其他合理原因的脈絡。
 
-離線 Disclosure Bundle 驗證器檢查封裝及 Evidence Chain 的完整性；它**不會**重送請求、
+離線 Disclosure Bundle 驗證器會檢查封裝及 Digest Manifest。Bundle 會記錄 Evidence Chain
+的驗證結果，但不包含原始 Evidence，所以離線驗證器無法重新計算整條 Chain；它也**不會**重送請求、
 確認授權假設、證明漏洞成立，或辨識 Bundle 作者的身分。
 
 ## 目前邊界
 
-- 決定性的被動 HTTP 檢查可以將單次回應中直接觀察到的 Header 或傳輸性質標為
-  `verified`。這只證明所觀察的性質，不代表已成功利用漏洞。
+- 受控的被動 HTTP Assessment 可將措辭精確的 Header 或傳輸性質自動標為 `verified`。
+  分析前，它會從持久化的 Canonical `http-v1` 原始位元組重建回應，不信任呼叫端提供的回應摘要。
+  它會驗證整條 Engagement Evidence Chain、受控的擷取來源，以及 Evidence 所屬的同一
+  Engagement Action。Action 必須為 `SUCCEEDED`，執行時間、目標、Query、參數 Digest
+  與最終回應目標須和擷取內容一致。Canonical Metadata 必須記錄相符的允許 Scope Decision；
+  如需 Approval，也要確認它綁定該 Action，且在 Action 開始時有效。非 2xx 回應不會產生
+  被動 Finding。這些檢查只證明所觀察的性質，不代表已成功利用漏洞。
+- 僅憑 Cookie 名稱推測其敏感用途，無法證明它真的是敏感 Cookie。因此，即使回應明顯缺少
+  `Secure`、`HttpOnly` 或 `SameSite`，這類推測仍維持 `candidate`。
 - OpenAPI 宣告與未登入的成功回應會產生 `candidate`：僅靠 API 規格，無法確認回傳內容
-  原本應該保密。
+  原本應該保密。Active-safe 探測與報告清單只讀取通過驗證的成功 HTTP 擷取；錯誤頁連結及
+  外觀像 OpenAPI 的錯誤回應不會啟動後續請求。
 - `nuclei` Parser 將有目標來源資料支持的特定觀察列為 `pending_verification`，
   `httpx` Parser 則列為 `candidate`；其他 Scanner 紀錄會被排除。其輸出仍需獨立審查，
   才能成為 verified 主張。Template Severity、CVE 標籤或 LLM 斷言都不是影響的證據。
@@ -33,10 +42,12 @@ ProofClaw 對每項 Finding 都必須分別回答兩個問題：
 - Finding Review API 使用樂觀版本檢查與 Audit Event 處理人工決定。
   每次持久化 `verified` Finding，Repository 都會檢查整條 Engagement Evidence Chain、
   連結 Evidence 的存在與歸屬；人工升級另需明確的驗證方法及審查理由。
-  目前尚未檢查 Action 是否成功、目標語意是否一致，
-  或回應能否證明主張。差異比較的審查會拒絕位元組完全相同的測試與對照擷取，
-  但目前不會判斷變化是否足以支持主張。
+  上述 Action、目標、參數、Scope Decision 與 Approval 檢查僅適用於受控的被動自動路徑；
+  一般人工審查與 Mission Finding 尚未具備這種型別化綁定，也尚未檢查回應能否證明主張。
+  差異比較的審查會拒絕位元組完全相同的測試與對照擷取，但目前不會判斷變化是否足以支持主張。
   詳見 [Finding 審查](FINDING_REVIEW.zh-TW.md)。
+- 現有 Scope 紀錄不是不可變的歷史快照。被動驗證器會檢查擷取中記錄的允許決定與 Action
+  綁定，但無法完整重建送出請求當時的每條 Scope 規則。
 
 ## 主張與證明條件
 
@@ -62,9 +73,11 @@ ProofClaw 對每項 Finding 都必須分別回答兩個問題：
 Baseline 顯示正常行為；Negative Control 移除據稱造成結果的條件。目標、相關輸入、時間與
 身分脈絡應保持可比較。若無法安全擷取，結果應維持 `inconclusive` 或 `needs_manual_review`。
 
-## 升級為 verified 的條件
+## 一般驗證器升級為 verified 的條件
 
-Candidate 只有在適用的檢查全部通過時，才能升級為 `verified`：
+以下是未來所有驗證路徑的目標驗收條件。受控的被動自動路徑已執行適用的擷取檢查；
+一般人工、Mission 與 Differential 路徑尚未強制執行下列所有條件。
+Candidate 應只在適用的檢查全部通過時升級為 `verified`：
 
 1. 主張明確；連結的 Evidence 可讀、完整性有效、屬於同一 Engagement 及預期 Action／目標，
    並在適用的 Scope 與 Approval 政策下擷取。
@@ -76,9 +89,9 @@ Candidate 只有在適用的檢查全部通過時，才能升級為 `verified`�
 5. 依主張考慮其他合理解釋，例如公開資料、Cache、Redirect、錯誤頁、使用者可控的反射、
    授權政策、Middleware 效果或目標狀態變更。
 
-Evidence 遺失、互相矛盾、跨 Engagement、來自失敗 Action，或完整性檢查失敗時，必須阻止
-升級。重測失敗或對照結果矛盾時，不得悄悄略過。`rejected` 表示審查後現有證據反駁或無法
-支持主張；`needs_manual_review` 表示仍無法下定論。
+一般驗證器應阻止 Evidence 遺失、互相矛盾、跨 Engagement、來自失敗 Action，或完整性檢查
+失敗的主張升級。重測失敗或對照結果矛盾時，不得悄悄略過。`rejected` 表示審查後現有證據
+反駁或無法支持主張；`needs_manual_review` 表示仍無法下定論。
 
 ## 安全驗證路徑
 
@@ -90,10 +103,12 @@ Evidence 遺失、互相矛盾、跨 Engagement、來自失敗 Action，或完�
 
 ## 實作順序
 
-1. **Evidence-bound Decision（首道關卡已實作）：** Evidence 遺失、損毀或跨 Engagement 時，
-   Repository 寫入已驗證 Finding 與產生報告都會安全拒絕；Review 會留下可稽核決定。
-   SARIF 只包含已驗證 Finding。下一步須將每筆 Evidence 綁定到成功執行的 Action 與精確目標。
-2. **Verification Case：** 持久化主張、方法、預期／實際斷言、Evidence 用途、Verifier 版本、
+1. **Evidence-bound Decision 與受控被動驗證（已實作）：** Evidence 遺失、損毀或跨 Engagement
+   時，Repository 寫入已驗證 Finding 與產生報告都會安全拒絕；Review 會留下可稽核決定。
+   SARIF 只包含已驗證 Finding。受控的被動自動路徑另會重建 Canonical Capture，驗證成功的
+   Action、目標、參數、記錄的 Scope Decision 與適用的 Approval。下一步要將這種綁定擴及
+   其他驗證路徑。
+2. **一般 Verification Case：** 持久化主張、方法、預期／實際斷言、Evidence 用途、Verifier 版本、
    嘗試紀錄與不可變判定。Observation 應從已儲存的 Capture 建立，而非相信呼叫端填入的回應摘要。
 3. **有界重測 Runner：** 依漏洞類別新增經核准且受 Scope 約束的 Recipe；測試、Baseline 與
    Negative Control 各自擷取成 Evidence。Verifier 必須獨立檢查 Discovery 的說法，

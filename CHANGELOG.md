@@ -30,6 +30,10 @@ Notable changes are documented here. The format follows Keep a Changelog concept
 
 ### Security
 
+- Passive HTTP findings and OpenAPI follow-up probes now use a reconstructed, integrity-checked
+  stored capture bound to a successful Action, exact request parameters, and applicable approval.
+  Error responses do not produce passive findings or seed discovery; cookie sensitivity inferred
+  only from its name remains a candidate for review.
 - Unattended execution is capped at L1 by the `Mission` domain model; the ceiling cannot be
   raised by configuration, and an engagement definition declaring L2 or above is refused.
 - A plan is re-derived before it reaches the policy engine: a mismatched risk level, a

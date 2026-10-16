@@ -6,7 +6,7 @@ import json
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import pytest
 from sqlalchemy import Engine
@@ -15,6 +15,7 @@ from vuln_proof_claw.domain.enums import ActionState, RiskLevel
 from vuln_proof_claw.domain.errors import DomainValidationError
 from vuln_proof_claw.domain.identifiers import new_action_id
 from vuln_proof_claw.domain.models import Action, Approval, Engagement, Flow, Project, Task
+from vuln_proof_claw.evidence.canonical import canonical_json
 from vuln_proof_claw.evidence.persistence import PersistentEvidenceStore
 from vuln_proof_claw.execution.http_capture import (
     CapturePolicyError,
@@ -23,7 +24,10 @@ from vuln_proof_claw.execution.http_capture import (
     HttpCaptureRequest,
     HttpCaptureResponse,
     HttpCaptureResult,
+    InvalidHttpCaptureEvidenceError,
     capture_parameter_digest,
+    http_capture_evidence_bytes,
+    parse_http_capture_evidence,
 )
 from vuln_proof_claw.persistence.base import Base
 from vuln_proof_claw.persistence.repositories import (
@@ -39,6 +43,89 @@ from vuln_proof_claw.persistence.session import create_engine, create_session_fa
 from vuln_proof_claw.policy.scope import EngagementScope
 
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+
+
+def _capture_document() -> tuple[HttpCaptureRequest, HttpCaptureResponse, bytes]:
+    request = HttpCaptureRequest(
+        action_id=new_action_id(),
+        method="GET",
+        target="https://example.test/public",
+        headers=(("accept", "application/json"),),
+        query="page=2",
+    )
+    response = HttpCaptureResponse(
+        status_code=200,
+        final_target=request.target,
+        headers=(("content-type", "application/json"),),
+        body=b'{"ok":true}',
+        duration_ms=12,
+    )
+    return request, response, http_capture_evidence_bytes(request, response)
+
+
+def test_parser_reconstructs_producer_request_and_response() -> None:
+    request, response, raw = _capture_document()
+
+    parsed = parse_http_capture_evidence(raw, action_id=request.action_id)
+
+    assert parsed.request == request
+    assert parsed.response.status_code == response.status_code
+    assert parsed.response.final_target == response.final_target
+    assert parsed.response.headers == response.headers
+    assert parsed.response.body == response.body
+    assert parsed.response.duration_ms == 0  # Duration lives in canonical evidence metadata.
+
+
+def test_parser_accepts_legacy_queryless_capture() -> None:
+    request, response, _raw = _capture_document()
+    queryless = HttpCaptureRequest(
+        action_id=request.action_id,
+        method=request.method,
+        target=request.target,
+        headers=request.headers,
+    )
+
+    parsed = parse_http_capture_evidence(
+        http_capture_evidence_bytes(queryless, response), action_id=request.action_id
+    )
+
+    assert parsed.request.query == ""
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("capture_schema",), "http-v2"),
+        (("request", "method"), "POST"),
+        (("request", "method"), 123),
+        (("request", "target"), "https://example.test/public?other=1"),
+        (("request", "query"), "page=%32"),
+        (("request", "headers"), [["authorization", "secret"]]),
+        (("response", "final_target"), "https://example.test:443/other"),
+        (("response", "status_code"), True),
+        (("response", "body_base64"), "!not-base64!"),
+        (("response", "body_sha256"), "0" * 64),
+        (("response", "headers"), [["content-type"]]),
+        (("response", "unexpected"), "extra"),
+    ],
+)
+def test_parser_rejects_malformed_or_changed_capture(path: tuple[str, ...], value: object) -> None:
+    request, _response, raw = _capture_document()
+    document: dict[str, Any] = json.loads(raw)
+    parent = document
+    for part in path[:-1]:
+        parent = parent[part]
+    parent[path[-1]] = value
+
+    with pytest.raises(InvalidHttpCaptureEvidenceError):
+        parse_http_capture_evidence(canonical_json(document), action_id=request.action_id)
+
+
+def test_parser_rejects_noncanonical_or_non_json_bytes() -> None:
+    request, _response, raw = _capture_document()
+    for altered in (raw + b" ", b"not-json", b"\xff", b"[" * 1000 + b"]" * 1000):
+        with pytest.raises(InvalidHttpCaptureEvidenceError):
+            parse_http_capture_evidence(altered, action_id=request.action_id)
 
 
 class FakeTransport:
@@ -209,6 +296,9 @@ def test_capture_persists_bounded_structured_evidence(engine: Engine) -> None:
     payload = json.loads(raw)
     assert payload["request"]["target"] == "https://example.test:443/public"
     assert payload["response"]["body_base64"] == "aGVsbG8="
+    parsed = parse_http_capture_evidence(raw, action_id=action.id)
+    assert parsed.request == request
+    assert parsed.response.body == b"hello"
     with session_factory() as session:
         stored = ActionRepository(session).get(action.id)
         verification = PersistentEvidenceStore(session).verify_engagement(engagement.id)
@@ -227,9 +317,12 @@ def test_capture_rejects_changed_parameters_before_transport(engine: Engine) -> 
     )
     transport = FakeTransport()
     session_factory = create_session_factory(engine)
-    with session_factory.begin() as session, pytest.raises(
-        CapturePolicyError,
-        match="parameter_digest_mismatch",
+    with (
+        session_factory.begin() as session,
+        pytest.raises(
+            CapturePolicyError,
+            match="parameter_digest_mismatch",
+        ),
     ):
         HttpCaptureCoordinator(session, transport).capture(changed, at=NOW)
     assert transport.calls == 0
@@ -288,9 +381,12 @@ def test_expired_approval_is_rejected_before_transport_and_not_consumed(
     _action, approval, request = seed_approved_capture_action(engine, expires_at=NOW)
     transport = FakeTransport()
     session_factory = create_session_factory(engine)
-    with session_factory.begin() as session, pytest.raises(
-        CapturePolicyError,
-        match="approval_invalid",
+    with (
+        session_factory.begin() as session,
+        pytest.raises(
+            CapturePolicyError,
+            match="approval_invalid",
+        ),
     ):
         HttpCaptureCoordinator(session, transport).capture(request, at=NOW)
 
@@ -346,9 +442,12 @@ def test_a_capture_for_an_unknown_action_is_refused_before_any_connection(
     )
     transport = FakeTransport()
     session_factory = create_session_factory(engine)
-    with session_factory.begin() as session, pytest.raises(
-        CapturePolicyError,
-        match="action_not_found",
+    with (
+        session_factory.begin() as session,
+        pytest.raises(
+            CapturePolicyError,
+            match="action_not_found",
+        ),
     ):
         HttpCaptureCoordinator(session, transport).capture(request, at=NOW)
     assert transport.calls == 0
@@ -365,9 +464,12 @@ def test_a_target_that_differs_from_the_stored_action_is_refused_before_any_conn
     )
     transport = FakeTransport()
     session_factory = create_session_factory(engine)
-    with session_factory.begin() as session, pytest.raises(
-        CapturePolicyError,
-        match="target_mismatch",
+    with (
+        session_factory.begin() as session,
+        pytest.raises(
+            CapturePolicyError,
+            match="target_mismatch",
+        ),
     ):
         HttpCaptureCoordinator(session, transport).capture(request, at=NOW)
     assert transport.calls == 0

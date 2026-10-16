@@ -5,9 +5,14 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
+import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from tests.api.test_approvals import (
     APPROVER_HEADERS,
@@ -18,13 +23,19 @@ from tests.api.test_approvals import (
 from tests.api.test_workflow import _create_engagement
 from vuln_proof_claw.api.app import create_app
 from vuln_proof_claw.config.models import AssessmentConfig
+from vuln_proof_claw.domain.identifiers import ActionId, EvidenceId
 from vuln_proof_claw.execution.http_capture import (
     CaptureTransportError,
+    HttpCaptureCoordinator,
     HttpCaptureLimits,
     HttpCaptureRequest,
     HttpCaptureResponse,
+    HttpCaptureResult,
+    capture_parameter_digest,
 )
 from vuln_proof_claw.persistence.base import Base
+from vuln_proof_claw.persistence.models import EvidencePayloadRecord, FindingRecord
+from vuln_proof_claw.persistence.repositories import ActionRepository
 from vuln_proof_claw.persistence.session import create_engine
 
 
@@ -152,6 +163,139 @@ async def test_the_report_discloses_each_finding_s_cwe_and_stated_basis(
         assert item["cwe_id"] == item["vulnerability_class"], item["title"]
         assert item["cwe_id"].startswith("CWE-"), item["title"]
         assert item["verification_method"] == "observed", item["title"]
+
+
+async def test_assessment_preserves_query_in_action_and_capture_metadata(tmp_path: Path) -> None:
+    database_path = tmp_path / "query-assessment.db"
+    transport = FakeAssessmentTransport()
+    async with assessment_client(database_path, transport) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        created = await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={"target": "https://api.example.test/v1/items?page=2&sort=asc"},
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "query-assessment"},
+        )
+
+    assert created.status_code == 201
+    assert created.json()["state"] == "succeeded"
+    assert len(transport.calls) == 1
+    request = transport.calls[0][0]
+    engine = create_engine(f"sqlite:///{database_path}")
+    try:
+        with Session(engine) as session:
+            stored = ActionRepository(session).get(ActionId(created.json()["action_id"]))
+            assert stored is not None
+            action = stored.entity
+            assert action.normalized_target == request.target
+            assert action.query == request.query == "page=2&sort=asc"
+            assert action.parameter_digest == capture_parameter_digest(request)
+            payload = session.get(EvidencePayloadRecord, created.json()["evidence_ids"][0])
+            assert payload is not None
+            metadata = json.loads(payload.canonical_metadata)
+            raw_capture = json.loads(payload.raw_content)
+            assert metadata["normalized_parameters"]["query"] == action.query
+            assert raw_capture["request"]["query"] == action.query
+    finally:
+        engine.dispose()
+
+
+async def test_assessment_uses_persisted_capture_instead_of_returned_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class MisleadingCoordinator(HttpCaptureCoordinator):
+        def capture(
+            self,
+            request: HttpCaptureRequest,
+            *,
+            limits: HttpCaptureLimits | None = None,
+            at: datetime | None = None,
+            evidence_id: EvidenceId | None = None,
+        ) -> HttpCaptureResult:
+            result = super().capture(request, limits=limits, at=at, evidence_id=evidence_id)
+            assert result.response is not None
+            return replace(
+                result,
+                response=HttpCaptureResponse(
+                    status_code=503,
+                    final_target=result.response.final_target,
+                    headers=(("Content-Type", "text/plain"),),
+                    body=b"temporary error",
+                    duration_ms=1,
+                ),
+            )
+
+    monkeypatch.setattr(
+        "vuln_proof_claw.assessment.service.HttpCaptureCoordinator",
+        MisleadingCoordinator,
+    )
+    async with assessment_client(
+        tmp_path / "persisted-response.db", FakeAssessmentTransport()
+    ) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        created = await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={"target": "https://api.example.test/v1"},
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "persisted-response"},
+        )
+        audit = await client.get(f"/api/v1/engagements/{engagement_id}/audit-events")
+
+    assert created.status_code == 201
+    assert created.json()["findings_count"] == 8
+    completed = next(
+        item for item in audit.json()["items"] if item["event_type"] == "assessment.completed"
+    )
+    assert completed["payload"]["status_code"] == 200
+
+
+async def test_assessment_refuses_invalid_persisted_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class CorruptingCoordinator(HttpCaptureCoordinator):
+        def capture(
+            self,
+            request: HttpCaptureRequest,
+            *,
+            limits: HttpCaptureLimits | None = None,
+            at: datetime | None = None,
+            evidence_id: EvidenceId | None = None,
+        ) -> HttpCaptureResult:
+            result = super().capture(request, limits=limits, at=at, evidence_id=evidence_id)
+            assert result.evidence is not None
+            row = self._session.get(EvidencePayloadRecord, result.evidence.metadata.evidence_id)
+            assert row is not None
+            row.raw_content = b"{}"
+            row.raw_size = 2
+            self._session.flush()
+            return result
+
+    monkeypatch.setattr(
+        "vuln_proof_claw.assessment.service.HttpCaptureCoordinator",
+        CorruptingCoordinator,
+    )
+    database_path = tmp_path / "invalid-capture.db"
+    async with assessment_client(database_path, FakeAssessmentTransport()) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        created = await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={"target": "https://api.example.test/v1"},
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "invalid-capture"},
+        )
+        audit = await client.get(f"/api/v1/engagements/{engagement_id}/audit-events")
+
+    assert created.status_code == 409
+    assert created.json()["detail"] == "capture_validation_failed"
+    event_types = {item["event_type"] for item in audit.json()["items"]}
+    assert "assessment.validation_failed" in event_types
+    assert "assessment.completed" not in event_types
+    engine = create_engine(f"sqlite:///{database_path}")
+    try:
+        with Session(engine) as session:
+            assert session.scalar(select(func.count()).select_from(FindingRecord)) == 0
+    finally:
+        engine.dispose()
 
 
 async def test_assessment_creates_evidence_findings_report_and_audit_idempotently(  # noqa: PLR0915
@@ -395,6 +539,37 @@ async def test_active_safe_mode_inventories_and_probes_openapi_reads(tmp_path: P
     assert "assessment.active_api_completed" in {
         event["event_type"] for event in audit.json()["items"]
     }
+
+
+async def test_error_page_openapi_is_not_used_for_active_probes_or_inventory(
+    tmp_path: Path,
+) -> None:
+    class ErrorOpenApiTransport(OpenApiAssessmentTransport):
+        def send(
+            self, request: HttpCaptureRequest, limits: HttpCaptureLimits
+        ) -> HttpCaptureResponse:
+            return replace(super().send(request, limits), status_code=503)
+
+    transport = ErrorOpenApiTransport()
+    async with assessment_client(tmp_path / "error-openapi.db", transport) as client:
+        client.headers.update(OPERATOR_HEADERS)
+        engagement_id = await _create_engagement(client)
+        created = await client.post(
+            f"/api/v1/engagements/{engagement_id}/assessments",
+            json={
+                "target": "https://api.example.test/v1/openapi.json",
+                "preset": "safe",
+                "mode": "active-safe",
+            },
+            headers={**OPERATOR_HEADERS, "Idempotency-Key": "error-openapi"},
+        )
+        report = await client.get(f"/api/v1/engagements/{engagement_id}/report")
+
+    assert created.status_code == 201
+    assert created.json()["findings_count"] == 0
+    assert created.json()["active_probes_run"] == 0
+    assert len(transport.calls) == 1
+    assert report.json()["api_inventory"]["documents_found"] == 0
 
 
 async def test_assessment_commits_safe_failed_state_when_transport_fails(tmp_path: Path) -> None:

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from vuln_proof_claw.assessment.analyzer import analyze_passive_response
 from vuln_proof_claw.domain.enums import (
     FindingConfidence,
     FindingSeverity,
+    FindingStatus,
     VerificationMethod,
 )
 from vuln_proof_claw.domain.identifiers import EngagementId, EvidenceId
@@ -14,14 +17,17 @@ from vuln_proof_claw.execution.http_capture import HttpCaptureResponse
 
 
 def analyze(
-    headers: tuple[tuple[str, str], ...], *, target: str = "https://example.test/"
+    headers: tuple[tuple[str, str], ...],
+    *,
+    target: str = "https://example.test/",
+    status_code: int = 200,
 ) -> tuple[str, ...]:
     findings = analyze_passive_response(
         EngagementId("00000000-0000-7000-8000-000000000001"),
         target,
         EvidenceId("00000000-0000-7000-8000-000000000002"),
         HttpCaptureResponse(
-            status_code=200,
+            status_code=status_code,
             final_target=target,
             headers=headers,
             body=b"response",
@@ -32,14 +38,17 @@ def analyze(
 
 
 def analyze_findings(
-    headers: tuple[tuple[str, str], ...], *, target: str = "https://example.test/"
+    headers: tuple[tuple[str, str], ...],
+    *,
+    target: str = "https://example.test/",
+    status_code: int = 200,
 ) -> tuple[Finding, ...]:
     return analyze_passive_response(
         EngagementId("00000000-0000-7000-8000-000000000001"),
         target,
         EvidenceId("00000000-0000-7000-8000-000000000002"),
         HttpCaptureResponse(
-            status_code=200,
+            status_code=status_code,
             final_target=target,
             headers=headers,
             body=b"response",
@@ -104,6 +113,45 @@ def test_html_headers_version_and_sensitive_cookie_are_analyzed_conservatively()
     )
 
 
+def test_cookie_name_heuristics_remain_candidates_with_an_observed_basis() -> None:
+    findings = analyze_findings(
+        (
+            ("Content-Type", "text/html"),
+            ("Server", "nginx/1.24.0"),
+            ("Set-Cookie", "sessionid=secret; Path=/"),
+        )
+    )
+
+    cookie_findings = [
+        finding for finding in findings if finding.title.startswith("Sensitive cookie")
+    ]
+    direct_findings = [finding for finding in findings if finding not in cookie_findings]
+    assert len(cookie_findings) == 3
+    assert all(finding.status is FindingStatus.CANDIDATE for finding in cookie_findings)
+    assert all(finding.confidence is FindingConfidence.MEDIUM for finding in cookie_findings)
+    assert all(
+        finding.verification_method is VerificationMethod.OBSERVED for finding in cookie_findings
+    )
+    assert direct_findings
+    assert all(finding.status is FindingStatus.VERIFIED for finding in direct_findings)
+
+
+@pytest.mark.parametrize("status_code", [301, 302, 404, 500])
+def test_redirects_and_error_responses_do_not_claim_missing_headers(
+    status_code: int,
+) -> None:
+    findings = analyze_findings(
+        (
+            ("Content-Type", "text/html"),
+            ("Server", "nginx/1.24.0"),
+            ("Set-Cookie", "sessionid=secret; Path=/"),
+        ),
+        status_code=status_code,
+    )
+
+    assert findings == ()
+
+
 def test_cleartext_and_non_sensitive_cookie_do_not_overclaim_cookie_risk() -> None:
     titles = analyze(
         (
@@ -155,5 +203,6 @@ def test_findings_include_priority_guidance_and_are_deduplicated() -> None:
     secure = [item for item in findings if item.title.endswith("missing Secure")]
     assert len(secure) == 1
     assert secure[0].severity is FindingSeverity.HIGH
-    assert secure[0].confidence is FindingConfidence.HIGH
+    assert secure[0].confidence is FindingConfidence.MEDIUM
+    assert secure[0].status is FindingStatus.CANDIDATE
     assert "Secure" in secure[0].remediation
