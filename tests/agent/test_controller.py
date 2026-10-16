@@ -33,12 +33,14 @@ from vuln_proof_claw.agent.controller import (
     MissionController,
     MissionControllerError,
 )
+from vuln_proof_claw.agent.leads import reawaken, record_rejected
 from vuln_proof_claw.agent.planner import (
     DeterministicPlanner,
     ProposedAction,
     ResearchPlan,
 )
 from vuln_proof_claw.domain.autonomous import (
+    ChangeEvent,
     Lead,
     Mission,
     MissionBudget,
@@ -47,12 +49,19 @@ from vuln_proof_claw.domain.autonomous import (
 )
 from vuln_proof_claw.domain.enums import (
     ActionState,
+    ChangeKind,
     LeadStatus,
     MissionRunState,
     MissionState,
     RiskLevel,
 )
-from vuln_proof_claw.domain.identifiers import LeadId, MissionId
+from vuln_proof_claw.domain.errors import DomainValidationError
+from vuln_proof_claw.domain.identifiers import (
+    EngagementId,
+    LeadId,
+    MissionId,
+    SurfaceSnapshotId,
+)
 from vuln_proof_claw.domain.models import Action
 from vuln_proof_claw.persistence.autonomous_repositories import (
     LeadRepository,
@@ -542,3 +551,110 @@ def test_each_attempt_uses_a_distinct_idempotency_key(engine: Engine) -> None:
 
     assert len(keys) == len(set(keys)) == 2
     assert all(TARGET_HOST not in key for key in keys)
+
+
+def test_a_lead_closed_mid_cycle_is_not_worked(engine: Engine) -> None:
+    """The schedulable list is built once at the top of a cycle and worked one lead at
+    a time. A person closing a lead in between -- which is what triage is -- used to
+    leave it in that list, and working it wrote the lead back to waiting: the verdict
+    gone, the lead back in the queue, and the next cycle spending budget re-asking a
+    question somebody had already answered."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        lead = seed_lead(session, engagement_id, MissionId(mission.id))
+        session.commit()
+
+        repository = LeadRepository(session)
+        stored = repository.get(LeadId(lead.id))
+        assert stored is not None
+        repository.save(
+            record_rejected(stored.entity, reason="triaged by hand: a served file", now=NOW),
+            expected_version=stored.version,
+        )
+        session.commit()
+
+        executor = RecordingExecutor()
+        controller = build_controller(session, MissionId(mission.id), executor=executor)
+        controller.run_cycle(controller.start_run())
+
+        after = repository.get(LeadId(lead.id))
+
+    assert executor.executed == [], "a closed lead was worked anyway"
+    assert after is not None
+    assert after.entity.status is LeadStatus.REJECTED
+    assert "triaged by hand" in (after.entity.last_reasoning_summary or "")
+
+
+def test_a_surface_change_does_not_overturn_a_person(engine: Engine) -> None:
+    """Twelve hand-triaged leads, each with a written reason, were returned to the
+    queue by a surface change. The agent then spent its budget re-asking them and the
+    operator saw them again as work to do.
+
+    A surface change can invalidate the agent's own answer, because that answer was
+    about a surface that no longer exists. It cannot invalidate a person's: "this is
+    jquery.min.js, it is a static file" does not stop being true because the
+    application was redeployed."""
+    factory = session_factory(engine)
+    with factory() as session:
+        engagement_id = seed_engagement(session)
+        mission = seed_mission(session, engagement_id)
+        by_hand = seed_lead(session, engagement_id, MissionId(mission.id))
+        by_agent = seed_lead(session, engagement_id, MissionId(mission.id),
+                             title="Something the agent ruled out")
+        session.commit()
+
+        repository = LeadRepository(session)
+        for lead_id, researcher in ((by_hand.id, True), (by_agent.id, False)):
+            stored = repository.get(LeadId(lead_id))
+            assert stored is not None
+            repository.save(
+                record_rejected(
+                    stored.entity,
+                    reason="a served file" if researcher else "policy denied",
+                    now=NOW,
+                    by_researcher=researcher,
+                ),
+                expected_version=stored.version,
+            )
+        session.commit()
+
+        controller = build_controller(
+            session, MissionId(mission.id), executor=RecordingExecutor()
+        )
+        surface_changed = ChangeEvent(
+            engagement_id=engagement_id,
+            kind=ChangeKind.ENDPOINT_ADDED,
+            subject="/api/anything",
+            snapshot_id=SurfaceSnapshotId("01a10000-0000-7000-8000-000000000000"),
+            current_digest="a" * 64,
+        )
+        controller._reawaken_changed_leads(
+            [surface_changed], at=NOW
+        )
+
+        after_hand = repository.get(LeadId(by_hand.id))
+        after_agent = repository.get(LeadId(by_agent.id))
+
+    assert after_hand is not None
+    assert after_agent is not None
+    assert after_hand.entity.status is LeadStatus.REJECTED, "a person's verdict was overturned"
+    assert after_agent.entity.status is LeadStatus.QUEUED, "the agent's own answer should reopen"
+
+
+def test_reawakening_a_researchers_lead_is_refused_outright() -> None:
+    """Belt and braces: the controller skips them, and the function refuses them, so a
+    new caller cannot reintroduce this by not knowing about it."""
+    lead = Lead(
+        engagement_id=EngagementId("e"),
+        mission_id=MissionId("m"),
+        title="t",
+        hypothesis="h",
+        category="c",
+        status=LeadStatus.REJECTED,
+        closed_by_researcher=True,
+    )
+
+    with pytest.raises(DomainValidationError, match="researcher"):
+        reawaken(lead, reason="attack_surface_changed", now=NOW)

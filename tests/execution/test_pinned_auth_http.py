@@ -1,7 +1,8 @@
 """Tests for the DNS-pinned authenticated transport.
 
-The transport widens exactly two things over the capture path — a cookie header and a
-POST to one configured login path. These tests exist to prove it widened nothing else.
+The transport widens exactly two things over the capture path — the headers a session
+is carried in, and a POST to one configured login path. These tests exist to prove it
+widened nothing else.
 """
 
 from __future__ import annotations
@@ -12,7 +13,13 @@ from typing import Any
 
 import pytest
 
-from vuln_proof_claw.agent.authsession import EMPTY_PROBE_BODY, ProbeLimits
+from vuln_proof_claw.agent.authsession import (
+    EMPTY_PROBE_BODY,
+    PERMITTED_OUTBOUND,
+    ProbeLimits,
+    redact_outbound,
+)
+from vuln_proof_claw.execution import pinned_auth_http
 from vuln_proof_claw.execution.http_capture import CaptureTransportError
 from vuln_proof_claw.execution.pinned_auth_http import (
     PinnedAuthTransport,
@@ -258,7 +265,11 @@ def test_a_body_without_post_is_refused() -> None:
 
 @pytest.mark.parametrize(
     "header",
-    [("authorization", "Bearer x"), ("x-forwarded-for", "1.2.3.4"), ("host", "evil.test")],
+    # `authorization` used to be here. It was not a safety property: the transport
+    # permits `cookie` for exactly the reason it must permit this one -- a session
+    # cannot be carried otherwise -- and both are redacted wherever a request is
+    # recorded. Refusing it only meant bearer-token targets could not be tested.
+    [("x-forwarded-for", "1.2.3.4"), ("host", "evil.test"), ("x-api-key", "k")],
 )
 def test_headers_outside_the_allowlist_are_refused(header: tuple[str, str]) -> None:
     """The allowlist is the reason this transport is safe to point at a real target."""
@@ -356,3 +367,29 @@ def test_a_transport_failure_is_reported_safely() -> None:
 
     with pytest.raises(CaptureTransportError, match="transport_request_failed"):
         transport.send("GET", f"https://{HOST}/x", headers=(), body=None, limits=limits())
+
+
+def test_a_bearer_token_may_be_carried() -> None:
+    """Some targets issue a cookie, some a bearer token. The session layer builds
+    whichever the target gave it, and for a while this transport refused the second --
+    so the first bearer-token target had every authenticated request rejected by our
+    own code, reported as `request_header_not_allowed`, which reads like the target."""
+    assert "authorization" in PERMITTED_OUTBOUND
+
+
+def test_the_two_allow_lists_are_one_list() -> None:
+    """Two copies of one rule drift, and these did."""
+    assert pinned_auth_http._ALLOWED_OUTBOUND is PERMITTED_OUTBOUND
+
+
+def test_both_credential_headers_are_redacted_in_evidence() -> None:
+    """Permitting a header on the wire is only safe because it never reaches a record."""
+    redacted = dict(
+        redact_outbound(
+            (("authorization", "Bearer a.real.token"), ("cookie", "session=abc"), ("accept", "*/*"))
+        )
+    )
+
+    assert "a.real.token" not in str(redacted)
+    assert "abc" not in str(redacted["cookie"])
+    assert redacted["accept"] == "*/*"

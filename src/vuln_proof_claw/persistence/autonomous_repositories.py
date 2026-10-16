@@ -349,6 +349,7 @@ class LeadRepository:
                 last_reasoning_summary=lead.last_reasoning_summary,
                 next_action=lead.next_action,
                 blocked_reason=lead.blocked_reason,
+                closed_by_researcher=lead.closed_by_researcher,
                 dedupe_key=lead.dedupe_key,
                 created_at=lead.created_at,
                 updated_at=lead.updated_at,
@@ -441,6 +442,7 @@ class LeadRepository:
         row.last_reasoning_summary = lead.last_reasoning_summary
         row.next_action = lead.next_action
         row.blocked_reason = lead.blocked_reason
+        row.closed_by_researcher = lead.closed_by_researcher
         row.updated_at = lead.updated_at
         self._session.flush()
         return Stored(self._domain_from_record(row), row.version)
@@ -484,6 +486,7 @@ class LeadRepository:
             last_reasoning_summary=row.last_reasoning_summary,
             next_action=row.next_action,
             blocked_reason=row.blocked_reason,
+            closed_by_researcher=bool(row.closed_by_researcher),
             dedupe_key=row.dedupe_key,
             created_at=_utc(row.created_at),
             updated_at=_utc(row.updated_at),

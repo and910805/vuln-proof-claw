@@ -260,3 +260,28 @@ def test_each_cycle_closes_its_run() -> None:
     run(controller, budget=2)
 
     assert controller.finished == 2
+
+
+def test_a_bounded_run_stops_after_the_cycles_it_was_given() -> None:
+    """An engagement with several targets and one concurrency budget works them in
+    turn, and a loop that never ends cannot be taken in turns."""
+    controller = FakeController(script=[None] * 5)
+    runner = MissionRunner(
+        controller_factory=factory_for(controller),  # type: ignore[arg-type]
+        config=RunnerConfig(maximum_cycles=2, initial_backoff_seconds=1),
+    )
+
+    report = runner.run_forever(Event())
+
+    assert report.cycles_completed == 2
+    assert report.stopped_because == "cycle_limit"
+
+
+def test_zero_means_run_until_asked_to_stop() -> None:
+    """The default stays what it was: an unattended agent is not a batch job."""
+    assert RunnerConfig().maximum_cycles == 0
+
+
+def test_a_negative_cycle_limit_is_refused() -> None:
+    with pytest.raises(DomainValidationError, match="maximum_cycles"):
+        RunnerConfig(maximum_cycles=-1)

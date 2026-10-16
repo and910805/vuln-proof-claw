@@ -217,8 +217,14 @@ def record_blocked(lead: Lead, *, reason: str, now: datetime) -> Lead:
     )
 
 
-def record_rejected(lead: Lead, *, reason: str, now: datetime) -> Lead:
-    """Close a lead that policy or verification has ruled out."""
+def record_rejected(
+    lead: Lead, *, reason: str, now: datetime, by_researcher: bool = False
+) -> Lead:
+    """Close a lead that policy, verification, or a person has ruled out.
+
+    ``by_researcher`` marks a conclusion the agent must not overturn on its own. It
+    defaults to False because most rejections here are the agent's own.
+    """
     if not reason.strip():
         raise DomainValidationError("reason must not be empty")
     return replace(
@@ -226,6 +232,7 @@ def record_rejected(lead: Lead, *, reason: str, now: datetime) -> Lead:
         status=LeadStatus.REJECTED,
         last_reasoning_summary=reason,
         next_attempt_at=None,
+        closed_by_researcher=lead.closed_by_researcher or by_researcher,
         updated_at=now,
     )
 
@@ -241,6 +248,8 @@ def reawaken(lead: Lead, *, reason: str, now: datetime) -> Lead:
         raise DomainValidationError("reason must not be empty")
     if not lead.status.reawakenable:
         raise DomainValidationError("only stale, rejected, or waiting leads may be reawakened")
+    if lead.closed_by_researcher:
+        raise DomainValidationError("a lead a researcher closed is not the agent's to reopen")
     return replace(
         lead,
         status=LeadStatus.QUEUED,

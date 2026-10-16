@@ -85,6 +85,13 @@ class BrowserReconnaissance:
 
         observed = result.api_requests
         errors: list[str] = []
+        if result.truncated_requests:
+            # An inventory cut short looks exactly like a small surface, so this is
+            # reported rather than left to be inferred from a count that seems low.
+            errors.append(
+                f"visit stopped after {len(result.observed_requests)} request(s); "
+                f"{result.truncated_requests} more were refused by the per-visit ceiling"
+            )
         if result.blocked_requests:
             # Reported, not silently dropped: a page reaching outside the engagement is
             # worth an operator knowing about even though the browser refused it.
@@ -95,6 +102,7 @@ class BrowserReconnaissance:
 
         return ReconResult(
             base_url=result.final_url or self.base_url,
+            source="observed",
             classifications=classify_all(inventory(observed)),
             errors=tuple(errors),
             sent_at=tuple(

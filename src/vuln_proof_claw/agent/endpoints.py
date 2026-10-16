@@ -31,6 +31,16 @@ _READ_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS"})
 _DESTRUCTIVE_METHODS: Final = frozenset({"DELETE"})
 _MUTATING_METHODS: Final = frozenset({"PUT", "PATCH"})
 
+#: Extensions a web server hands out as files. Matched at the end of the path's
+#: last segment: `/api/v1.json` is not a file called json, and `/report.js.php`
+#: ends in `.php`, which is not here.
+_STATIC_SUFFIXES: Final = (
+    ".js", ".mjs", ".css", ".map",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".mp4", ".webm", ".mp3", ".wav",
+)
+
 #: Verbs whose effect cannot be undone, or whose effect weakens a security control.
 #: Matched before anything else and never probed automatically.
 _DESTRUCTIVE: Final = re.compile(
@@ -110,6 +120,12 @@ class EndpointClassification:
         return f"[{self.risk.value:<11}] {self.method:<6} {self.path} — {self.reason}"
 
 
+def _is_static_path(path: str) -> bool:
+    """Return whether a path names a file the server hands out rather than an action."""
+    last = path.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1].lower()
+    return last.endswith(_STATIC_SUFFIXES)
+
+
 def _matched(pattern: re.Pattern[str], value: str) -> str | None:
     found = pattern.search(value)
     return found.group(0).lower() if found else None
@@ -149,6 +165,24 @@ def classify_endpoint(  # noqa: PLR0911 - one return per classification, each na
             risk=EndpointRisk.MUTATING,
             strategy=ProbeStrategy.EMPTY_BODY,
             reason=f"{normalized_method} replaces or modifies a resource",
+        )
+
+    # A file is a file. The verb heuristic reads a path for words that describe an
+    # action, and a filename is not one: `bootstrap.js` contains "boot", which is in
+    # the destructive list for device boot options, and `msSetupAdmin.js` contains
+    # "set". A read method fetching a script, stylesheet or image is a browser loading
+    # a page, and calling it destructive both clutters the inventory an operator reads
+    # and withholds from probing something that was never dangerous.
+    #
+    # Only for read methods: a DELETE to a path ending `.js` has already been settled
+    # above by its method, which is a fact rather than a reading of a name.
+    if normalized_method in _READ_METHODS and _is_static_path(path):
+        return EndpointClassification(
+            method=normalized_method,
+            path=path,
+            risk=EndpointRisk.READ,
+            strategy=ProbeStrategy.DIRECT,
+            reason="a static file, whatever words its name contains",
         )
 
     destructive = _matched(_DESTRUCTIVE, path)

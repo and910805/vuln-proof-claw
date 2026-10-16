@@ -106,6 +106,29 @@ class IdentityDefinition(FrozenModel):
         return IdentityRole(self.role)
 
 
+class BrowserLogin(FrozenModel):
+    """How to sign in through the page, for discovery that drives a browser.
+
+    Separate from the HTTP login above because they answer different questions. That
+    one describes the request to send; this describes the controls to operate. A target
+    can need both, and neither is derivable from the other.
+
+    Every selector is operator-supplied. The agent does not find its way forward by
+    clicking what looks right — on one engagement the screen after sign-in puts a
+    change-password button beside the one that proceeds, and the rules forbid changing
+    a shared account's password.
+    """
+
+    login_url: str = Field(min_length=1, max_length=512)
+    username_selector: str = Field(min_length=1, max_length=256)
+    password_selector: str = Field(min_length=1, max_length=256)
+    submit_selector: str = Field(min_length=1, max_length=256)
+    open_selector: str | None = Field(default=None, min_length=1, max_length=256)
+    """Clicked before the fields are filled, when the form is behind a landing screen."""
+    continue_selector: str | None = Field(default=None, min_length=1, max_length=256)
+    """Clicked after signing in, when the product stops at an identity chooser."""
+
+
 class LoginFlow(FrozenModel):
     """How to exchange credentials for a session on one target.
 
@@ -123,6 +146,9 @@ class LoginFlow(FrozenModel):
     success_statuses: tuple[int, ...] = (200, 204, 302)
     session_cookies: tuple[str, ...] = ()
     failure_marker: str | None = None
+
+    browser: BrowserLogin | None = None
+    """How to sign in through the page, when discovery drives a browser."""
 
     csrf_field: str | None = Field(default=None, min_length=1, max_length=128)
     """Name of the hidden input carrying an anti-forgery token, when the form has one.

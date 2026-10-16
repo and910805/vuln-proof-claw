@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from typing import Final
 
+from vuln_proof_claw.agent.bodyfacts import declares_failure
 from vuln_proof_claw.agent.differential import ProbeResult, body_digest
 from vuln_proof_claw.agent.endpoints import ProbeStrategy
 from vuln_proof_claw.config.identities import (
@@ -48,7 +49,12 @@ _LOGGER = logging.getLogger(__name__)
 
 #: Headers this module may add to an outgoing request. Narrow on purpose: everything
 #: here is either required to speak to the target or supplied by the login flow.
-_PERMITTED_OUTBOUND = frozenset(
+#: Every header an authenticated request may carry. Public because the transport
+#: enforces the same list: two copies of one rule drift, and this one drifted --
+#: ``authorization`` was permitted here and refused there, so the first target that
+#: issued a bearer token instead of a cookie had every authenticated request rejected
+#: by our own transport, with a message that reads like the target refusing it.
+PERMITTED_OUTBOUND: Final = frozenset(
     {"accept", "user-agent", "content-type", "cookie", "authorization"}
 )
 
@@ -320,14 +326,26 @@ class IdentitySessions:
         )
         self._require_permitted(headers)
         started = at or datetime.now(UTC)
-        response = self.transport.send(
-            normalized_method,
-            target,
-            headers=headers,
-            body=body,
-            limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
-        )
+        try:
+            response = self.transport.send(
+                normalized_method,
+                target,
+                headers=headers,
+                body=body,
+                limits=ProbeLimits(timeout_seconds=self.timeout_seconds),
+            )
+        except ProbeError:
+            raise
+        except Exception as failure:
+            # A transport refusal is one probe that did not happen, not a mission that
+            # cannot continue. Everything above this call already knows how to handle a
+            # ProbeError -- record it, count it against the consecutive-error cap, move
+            # to the next endpoint -- and knows nothing about the transport's own
+            # exception type, so one oversized response on one path used to end the
+            # sweep for every other path behind it.
+            raise ProbeError(f"{type(failure).__name__}: {failure}") from failure
         header_map = {name.lower(): value for name, value in response.headers}
+        content_type = header_map.get("content-type", "")
         return ProbeResult(
             identity=identity,
             method=normalized_method,
@@ -335,7 +353,10 @@ class IdentitySessions:
             status_code=response.status_code,
             body_digest=body_digest(response.body),
             body_size=len(response.body),
-            content_type=header_map.get("content-type", ""),
+            content_type=content_type,
+            # One boolean, derived here and never the body itself: whether the
+            # application said no in its own words. See agent.bodyfacts.
+            declares_failure=declares_failure(response.body, content_type=content_type),
             location=header_map.get("location", ""),
             elapsed_ms=response.elapsed_ms,
             observed_at=started,
@@ -421,7 +442,7 @@ class IdentitySessions:
     @staticmethod
     def _require_permitted(headers: tuple[tuple[str, str], ...]) -> None:
         for name, _ in headers:
-            if name.lower() not in _PERMITTED_OUTBOUND:
+            if name.lower() not in PERMITTED_OUTBOUND:
                 raise ProbeError(f"header not permitted on an authenticated probe: {name}")
 
 
@@ -432,6 +453,7 @@ def is_redirect(status: int) -> bool:
 
 __all__ = [
     "EMPTY_PROBE_BODY",
+    "PERMITTED_OUTBOUND",
     "AuthenticatedTransport",
     "AuthenticationError",
     "IdentitySessions",

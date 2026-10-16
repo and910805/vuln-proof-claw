@@ -564,6 +564,9 @@ class LeadRecord(Base):
     last_reasoning_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_action: Mapped[str | None] = mapped_column(Text, nullable=True)
     blocked_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    closed_by_researcher: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0"
+    )
     dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from vuln_proof_claw.cli.app import _probing_roles, _sweep_rate
+from vuln_proof_claw.cli.app import _build_prober, _probing_roles, _sweep_rate
 from vuln_proof_claw.config.identities import (
     IdentityDefinitionError,
     inspect_credentials,
     parse_identity_bundle,
 )
 from vuln_proof_claw.domain.autonomous import MissionBudget
+from vuln_proof_claw.execution.pinned_auth_http import PinnedAuthTransport
+from vuln_proof_claw.policy.scope import EngagementScope
 
 ANONYMOUS_ONLY = """
 base_url: https://target.example.com
@@ -171,3 +176,80 @@ def test_a_bundle_without_credentials_probes_anonymously() -> None:
 def test_a_bundle_with_no_usable_baseline_is_refused() -> None:
     with pytest.raises(IdentityDefinitionError, match="'user' or 'anonymous'"):
         _probing_roles(parse_identity_bundle(NO_USABLE_ROLE))
+
+
+def tmp_bundle(document: str) -> Path:
+    """Write a bundle to a temporary file, because _build_prober loads from disk."""
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".yaml", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(document)
+        return Path(handle.name)
+
+
+BROWSER_BUNDLE = """
+base_url: https://10.26.0.40
+login:
+  method: POST
+  path: /api/web/login
+  content_type: application/json
+  body: '{"account": "{username}", "password": "{password}"}'
+  success_statuses: [200]
+  browser:
+    login_url: https://10.26.0.40/#/login
+    open_selector: button.start
+    username_selector: "#textbox-account"
+    password_selector: "#textbox-password"
+    submit_selector: button.submit
+    continue_selector: button.proceed
+identities:
+  - name: anonymous
+    role: anonymous
+  - name: account_a
+    role: user
+    credentials: {username: "${SUPPLIED_USER}", password: "${SUPPLIED_PASS}"}
+"""
+
+
+def test_the_bundle_describes_both_ways_of_signing_in() -> None:
+    """A request to send and controls to operate answer different questions, and
+    neither is derivable from the other."""
+    bundle = parse_identity_bundle(BROWSER_BUNDLE)
+
+    assert bundle.login is not None
+    assert bundle.login.path == "/api/web/login"
+    assert bundle.login.browser is not None
+    assert bundle.login.browser.continue_selector == "button.proceed"
+
+
+def test_a_bundle_without_a_browser_block_still_parses() -> None:
+    """Most targets need only the HTTP login; the page one is an addition."""
+    without = BROWSER_BUNDLE[: BROWSER_BUNDLE.index("  browser:")] + (
+        BROWSER_BUNDLE[BROWSER_BUNDLE.index("identities:") :]
+    )
+    bundle = parse_identity_bundle(without)
+
+    assert bundle.login is not None
+    assert bundle.login.browser is None
+
+
+def test_the_probing_transport_is_told_where_the_login_lives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A POST carrying a body is permitted only at the nominated path, so leaving it
+    unset had our own guard reject every configured login."""
+    monkeypatch.setenv("SUPPLIED_USER", "account_a")
+    monkeypatch.setenv("SUPPLIED_PASS", "not-a-real-password")
+    written = tmp_bundle(BROWSER_BUNDLE)
+    scope = EngagementScope.create(
+        allowed_cidrs=("10.26.0.0/24",), allowed_ports=(443,), allowed_schemes=("https",)
+    )
+
+    probing = _build_prober(written, scope=scope, rate=3)
+
+    transport = probing.sessions.transport
+    assert isinstance(transport, PinnedAuthTransport)
+    # Asserted on the behaviour rather than the attribute: a POST carrying a body is
+    # permitted at the login path and nowhere else, which is the property that broke.
+    assert transport._post_permitted("/api/web/login", '{"a": 1}')
+    assert not transport._post_permitted("/api/web/other", '{"a": 1}')
